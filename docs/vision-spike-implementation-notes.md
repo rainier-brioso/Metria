@@ -11,11 +11,35 @@ regenerates it from the checked-in app and local module sources.
 
 ## Runtime and model record
 
-- Runtime: not selected; no native inference runtime changed.
-- Model artifact/version: not selected.
-- License acknowledgement route: not applicable until selection.
-- Checksum: not applicable until selection.
-- Download source: not applicable until selection.
+## Gate B artifact record
+
+- Runtime: LiteRT-LM Android `0.13.0` API family; inference integration deferred.
+- Model artifact/version: `gemma-4-E2B-it.litertlm`, repository
+  `litert-community/gemma-4-E2B-it-litert-lm`, revision
+  `9262660a1676eed6d0c477ab1a86344430854664`.
+- License acknowledgement route: the model repository declares Apache-2.0;
+  Gemma 4 base-model terms remain applicable and must be reviewed before
+  distribution.
+- Expected size: `2,588,147,712` bytes.
+- SHA-256/checksum recorded from the Hugging Face `X-Linked-ETag` header:
+  `181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c`.
+- Download source: the pinned Hugging Face `resolve/<revision>/...` URL in
+  `MetriaVisionModule.kt`.
+
+This checkpoint implements download, cancellation, verification, restart
+discovery, visible storage usage, and removal. It does not initialize LiteRT-LM
+or expose image/text inference yet.
+
+## Gate B physical checkpoint
+
+- Build/install command: `npx expo run:android` with the Android SDK configured.
+- Expected behavior: status starts `absent`; download is explicit and reports
+  progress; cancellation removes the partial file; a verified model reports
+  `ready` after app restart; remove returns `removed` and frees the model file.
+- Pass evidence: physical device model/OS, state transitions, bytes before/after
+  removal, checksum verification result, and no crash during cancellation/restart.
+- Fail evidence: unverified file accepted, partial file retained as ready,
+  download that cannot cancel, incorrect storage accounting, or a crash.
 
 ## Gate A physical checkpoint
 
