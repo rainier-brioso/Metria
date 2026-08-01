@@ -13,7 +13,10 @@ regenerates it from the checked-in app and local module sources.
 
 ## Gate B artifact record
 
-- Runtime: LiteRT-LM Android `0.13.0` API family; inference integration deferred.
+- Runtime: LiteRT-LM Android `0.13.0` API family; direct Expo SDK 53
+  integration is blocked because it requires Kotlin 2.3 metadata and Expo
+  SDK 53 rejects Kotlin 2.3. Do not bypass the compiler metadata check; select
+  a build-compatible runtime path before enabling image inference.
 - Model artifact/version: `gemma-4-E2B-it.litertlm`, repository
   `litert-community/gemma-4-E2B-it-litert-lm`, revision
   `9262660a1676eed6d0c477ab1a86344430854664`.

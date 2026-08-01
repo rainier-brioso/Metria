@@ -58,9 +58,17 @@ APIs.
 
 ## Candidate model/runtime
 
-Initial candidate: Gemma 3n E2B with a Google AI Edge / MediaPipe-compatible
-mobile runtime. The implementation must verify the exact available model format,
-vision API stability, licensing terms, and runtime telemetry before adoption.
+Android spike decision (2026-08-01): use the already verified
+`gemma-4-E2B-it.litertlm` artifact with the LiteRT-LM Kotlin Android SDK
+when a build-compatible Android integration is available. LiteRT-LM 0.13.0
+requires Kotlin 2.3 metadata, while Expo SDK 53's Android build map rejects
+Kotlin 2.3; direct SDK integration is therefore blocked rather than bypassed.
+This decision avoids discarding a verified 2.59 GB download. Gemma 3n E2B
+remains a replacement candidate for a later device-compatibility or iOS
+decision; it is not the selected Android artifact.
+
+The implementation must verify the exact available model format, vision API
+stability, licensing terms, and runtime telemetry before adoption.
 
 The design must permit replacement of the runtime/model after the spike. The
 model is an optional download, not a required app-bundle asset.
