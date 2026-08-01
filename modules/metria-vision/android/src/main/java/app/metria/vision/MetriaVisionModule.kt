@@ -1,8 +1,8 @@
 package app.metria.vision
 
+import expo.modules.kotlin.Promise
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
-import expo.modules.kotlin.Promise
 import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
@@ -12,7 +12,7 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
 
-/** Gate B model lifecycle only. Inference is intentionally not exposed yet. */
+/** Gate B model lifecycle only. Image inference is intentionally not exposed yet. */
 class MetriaVisionModule : Module() {
   companion object {
     private const val MODEL_VERSION = "gemma-4-E2B-it@9262660a1676eed6d0c477ab1a86344430854664"
@@ -23,115 +23,191 @@ class MetriaVisionModule : Module() {
   }
 
   private val executor: ExecutorService = Executors.newSingleThreadExecutor()
+  private val lifecycleLock = Any()
   private var download: Future<*>? = null
+  private var verification: Future<*>? = null
+  private var downloadGeneration = 0L
   private var state = "absent"
   private var downloadedBytes = 0L
+  private var lastReason: String? = null
 
   override fun definition() = ModuleDefinition {
     Name("MetriaVision")
 
     OnDestroy {
-      download?.cancel(true)
+      synchronized(lifecycleLock) {
+        downloadGeneration += 1
+        download?.cancel(true)
+        verification?.cancel(true)
+        partialFile().delete()
+      }
       executor.shutdownNow()
     }
 
     Function("runtimeStatus") { status() }
 
     AsyncFunction("downloadModel") { promise: Promise ->
-      if (download?.isDone == false) {
-        promise.resolve(status())
-        return@AsyncFunction
-      }
-      state = "downloading"
-      downloadedBytes = modelFile().length()
-      promise.resolve(status())
-      download = executor.submit {
-        try {
-          downloadModelFile()
-          state = "ready"
-          downloadedBytes = MODEL_BYTES
-        } catch (cancelled: InterruptedException) {
-          state = "absent"
-          modelFile().delete()
-          downloadedBytes = 0L
-        } catch (error: Exception) {
-          state = "failed"
-          downloadedBytes = modelFile().length()
+      synchronized(lifecycleLock) {
+        if (download?.isDone == false) {
+          promise.resolve(statusLocked())
+          return@AsyncFunction
         }
+        val generation = ++downloadGeneration
+        partialFile().delete()
+        state = "downloading"
+        downloadedBytes = 0L
+        lastReason = null
+        download = executor.submit { downloadModel(generation) }
+        promise.resolve(statusLocked())
       }
     }
 
     AsyncFunction("cancelDownload") {
-      download?.cancel(true)
-      download = null
-      if (state == "downloading") {
-        state = "absent"
-        modelFile().delete()
-        downloadedBytes = 0L
+      synchronized(lifecycleLock) {
+        downloadGeneration += 1
+        download?.cancel(true)
+        download = null
+        partialFile().delete()
+        if (state == "downloading") {
+          state = "absent"
+          downloadedBytes = modelFile().takeIf { it.isFile }?.length() ?: 0L
+          lastReason = "Model download cancelled."
+        }
+        statusLocked()
       }
-      status()
     }
 
     AsyncFunction("loadModel") {
-      if (!modelFile().isFile) {
-        state = "absent"
-        return@AsyncFunction status()
+      synchronized(lifecycleLock) {
+        val file = modelFile()
+        if (!file.isFile) {
+          state = "absent"
+          downloadedBytes = 0L
+          lastReason = "The local model is not installed."
+        } else {
+          downloadedBytes = file.length()
+          beginVerificationLocked()
+        }
+        statusLocked()
       }
-      if (!hasExpectedChecksum(modelFile())) {
-        state = "failed"
-        return@AsyncFunction status("Stored model checksum does not match the pinned artifact.")
-      }
-      state = "ready"
-      downloadedBytes = MODEL_BYTES
-      status("Model is verified and available; runtime initialization is deferred.")
     }
 
     AsyncFunction("unloadModel") {
-      // There is no runtime engine to close in this lifecycle-only checkpoint.
+      // A LiteRT-LM engine is not connected in this lifecycle-only checkpoint.
       status()
     }
 
     AsyncFunction("removeModel") {
-      download?.cancel(true)
-      download = null
-      modelFile().delete()
-      state = "removed"
-      downloadedBytes = 0L
-      status()
+      synchronized(lifecycleLock) {
+        downloadGeneration += 1
+        download?.cancel(true)
+        verification?.cancel(true)
+        download = null
+        verification = null
+        partialFile().delete()
+        modelFile().delete()
+        state = "removed"
+        downloadedBytes = 0L
+        lastReason = "Model removed from this device."
+        statusLocked()
+      }
     }
   }
 
-  private fun modelFile(): File = File(appContext.reactContext.filesDir, MODEL_FILE)
+  private fun modelFile(): File {
+    val filesDir = appContext.reactContext?.filesDir
+      ?: throw IllegalStateException("Metria Vision is not attached to an Android application context.")
+    return File(filesDir, MODEL_FILE)
+  }
 
-  private fun downloadModelFile() {
-    val connection = URL(MODEL_URL).openConnection() as HttpURLConnection
-    connection.connectTimeout = 15_000
-    connection.readTimeout = 30_000
-    connection.requestMethod = "GET"
-    connection.connect()
-    if (connection.responseCode !in 200..299) {
-      throw IllegalStateException("Model download returned HTTP ${connection.responseCode}")
-    }
-    val partial = File(modelFile().parentFile, "$MODEL_FILE.part")
-    partial.delete()
-    connection.inputStream.use { input ->
-      FileOutputStream(partial).use { output ->
-        val buffer = ByteArray(64 * 1024)
-        while (true) {
-          val count = input.read(buffer)
-          if (count < 0) break
-          output.write(buffer, 0, count)
-          downloadedBytes += count
-          if (Thread.currentThread().isInterrupted) throw InterruptedException()
+  private fun partialFile(): File = File(modelFile().parentFile, "$MODEL_FILE.part")
+
+  private fun downloadModel(generation: Long) {
+    try {
+      val connection = URL(MODEL_URL).openConnection() as HttpURLConnection
+      connection.connectTimeout = 15_000
+      connection.readTimeout = 30_000
+      connection.requestMethod = "GET"
+      try {
+        connection.connect()
+        if (connection.responseCode !in 200..299) {
+          throw IllegalStateException("Model download returned HTTP ${connection.responseCode}")
+        }
+        FileOutputStream(partialFile()).use { output ->
+          connection.inputStream.use { input ->
+            val buffer = ByteArray(64 * 1024)
+            while (true) {
+              if (Thread.currentThread().isInterrupted) throw InterruptedException()
+              val count = input.read(buffer)
+              if (count < 0) break
+              output.write(buffer, 0, count)
+              synchronized(lifecycleLock) {
+                if (generation != downloadGeneration) throw InterruptedException()
+                downloadedBytes += count
+              }
+            }
+          }
+        }
+      } finally {
+        connection.disconnect()
+      }
+
+      val partial = partialFile()
+      if (partial.length() != MODEL_BYTES || !hasExpectedChecksum(partial)) {
+        throw IllegalStateException("Downloaded model failed size or checksum verification")
+      }
+      synchronized(lifecycleLock) {
+        if (generation != downloadGeneration || Thread.currentThread().isInterrupted) {
+          throw InterruptedException()
+        }
+        if (!partial.renameTo(modelFile())) {
+          throw IllegalStateException("Could not install verified model")
+        }
+        state = "ready"
+        downloadedBytes = MODEL_BYTES
+        lastReason = "Model is verified and available; runtime initialization is deferred."
+      }
+    } catch (cancelled: InterruptedException) {
+      synchronized(lifecycleLock) {
+        if (generation == downloadGeneration) {
+          partialFile().delete()
+          state = "absent"
+          downloadedBytes = modelFile().takeIf { it.isFile }?.length() ?: 0L
+          lastReason = "Model download cancelled."
+        }
+      }
+    } catch (error: Exception) {
+      synchronized(lifecycleLock) {
+        if (generation == downloadGeneration) {
+          partialFile().delete()
+          state = "failed"
+          downloadedBytes = modelFile().takeIf { it.isFile }?.length() ?: 0L
+          lastReason = "Model download failed verification or could not complete."
         }
       }
     }
-    if (!hasExpectedChecksum(partial) || partial.length() != MODEL_BYTES) {
-      partial.delete()
-      throw IllegalStateException("Downloaded model failed size or checksum verification")
-    }
-    if (!partial.renameTo(modelFile())) {
-      throw IllegalStateException("Could not install verified model")
+  }
+
+  private fun beginVerificationLocked() {
+    if (verification?.isDone == false || state == "downloading") return
+    state = "verifying"
+    lastReason = "Verifying the stored model before it can be used."
+    verification = executor.submit {
+      val file = modelFile()
+      val valid = file.isFile && file.length() == MODEL_BYTES && hasExpectedChecksum(file)
+      synchronized(lifecycleLock) {
+        if (modelFile() != file || state == "removed") return@synchronized
+        if (valid) {
+          state = "ready"
+          downloadedBytes = MODEL_BYTES
+          lastReason = "Model is verified and available; runtime initialization is deferred."
+        } else {
+          file.delete()
+          state = "failed"
+          downloadedBytes = 0L
+          lastReason = "Stored model failed integrity verification and was removed."
+        }
+      }
     }
   }
 
@@ -148,22 +224,20 @@ class MetriaVisionModule : Module() {
     return digest.digest().joinToString("") { "%02x".format(it) } == MODEL_SHA256
   }
 
-  private fun status(reason: String? = null): Map<String, Any?> = mapOf(
-    // Re-discover a verified artifact after process death/restart. Full hashing
-    // remains in loadModel; status never treats a partial file as ready.
-    "state" to refreshedState(),
+  private fun status(): Map<String, Any?> = synchronized(lifecycleLock) {
+    if ((state == "absent" || state == "removed") && modelFile().isFile) {
+      downloadedBytes = modelFile().length()
+      beginVerificationLocked()
+    }
+    statusLocked()
+  }
+
+  private fun statusLocked(): Map<String, Any?> = mapOf(
+    "state" to state,
     "runtimeVersion" to null,
     "modelVersion" to MODEL_VERSION,
     "downloadedBytes" to downloadedBytes,
     "expectedBytes" to MODEL_BYTES,
-    "reason" to (reason ?: "Model lifecycle is available; image inference is disabled in this checkpoint.")
+    "reason" to (lastReason ?: "Model lifecycle is available; image inference is disabled in this checkpoint.")
   )
-
-  private fun refreshedState(): String {
-    if ((state == "absent" || state == "removed") && modelFile().isFile) {
-      downloadedBytes = modelFile().length()
-      state = if (downloadedBytes == MODEL_BYTES) "ready" else "failed"
-    }
-    return state
-  }
 }

@@ -1,4 +1,10 @@
-export type RuntimeState = 'absent' | 'downloading' | 'ready' | 'failed' | 'removed';
+export type RuntimeState =
+  | 'absent'
+  | 'downloading'
+  | 'verifying'
+  | 'ready'
+  | 'failed'
+  | 'removed';
 
 export type RuntimeStatus = {
   state: RuntimeState;

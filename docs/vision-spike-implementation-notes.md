@@ -53,3 +53,24 @@ or expose image/text inference yet.
 - Fail evidence: crash log, unexpected state transition, or any network request
   caused by the bridge. Simulator and automated tests are not sufficient to
   pass this checkpoint.
+
+## Gate A evidence — 2026-08-01
+
+- Physical device: Samsung SM-S928B, Android 16, connected by ADB.
+- Build: `:app:assembleDebug` completed successfully after configuring the
+  installed Android SDK path.
+- Install/launch: the debug APK installed successfully and rendered `Metria
+  vision spike`, `Runtime: absent`, and `Storage: 0 / 2,588,147,712 bytes`.
+- Safe lifecycle check: `Reload model` reported `The local model is not
+  installed.`; a forced process restart returned to the same `absent` state
+  without a crash.
+- Scope: no model was downloaded, no model runtime was initialized, and no
+  image/prompt/persistence function was exercised.
+
+## Gate B correction before physical download
+
+The lifecycle manager now verifies a persisted model asynchronously before it
+can report `ready`, removes partial files after cancellation or failure, and
+uses a download generation to prevent a cancelled/removed background download
+from installing a late artifact. Gate B remains unpassed until the explicit
+2.59 GB model download and physical lifecycle evidence are completed.

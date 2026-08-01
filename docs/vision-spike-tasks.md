@@ -21,11 +21,11 @@ change.
 
 ### Gate A — App and native bridge
 
-- [ ] Expo development build installs and launches on the physical Android
+- [x] Expo development build installs and launches on the physical Android
   phone.
-- [ ] Native module reports runtime availability and handles load/unload without
+- [x] Native module reports runtime availability and handles load/unload without
   crashing the app.
-- [ ] Automated TypeScript tests and native build checks pass.
+- [x] Automated TypeScript tests and native build checks pass.
 
 ### Gate B — Local model lifecycle
 
