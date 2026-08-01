@@ -42,6 +42,16 @@ infer any native Gate completion from the Expo result.
 - Not yet exercised: native cancellation during an active download, native
   removal, LiteRT engine initialization, offline inference, and image input.
 
+## Native LiteRT initialization evidence - 2026-08-02
+
+- Physical device: Samsung SM-S928B, Android 16.
+- Action: the member selected `Initialize LiteRT` after native model
+  verification completed.
+- Result: the state changed to `loaded` without a crash.
+- Runtime configuration: CPU text backend, GPU vision backend, CPU audio
+  backend, 256 maximum output tokens, and one input image maximum. No prompt,
+  image, conversation, or persistence operation was run in this checkpoint.
+
 ## Gate A baseline
 
 This first implementation adds the Expo/TypeScript shell and an Android native

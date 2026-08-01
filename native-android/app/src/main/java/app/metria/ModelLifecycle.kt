@@ -1,5 +1,8 @@
 package app.metria
 
+import com.google.ai.edge.litertlm.Backend
+import com.google.ai.edge.litertlm.Engine
+import com.google.ai.edge.litertlm.EngineConfig
 import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
@@ -35,7 +38,10 @@ class ModelLifecycle(private val privateFilesDir: File) : AutoCloseable {
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
     private var activeDownload: Future<*>? = null
     private var activeVerification: Future<*>? = null
+    private var activeRuntimeLoad: Future<*>? = null
+    private var engine: Engine? = null
     private var generation = 0L
+    private var runtimeGeneration = 0L
     private var state = "absent"
     private var bytes = 0L
     private var reason = "No local model is installed."
@@ -90,7 +96,38 @@ class ModelLifecycle(private val privateFilesDir: File) : AutoCloseable {
     }
 
     @Synchronized
+    fun initializeRuntime(): ModelStatus {
+        if (activeRuntimeLoad?.isDone == false || engine?.isInitialized() == true) {
+            return statusLocked()
+        }
+        if (state != "ready" || !modelFile().isFile) {
+            reason = "Verify the local model before initializing LiteRT."
+            return statusLocked()
+        }
+        val currentRuntimeGeneration = ++runtimeGeneration
+        state = "initializing"
+        reason = "Initializing LiteRT locally. This can take a moment."
+        activeRuntimeLoad = executor.submit { initializeRuntime(currentRuntimeGeneration) }
+        return statusLocked()
+    }
+
+    @Synchronized
+    fun unloadRuntime(): ModelStatus {
+        runtimeGeneration += 1
+        activeRuntimeLoad?.cancel(true)
+        activeRuntimeLoad = null
+        engine?.close()
+        engine = null
+        if (modelFile().isFile) {
+            state = "ready"
+            reason = "Model verified; LiteRT runtime unloaded."
+        }
+        return statusLocked()
+    }
+
+    @Synchronized
     fun remove(): ModelStatus {
+        unloadRuntime()
         generation += 1
         activeDownload?.cancel(true)
         activeVerification?.cancel(true)
@@ -106,6 +143,7 @@ class ModelLifecycle(private val privateFilesDir: File) : AutoCloseable {
 
     @Synchronized
     override fun close() {
+        unloadRuntime()
         generation += 1
         activeDownload?.cancel(true)
         activeVerification?.cancel(true)
@@ -176,6 +214,48 @@ class ModelLifecycle(private val privateFilesDir: File) : AutoCloseable {
                     state = "failed"
                     bytes = modelFile().takeIf(File::isFile)?.length() ?: 0L
                     reason = "Model download failed verification or could not complete."
+                }
+            }
+        }
+    }
+
+    private fun initializeRuntime(currentRuntimeGeneration: Long) {
+        var candidate: Engine? = null
+        try {
+            val config = EngineConfig(
+                modelFile().absolutePath,
+                Backend.CPU(),
+                Backend.GPU(),
+                Backend.CPU(),
+                256,
+                1,
+                privateFilesDir.absolutePath,
+            )
+            candidate = Engine(config)
+            synchronized(this) {
+                if (currentRuntimeGeneration != runtimeGeneration) {
+                    candidate.close()
+                    return
+                }
+                engine = candidate
+            }
+            candidate.initialize()
+            synchronized(this) {
+                if (currentRuntimeGeneration != runtimeGeneration) {
+                    candidate.close()
+                    if (engine === candidate) engine = null
+                    return
+                }
+                state = "loaded"
+                reason = "LiteRT is initialized locally. Image inference is not enabled yet."
+            }
+        } catch (_: Exception) {
+            synchronized(this) {
+                candidate?.close()
+                if (engine === candidate) engine = null
+                if (currentRuntimeGeneration == runtimeGeneration && modelFile().isFile) {
+                    state = "ready"
+                    reason = "LiteRT initialization failed; the verified model remains available."
                 }
             }
         }

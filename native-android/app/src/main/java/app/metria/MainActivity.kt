@@ -77,6 +77,12 @@ private fun MetriaApp(modelLifecycle: ModelLifecycle) {
                 Button(onClick = { status = modelLifecycle.verifyInstalledModel() }) {
                     Text("Verify stored model")
                 }
+                Button(onClick = { status = modelLifecycle.initializeRuntime() }) {
+                    Text("Initialize LiteRT")
+                }
+                Button(onClick = { status = modelLifecycle.unloadRuntime() }) {
+                    Text("Unload LiteRT")
+                }
                 Button(onClick = { status = modelLifecycle.remove() }) {
                     Text("Remove model")
                 }
