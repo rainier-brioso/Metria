@@ -34,6 +34,18 @@ Initial allowlisted actions:
 
 Delete, bulk edit, and goal changes always require explicit confirmation.
 
+## Android voice handoff
+
+Google Assistant App Actions may launch Metria's weight-entry confirmation
+screen with a proposed value and date. The Android native layer receives the
+explicit App Action intent extras, validates them, and passes only a pending
+proposal to the React Native interface. Do not use a URL query string for
+weight values and do not let Assistant write to the vault directly.
+
+If the vault is locked, keep the validated proposal only for the active launch,
+request biometric unlock, and discard it on cancellation or app termination.
+The member sees and confirms the resulting entry exactly as with manual input.
+
 ## Nutrition calculations
 
 The model extracts foods, quantities, preparation methods, and uncertainty from

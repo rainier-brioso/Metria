@@ -55,6 +55,14 @@ weight entries offline.
 - [ ] Implement encrypted biometric-protected local vault.
 - [ ] Add a weight-entry flow: value, date/time, optional note, units, edit,
   and delete confirmation.
+- [ ] Add Android App Actions voice handoff for weight entry: Assistant extracts
+  a proposed value/date and opens Metria's pre-filled confirmation screen;
+  Assistant must never save an entry directly.
+- [ ] Handle the voice handoff safely when the vault is locked: unlock first,
+  then restore the pending validated proposal without exposing it in URLs,
+  notifications, or diagnostic logs.
+- [ ] Test misheard/invalid values, omitted dates/units, cancellation, vault
+  unlock failure, and the current custom-intent locale limitations.
 - [ ] Add 7-day, 30-day, and custom-range charts with moving-average option.
 - [ ] Show trend descriptions without moralising language.
 - [ ] Add export/delete policy screens; do not implement export until its
