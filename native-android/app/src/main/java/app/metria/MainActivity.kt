@@ -14,6 +14,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -93,6 +94,7 @@ private fun MetriaApp(modelLifecycle: ModelLifecycle) {
                 Text(status.backendSummary)
                 Text("Image: ${status.imageState}")
                 Text(status.imageReason)
+                status.proposalDiagnostic?.let { Text("Rejected format: $it") }
                 status.testOutput?.let { Text("Smoke-test output: $it") }
                 Text("Storage: ${status.downloadedBytes} / ${status.expectedBytes} bytes")
                 Button(onClick = { status = modelLifecycle.download() }) {
@@ -128,10 +130,37 @@ private fun MetriaApp(modelLifecycle: ModelLifecycle) {
                 Button(onClick = { status = modelLifecycle.discardPreparedImage() }) {
                     Text("Discard selected image")
                 }
+                status.proposal?.let { proposal -> EditableProposal(proposal) }
                 Button(onClick = { status = modelLifecycle.remove() }) {
                     Text("Remove model")
                 }
             }
         }
     }
+}
+
+@Composable
+private fun EditableProposal(proposal: MealProposal) {
+    Text("Editable meal proposal — not saved", style = MaterialTheme.typography.titleMedium)
+    Text("Confidence: ${proposal.overallConfidence}. Review every field before any future save.")
+    proposal.items.forEachIndexed { index, item ->
+        var name by remember(proposal, index) { mutableStateOf(item.name) }
+        var portion by remember(proposal, index) { mutableStateOf(item.visiblePortion) }
+        Text("Item ${index + 1}: ${item.confidence} confidence, ${item.estimatedGramsRange.min}-${item.estimatedGramsRange.max} g")
+        OutlinedTextField(
+            value = name,
+            onValueChange = { name = it },
+            label = { Text("Food") },
+        )
+        OutlinedTextField(
+            value = portion,
+            onValueChange = { portion = it },
+            label = { Text("Visible portion") },
+        )
+        Text("Preparation: ${item.preparation}")
+    }
+    if (proposal.items.isEmpty()) Text("No food was confidently identified. Enter details manually.")
+    proposal.assumptions.forEach { Text("Assumption: $it") }
+    proposal.questions.forEach { Text("Question: $it") }
+    Text("There is no save action in this vision spike.")
 }

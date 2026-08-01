@@ -82,6 +82,22 @@ infer any native Gate completion from the Expo result.
   JSON validation and the editable proposal interface remain required before
   Gate C can pass.
 
+## Native validated image-proposal evidence - 2026-08-02
+
+- Physical device: Samsung SM-S928B, Android 16.
+- Result: a second local image run completed after the parser fix and produced
+  an accepted structured draft. The UI exposes editable food and portion fields,
+  plus assumptions and questions, with an explicit no-save statement.
+- Validation: only the exact documented proposal fields, positive bounded gram
+  ranges, and allowed confidence values can reach this UI. A single Markdown
+  JSON fence is normalized; all other wrapper text, malformed JSON, and extra
+  fields are rejected.
+- Safety regression found and fixed: an unescaped closing brace in the fence
+  normalizer caused a `PatternSyntaxException`; it was a Metria parser bug, not
+  a model or image failure.
+- Cleanup check: `run-as app.metria ls cache` returned no temporary image file
+  after accepted analysis. There was no fatal-exception or native crash evidence.
+
 ## Gate A baseline
 
 This first implementation adds the Expo/TypeScript shell and an Android native

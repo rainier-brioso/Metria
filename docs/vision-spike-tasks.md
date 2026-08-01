@@ -59,6 +59,12 @@ and removal still need their own physical checks before this gate is closed.
 - [ ] Blurry, empty, malformed, and non-food inputs fail safely to manual entry.
 - [ ] No model result can save a meal or weight entry without a member tap.
 
+**Native evidence so far:** an explicitly selected test image produced a
+strictly validated, editable, non-saving proposal on the physical Android
+phone. Malformed drafts route to manual entry, and the prepared cache file is
+deleted after analysis. Test the remaining blurry/empty/non-food cases before
+closing this gate.
+
 ### Gate D — Privacy and device quality
 
 - [ ] Network inspection confirms no image, screenshot, prompt, or model output

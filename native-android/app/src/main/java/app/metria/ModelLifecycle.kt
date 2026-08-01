@@ -34,6 +34,8 @@ data class ModelStatus(
     val backendSummary: String,
     val imageState: String,
     val imageReason: String,
+    val proposal: MealProposal?,
+    val proposalDiagnostic: String?,
 )
 
 class ModelLifecycle(
@@ -67,6 +69,8 @@ class ModelLifecycle(
     private var testOutput: String? = null
     private var imageState = "none"
     private var imageReason = "No image selected."
+    private var proposal: MealProposal? = null
+    private var proposalDiagnostic: String? = null
 
     @Synchronized
     fun status(): ModelStatus {
@@ -194,6 +198,8 @@ class ModelLifecycle(
         imageState = "analyzing"
         imageReason = "Analyzing the temporary image locally."
         testOutput = null
+        proposal = null
+        proposalDiagnostic = null
         activeInference = executor.submit { analyzePreparedImage(loadedEngine, image) }
         return statusLocked()
     }
@@ -202,6 +208,8 @@ class ModelLifecycle(
     fun discardPreparedImage(): ModelStatus {
         preparedImage?.delete()
         preparedImage = null
+        proposal = null
+        proposalDiagnostic = null
         imageState = "none"
         imageReason = "Temporary image discarded."
         return statusLocked()
@@ -434,9 +442,12 @@ class ModelLifecycle(
                 Contents.of(
                     Content.ImageFile(image.absolutePath),
                     Content.Text(
-                        "Describe the visible food or readable nutrition label. Return JSON only with " +
-                            "kind, items, assumptions, questions, and overall_confidence. " +
-                            "This is an editable draft, not medical advice."
+                        "Return only one JSON object with exactly these keys: kind, items, assumptions, " +
+                            "questions, overall_confidence. kind must be meal_proposal. Each item must have " +
+                            "exactly name, visible_portion, estimated_grams_range, preparation, confidence. " +
+                            "estimated_grams_range must have integer min and max. Confidence values must be " +
+                            "low, medium, or high. Describe visible food or readable nutrition-label facts only. " +
+                            "Use empty items if you cannot identify food. This is an editable draft, not advice."
                     ),
                 )
             )
@@ -446,14 +457,21 @@ class ModelLifecycle(
                 .trim()
             synchronized(this) {
                 if (engine === loadedEngine) {
-                    testOutput = output.take(8_000)
-                    imageReason = "Local image analysis completed. Temporary image discarded."
+                    proposal = MealProposalParser.parse(output)
+                    if (proposal == null) {
+                        proposalDiagnostic = MealProposalParser.describeFormat(output)
+                        imageReason = "Local analysis completed, but its draft was not safe to display. Enter details manually."
+                    } else {
+                        proposalDiagnostic = null
+                        imageReason = "Local image analysis completed. Temporary image discarded."
+                    }
                 }
             }
-        } catch (_: Exception) {
+        } catch (error: Exception) {
             synchronized(this) {
                 if (engine === loadedEngine) {
-                    imageReason = "Local image analysis failed. Try another image or enter details manually."
+                    val category = error.javaClass.simpleName.ifBlank { "runtime error" }
+                    imageReason = "Local image analysis failed ($category). Try another image or enter details manually."
                 }
             }
         } finally {
@@ -545,5 +563,7 @@ class ModelLifecycle(
         "Text: CPU | Vision: CPU | Audio: CPU",
         imageState,
         imageReason,
+        proposal,
+        proposalDiagnostic,
     )
 }
