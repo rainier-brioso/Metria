@@ -14,7 +14,21 @@ nutrition estimates as exact facts.
 - A cloud account, social feed, advertisements, or a subscription system.
 - Photo-based food logging in the first build.
 
-## Milestone 0 — Product and safety foundation
+## Milestone 0 — On-device vision feasibility spike
+
+**Outcome:** prove the core differentiator before ordinary tracker features.
+
+- [ ] Complete the Android-first vision spike specified in
+  [vision-spike-spec.md](vision-spike-spec.md).
+- [ ] Complete the task backlog in
+  [vision-spike-tasks.md](vision-spike-tasks.md).
+- [ ] Make and record an evidence-based go/no-go decision.
+
+**Acceptance:** a meal photo or nutrition-label screenshot produces an editable,
+offline, on-device proposal on a physical Android phone, with the stated privacy
+and performance evidence.
+
+## Milestone 1 — Product and safety foundation
 
 **Outcome:** precise personal-data boundaries and trustworthy language before
 building features.
@@ -32,7 +46,7 @@ building features.
 **Acceptance:** a reviewer can explain who sees each data type and why every
 estimated calorie number is visibly qualified.
 
-## Milestone 1 — Private local tracker
+## Milestone 2 — Private local tracker
 
 **Outcome:** a standalone mobile app that records and graphs member-confirmed
 weight entries offline.
@@ -51,7 +65,7 @@ weight entries offline.
 **Acceptance:** after restart and airplane mode, a member can unlock and view
 their stored weight history; no network request is required.
 
-## Milestone 2 — Assisted text meal input
+## Milestone 3 — Assisted text meal input
 
 **Outcome:** natural-language meal descriptions become editable proposals, not
 silent records.
@@ -71,7 +85,7 @@ silent records.
 **Acceptance:** "one chicken breast with half a plate of rice" creates an
 editable estimated proposal with clear assumptions and only saves after a tap.
 
-## Milestone 3 — Local action assistant
+## Milestone 4 — Local action assistant
 
 **Outcome:** chat is helpful but constrained, private, and auditable.
 
@@ -88,7 +102,7 @@ editable estimated proposal with clear assumptions and only saves after a tap.
 **Acceptance:** text can propose a weight or meal entry, but no assistant
 output can bypass schema validation and the confirmation sheet.
 
-## Milestone 4 — Optional image and label assistance
+## Milestone 5 — Persisted image and label assistance
 
 **Outcome:** a photo or screenshot assists entry while preserving accuracy and
 privacy.
@@ -105,7 +119,7 @@ privacy.
 **Acceptance:** the app never converts an image directly into a saved meal;
 the member sees the interpretation, uncertainty, and assumptions first.
 
-## Milestone 5 — Private alpha and standalone release readiness
+## Milestone 6 — Private alpha and standalone release readiness
 
 **Outcome:** a small independent tester group can use Metria safely.
 
@@ -124,9 +138,10 @@ exposing their health data.
 
 ## Delivery order
 
-1. M0 safety and product decisions.
-2. M1 private weight tracker.
-3. M2 transparent text-assisted meals.
-4. M3 local action assistant.
-5. M4 vision/OCR only after M2/M3 usability validation.
-6. M5 private alpha and store readiness.
+1. M0 on-device vision feasibility spike.
+2. M1 safety and product decisions.
+3. M2 private weight tracker.
+4. M3 transparent text-assisted meals.
+5. M4 local action assistant.
+6. M5 persisted image/OCR assistance.
+7. M6 private alpha and store readiness.
