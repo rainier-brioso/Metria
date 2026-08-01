@@ -74,3 +74,16 @@ can report `ready`, removes partial files after cancellation or failure, and
 uses a download generation to prevent a cancelled/removed background download
 from installing a late artifact. Gate B remains unpassed until the explicit
 2.59 GB model download and physical lifecycle evidence are completed.
+
+## Gate B partial physical evidence — 2026-08-01
+
+- Physical device: Samsung SM-S928B, Android 16, connected by ADB.
+- Download: the member explicitly downloaded the pinned artifact. The app
+  reported `2,588,147,712 / 2,588,147,712 bytes` and `Runtime: ready`.
+- Restart recovery: after force-stopping and relaunching the app, it again
+  reported `Runtime: ready` with the exact expected byte count. The lifecycle
+  verification path completed without a crash.
+- Not yet exercised: cancellation during an active download, removal, an
+  offline network assertion, LiteRT-LM initialization, or image inference.
+  The model is retained on the phone so those later runtime tests do not
+  require another 2.59 GB download.
