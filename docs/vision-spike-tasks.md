@@ -48,6 +48,10 @@ implementation; it does not inherit those checks as a pass.
   access.
 - [ ] Storage consumed by the model is visible to the member and removable.
 
+**Native evidence so far:** explicit native download and restart verification
+passed, and the model completed a fixed offline generation. Native cancellation
+and removal still need their own physical checks before this gate is closed.
+
 ### Gate C — Image proposal safety
 
 - [ ] A meal photo and a nutrition-label screenshot produce only validated,

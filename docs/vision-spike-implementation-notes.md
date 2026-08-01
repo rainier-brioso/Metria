@@ -52,6 +52,21 @@ infer any native Gate completion from the Expo result.
   backend, 256 maximum output tokens, and one input image maximum. No prompt,
   image, conversation, or persistence operation was run in this checkpoint.
 
+## Native offline generation evidence - 2026-08-02
+
+- Physical device: Samsung SM-S928B, Android 16.
+- First attempt: GPU vision delegation failed on this device with an OpenGL
+  shared-memory-manager limitation. CPU vision removed that delegate failure.
+- Second attempt: a `maxNumTokens` value of 256 failed LiteRT tensor allocation
+  (`DYNAMIC_UPDATE_SLICE`). This Gemma 4 artifact requires the 4096-token
+  allocation used by its native runtime guidance.
+- Final configuration: CPU text, CPU vision, CPU audio, 4096 maximum tokens,
+  and one input image maximum.
+- Result: after initialization, the fixed non-personal offline test returned
+  `METRIA_READY` on the physical device.
+- Scope: this proves local text generation only. No photo has been selected,
+  processed, retained, or sent anywhere; no model output can create an entry.
+
 ## Gate A baseline
 
 This first implementation adds the Expo/TypeScript shell and an Android native

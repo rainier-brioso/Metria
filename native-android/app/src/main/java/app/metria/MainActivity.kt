@@ -67,6 +67,8 @@ private fun MetriaApp(modelLifecycle: ModelLifecycle) {
                 )
                 Text("Model: ${status.state}", modifier = Modifier.padding(top = 24.dp))
                 Text(status.reason, modifier = Modifier.padding(top = 8.dp))
+                Text(status.backendSummary)
+                status.testOutput?.let { Text("Smoke-test output: $it") }
                 Text("Storage: ${status.downloadedBytes} / ${status.expectedBytes} bytes")
                 Button(onClick = { status = modelLifecycle.download() }) {
                     Text("Download model")
@@ -82,6 +84,9 @@ private fun MetriaApp(modelLifecycle: ModelLifecycle) {
                 }
                 Button(onClick = { status = modelLifecycle.unloadRuntime() }) {
                     Text("Unload LiteRT")
+                }
+                Button(onClick = { status = modelLifecycle.runTextSmokeTest() }) {
+                    Text("Run offline text test")
                 }
                 Button(onClick = { status = modelLifecycle.remove() }) {
                     Text("Remove model")

@@ -1,6 +1,8 @@
 package app.metria
 
 import com.google.ai.edge.litertlm.Backend
+import com.google.ai.edge.litertlm.Content
+import com.google.ai.edge.litertlm.Conversation
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
 import java.io.File
@@ -21,6 +23,8 @@ data class ModelStatus(
     val downloadedBytes: Long,
     val expectedBytes: Long,
     val reason: String,
+    val testOutput: String?,
+    val backendSummary: String,
 )
 
 class ModelLifecycle(private val privateFilesDir: File) : AutoCloseable {
@@ -39,12 +43,15 @@ class ModelLifecycle(private val privateFilesDir: File) : AutoCloseable {
     private var activeDownload: Future<*>? = null
     private var activeVerification: Future<*>? = null
     private var activeRuntimeLoad: Future<*>? = null
+    private var activeInference: Future<*>? = null
     private var engine: Engine? = null
+    private var activeConversation: Conversation? = null
     private var generation = 0L
     private var runtimeGeneration = 0L
     private var state = "absent"
     private var bytes = 0L
     private var reason = "No local model is installed."
+    private var testOutput: String? = null
 
     @Synchronized
     fun status(): ModelStatus {
@@ -116,12 +123,32 @@ class ModelLifecycle(private val privateFilesDir: File) : AutoCloseable {
         runtimeGeneration += 1
         activeRuntimeLoad?.cancel(true)
         activeRuntimeLoad = null
+        activeInference?.cancel(true)
+        activeInference = null
+        activeConversation?.cancelProcess()
+        activeConversation?.close()
+        activeConversation = null
         engine?.close()
         engine = null
         if (modelFile().isFile) {
             state = "ready"
             reason = "Model verified; LiteRT runtime unloaded."
         }
+        return statusLocked()
+    }
+
+    @Synchronized
+    fun runTextSmokeTest(): ModelStatus {
+        val loadedEngine = engine
+        if (state != "loaded" || loadedEngine == null || !loadedEngine.isInitialized()) {
+            reason = "Initialize LiteRT before running the local smoke test."
+            return statusLocked()
+        }
+        if (activeInference?.isDone == false) return statusLocked()
+        state = "testing"
+        testOutput = null
+        reason = "Running a fixed offline text smoke test."
+        activeInference = executor.submit { runTextSmokeTest(loadedEngine) }
         return statusLocked()
     }
 
@@ -225,9 +252,9 @@ class ModelLifecycle(private val privateFilesDir: File) : AutoCloseable {
             val config = EngineConfig(
                 modelFile().absolutePath,
                 Backend.CPU(),
-                Backend.GPU(),
                 Backend.CPU(),
-                256,
+                Backend.CPU(),
+                4096,
                 1,
                 privateFilesDir.absolutePath,
             )
@@ -257,6 +284,37 @@ class ModelLifecycle(private val privateFilesDir: File) : AutoCloseable {
                     state = "ready"
                     reason = "LiteRT initialization failed; the verified model remains available."
                 }
+            }
+        }
+    }
+
+    private fun runTextSmokeTest(loadedEngine: Engine) {
+        var conversation: Conversation? = null
+        try {
+            conversation = loadedEngine.createConversation()
+            synchronized(this) { activeConversation = conversation }
+            val reply = conversation.sendMessage("Reply with exactly: METRIA_READY")
+            val output = reply.contents.contents
+                .filterIsInstance<Content.Text>()
+                .joinToString("") { it.text }
+                .trim()
+            synchronized(this) {
+                if (engine !== loadedEngine) return
+                state = "loaded"
+                testOutput = output.take(500)
+                reason = "Offline text smoke test completed."
+            }
+        } catch (_: Exception) {
+            synchronized(this) {
+                if (engine === loadedEngine) {
+                    state = "loaded"
+                    reason = "Offline text smoke test failed; LiteRT remains loaded."
+                }
+            }
+        } finally {
+            conversation?.close()
+            synchronized(this) {
+                if (activeConversation === conversation) activeConversation = null
             }
         }
     }
@@ -298,5 +356,12 @@ class ModelLifecycle(private val privateFilesDir: File) : AutoCloseable {
         return digest.digest().joinToString("") { "%02x".format(it) } == modelSha256
     }
 
-    private fun statusLocked() = ModelStatus(state, bytes, expectedBytes, reason)
+    private fun statusLocked() = ModelStatus(
+        state,
+        bytes,
+        expectedBytes,
+        reason,
+        testOutput,
+        "Text: CPU | Vision: CPU | Audio: CPU",
+    )
 }
