@@ -67,6 +67,21 @@ infer any native Gate completion from the Expo result.
 - Scope: this proves local text generation only. No photo has been selected,
   processed, retained, or sent anywhere; no model output can create an entry.
 
+## Native local image inference evidence - 2026-08-02
+
+- Physical device: Samsung SM-S928B, Android 16.
+- Input: the member explicitly selected a non-sensitive test image through the
+  Android system photo picker; no broad photo-library permission was requested.
+- Preparation: Metria decoded, orientation-normalized, resized, and recompressed
+  the input into a temporary JPEG without EXIF metadata.
+- Result: the local model returned a visible food description with questions and
+  assumptions. It remained an untrusted, non-saving draft.
+- Cleanup: after the local analysis, `run-as app.metria ls cache` returned no
+  files. The temporary prepared image had been deleted.
+- Scope: raw model text is displayed only for this transport checkpoint. Strict
+  JSON validation and the editable proposal interface remain required before
+  Gate C can pass.
+
 ## Gate A baseline
 
 This first implementation adds the Expo/TypeScript shell and an Android native

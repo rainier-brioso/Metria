@@ -1,8 +1,15 @@
 package app.metria
 
+import android.content.ContentResolver
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.net.Uri
+import androidx.exifinterface.media.ExifInterface
 import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Content
 import com.google.ai.edge.litertlm.Conversation
+import com.google.ai.edge.litertlm.Contents
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
 import java.io.File
@@ -25,9 +32,14 @@ data class ModelStatus(
     val reason: String,
     val testOutput: String?,
     val backendSummary: String,
+    val imageState: String,
+    val imageReason: String,
 )
 
-class ModelLifecycle(private val privateFilesDir: File) : AutoCloseable {
+class ModelLifecycle(
+    private val privateFilesDir: File,
+    private val cacheDirectory: File,
+) : AutoCloseable {
     companion object {
         const val expectedBytes = 2_588_147_712L
         private const val modelFileName = "gemma-4-E2B-it.litertlm"
@@ -46,12 +58,15 @@ class ModelLifecycle(private val privateFilesDir: File) : AutoCloseable {
     private var activeInference: Future<*>? = null
     private var engine: Engine? = null
     private var activeConversation: Conversation? = null
+    private var preparedImage: File? = null
     private var generation = 0L
     private var runtimeGeneration = 0L
     private var state = "absent"
     private var bytes = 0L
     private var reason = "No local model is installed."
     private var testOutput: String? = null
+    private var imageState = "none"
+    private var imageReason = "No image selected."
 
     @Synchronized
     fun status(): ModelStatus {
@@ -153,8 +168,49 @@ class ModelLifecycle(private val privateFilesDir: File) : AutoCloseable {
     }
 
     @Synchronized
+    fun prepareImage(contentResolver: ContentResolver, sourceUri: Uri): ModelStatus {
+        if (activeInference?.isDone == false) {
+            imageReason = "Wait for the active local operation to finish."
+            return statusLocked()
+        }
+        imageState = "preparing"
+        imageReason = "Preparing a temporary local image copy."
+        executor.submit { prepareImageInBackground(contentResolver, sourceUri) }
+        return statusLocked()
+    }
+
+    @Synchronized
+    fun analyzePreparedImage(): ModelStatus {
+        val loadedEngine = engine
+        val image = preparedImage
+        if (state != "loaded" || loadedEngine == null || !loadedEngine.isInitialized()) {
+            imageReason = "Initialize LiteRT before analyzing an image."
+            return statusLocked()
+        }
+        if (imageState != "ready" || image == null || !image.isFile) {
+            imageReason = "Select and prepare an image before analysis."
+            return statusLocked()
+        }
+        imageState = "analyzing"
+        imageReason = "Analyzing the temporary image locally."
+        testOutput = null
+        activeInference = executor.submit { analyzePreparedImage(loadedEngine, image) }
+        return statusLocked()
+    }
+
+    @Synchronized
+    fun discardPreparedImage(): ModelStatus {
+        preparedImage?.delete()
+        preparedImage = null
+        imageState = "none"
+        imageReason = "Temporary image discarded."
+        return statusLocked()
+    }
+
+    @Synchronized
     fun remove(): ModelStatus {
         unloadRuntime()
+        discardPreparedImage()
         generation += 1
         activeDownload?.cancel(true)
         activeVerification?.cancel(true)
@@ -171,6 +227,7 @@ class ModelLifecycle(private val privateFilesDir: File) : AutoCloseable {
     @Synchronized
     override fun close() {
         unloadRuntime()
+        discardPreparedImage()
         generation += 1
         activeDownload?.cancel(true)
         activeVerification?.cancel(true)
@@ -319,6 +376,129 @@ class ModelLifecycle(private val privateFilesDir: File) : AutoCloseable {
         }
     }
 
+    private fun prepareImageInBackground(contentResolver: ContentResolver, sourceUri: Uri) {
+        var prepared: File? = null
+        try {
+            val orientation = contentResolver.openInputStream(sourceUri).use { input ->
+                requireNotNull(input) { "Selected image could not be opened." }
+                ExifInterface(input).getAttributeInt(
+                    ExifInterface.TAG_ORIENTATION,
+                    ExifInterface.ORIENTATION_NORMAL,
+                )
+            }
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            contentResolver.openInputStream(sourceUri).use { input ->
+                requireNotNull(input) { "Selected image could not be decoded." }
+                BitmapFactory.decodeStream(input, null, bounds)
+            }
+            require(bounds.outWidth > 0 && bounds.outHeight > 0) { "Selected file is not a supported image." }
+            val options = BitmapFactory.Options().apply {
+                inSampleSize = sampleSize(bounds.outWidth, bounds.outHeight, 1536)
+            }
+            val decoded = contentResolver.openInputStream(sourceUri).use { input ->
+                requireNotNull(input) { "Selected image could not be decoded." }
+                requireNotNull(BitmapFactory.decodeStream(input, null, options)) {
+                    "Selected file is not a supported image."
+                }
+            }
+            val normalized = applyOrientation(decoded, orientation)
+            if (normalized !== decoded) decoded.recycle()
+            prepared = File.createTempFile("metria-image-", ".jpg", cacheDirectory)
+            prepared.outputStream().use { output ->
+                require(normalized.compress(Bitmap.CompressFormat.JPEG, 90, output)) {
+                    "Temporary image conversion failed."
+                }
+            }
+            normalized.recycle()
+            synchronized(this) {
+                preparedImage?.delete()
+                preparedImage = prepared
+                imageState = "ready"
+                imageReason = "Image prepared locally with metadata removed."
+            }
+        } catch (_: Exception) {
+            prepared?.delete()
+            synchronized(this) {
+                imageState = "failed"
+                imageReason = "Image preparation failed. Choose a different image or enter details manually."
+            }
+        }
+    }
+
+    private fun analyzePreparedImage(loadedEngine: Engine, image: File) {
+        var conversation: Conversation? = null
+        try {
+            conversation = loadedEngine.createConversation()
+            synchronized(this) { activeConversation = conversation }
+            val response = conversation.sendMessage(
+                Contents.of(
+                    Content.ImageFile(image.absolutePath),
+                    Content.Text(
+                        "Describe the visible food or readable nutrition label. Return JSON only with " +
+                            "kind, items, assumptions, questions, and overall_confidence. " +
+                            "This is an editable draft, not medical advice."
+                    ),
+                )
+            )
+            val output = response.contents.contents
+                .filterIsInstance<Content.Text>()
+                .joinToString("") { it.text }
+                .trim()
+            synchronized(this) {
+                if (engine === loadedEngine) {
+                    testOutput = output.take(8_000)
+                    imageReason = "Local image analysis completed. Temporary image discarded."
+                }
+            }
+        } catch (_: Exception) {
+            synchronized(this) {
+                if (engine === loadedEngine) {
+                    imageReason = "Local image analysis failed. Try another image or enter details manually."
+                }
+            }
+        } finally {
+            conversation?.close()
+            image.delete()
+            synchronized(this) {
+                if (activeConversation === conversation) activeConversation = null
+                if (preparedImage === image) preparedImage = null
+                imageState = "none"
+            }
+        }
+    }
+
+    private fun sampleSize(width: Int, height: Int, maxDimension: Int): Int {
+        var sample = 1
+        var largest = maxOf(width, height)
+        while (largest > maxDimension * 2) {
+            sample *= 2
+            largest /= 2
+        }
+        return sample
+    }
+
+    private fun applyOrientation(bitmap: Bitmap, orientation: Int): Bitmap {
+        val matrix = Matrix()
+        when (orientation) {
+            ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
+            ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
+            ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
+            ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.preScale(-1f, 1f)
+            ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.preScale(1f, -1f)
+            ExifInterface.ORIENTATION_TRANSPOSE -> {
+                matrix.postRotate(90f)
+                matrix.preScale(-1f, 1f)
+            }
+            ExifInterface.ORIENTATION_TRANSVERSE -> {
+                matrix.postRotate(270f)
+                matrix.preScale(-1f, 1f)
+            }
+        }
+        return if (matrix.isIdentity) bitmap else Bitmap.createBitmap(
+            bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true
+        )
+    }
+
     @Synchronized
     private fun beginVerificationLocked() {
         if (activeVerification?.isDone == false || state == "downloading") return
@@ -363,5 +543,7 @@ class ModelLifecycle(private val privateFilesDir: File) : AutoCloseable {
         reason,
         testOutput,
         "Text: CPU | Vision: CPU | Audio: CPU",
+        imageState,
+        imageReason,
     )
 }

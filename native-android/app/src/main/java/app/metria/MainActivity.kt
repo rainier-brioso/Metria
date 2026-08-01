@@ -1,12 +1,17 @@
 package app.metria
 
 import android.os.Bundle
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -20,6 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 
@@ -28,7 +34,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        modelLifecycle = ModelLifecycle(filesDir)
+        modelLifecycle = ModelLifecycle(filesDir, cacheDir)
         setContent { MetriaApp(modelLifecycle) }
     }
 
@@ -41,6 +47,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun MetriaApp(modelLifecycle: ModelLifecycle) {
     var status by remember { mutableStateOf(modelLifecycle.status()) }
+    val context = LocalContext.current
     LaunchedEffect(modelLifecycle) {
         while (true) {
             status = modelLifecycle.status()
@@ -50,13 +57,24 @@ private fun MetriaApp(modelLifecycle: ModelLifecycle) {
     DisposableEffect(modelLifecycle) {
         onDispose { /* Activity owns lifecycle shutdown. */ }
     }
+    val photoPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        if (uri != null) {
+            status = modelLifecycle.prepareImage(
+                contentResolver = context.contentResolver,
+                sourceUri = uri,
+            )
+        }
+    }
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(24.dp),
-                verticalArrangement = Arrangement.Center,
+                    .padding(24.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text("Metria", style = MaterialTheme.typography.displaySmall)
@@ -65,9 +83,16 @@ private fun MetriaApp(modelLifecycle: ModelLifecycle) {
                     modifier = Modifier.padding(top = 8.dp),
                     style = MaterialTheme.typography.titleMedium,
                 )
+                Text(
+                    "Photos and screenshots are processed locally after you choose them. " +
+                        "Metria deletes its temporary copy after analysis and cannot save an entry in this spike.",
+                    modifier = Modifier.padding(top = 8.dp),
+                )
                 Text("Model: ${status.state}", modifier = Modifier.padding(top = 24.dp))
                 Text(status.reason, modifier = Modifier.padding(top = 8.dp))
                 Text(status.backendSummary)
+                Text("Image: ${status.imageState}")
+                Text(status.imageReason)
                 status.testOutput?.let { Text("Smoke-test output: $it") }
                 Text("Storage: ${status.downloadedBytes} / ${status.expectedBytes} bytes")
                 Button(onClick = { status = modelLifecycle.download() }) {
@@ -87,6 +112,21 @@ private fun MetriaApp(modelLifecycle: ModelLifecycle) {
                 }
                 Button(onClick = { status = modelLifecycle.runTextSmokeTest() }) {
                     Text("Run offline text test")
+                }
+                Button(
+                    onClick = {
+                        photoPicker.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    }
+                ) {
+                    Text("Choose photo or screenshot")
+                }
+                Button(onClick = { status = modelLifecycle.analyzePreparedImage() }) {
+                    Text("Analyze selected image locally")
+                }
+                Button(onClick = { status = modelLifecycle.discardPreparedImage() }) {
+                    Text("Discard selected image")
                 }
                 Button(onClick = { status = modelLifecycle.remove() }) {
                     Text("Remove model")
