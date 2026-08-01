@@ -28,6 +28,11 @@ nutrition estimates as exact facts.
 offline, on-device proposal on a physical Android phone, with the stated privacy
 and performance evidence.
 
+**Implementation control:** follow the commit and physical-device checkpoint
+gates in [vision-spike-tasks.md](vision-spike-tasks.md). An implementation agent
+may not treat simulator output, unit tests, or a successful build as sufficient
+evidence for a native/model milestone.
+
 ## Milestone 1 — Product and safety foundation
 
 **Outcome:** precise personal-data boundaries and trustworthy language before

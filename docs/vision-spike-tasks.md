@@ -1,5 +1,62 @@
 # Metria vision spike task backlog
 
+## Delivery protocol and checkpoint gates
+
+These rules apply whether work is performed by a person or an implementation
+agent. Do not batch native, model, privacy, and UI changes into one unverifiable
+change.
+
+- [ ] Work in small, scoped commits. Each commit must state one purpose and
+  include its relevant automated test or a documented reason a test is not yet
+  possible.
+- [ ] Before changing the native runtime, record the exact runtime version,
+  model artifact/version, license acknowledgement route, checksum, and download
+  source in the implementation notes.
+- [ ] Before each physical checkpoint, provide the build/install command, the
+  expected device behavior, and the exact pass/fail evidence to capture.
+- [ ] Do not advance past a checkpoint on code review or simulator evidence
+  alone; use the target physical Android phone.
+- [ ] Treat a crash, unbounded memory growth, unexpected network traffic, or an
+  auto-save path as a blocking failure until diagnosed and retested.
+
+### Gate A — App and native bridge
+
+- [ ] Expo development build installs and launches on the physical Android
+  phone.
+- [ ] Native module reports runtime availability and handles load/unload without
+  crashing the app.
+- [ ] Automated TypeScript tests and native build checks pass.
+
+### Gate B — Local model lifecycle
+
+- [ ] Model download is explicit, cancellable, checks its checksum, and reports
+  clear absent/downloading/ready/failed/removed states.
+- [ ] The downloaded model loads after app restart and runs without network
+  access.
+- [ ] Storage consumed by the model is visible to the member and removable.
+
+### Gate C — Image proposal safety
+
+- [ ] A meal photo and a nutrition-label screenshot produce only validated,
+  editable proposals.
+- [ ] Blurry, empty, malformed, and non-food inputs fail safely to manual entry.
+- [ ] No model result can save a meal or weight entry without a member tap.
+
+### Gate D — Privacy and device quality
+
+- [ ] Network inspection confirms no image, screenshot, prompt, or model output
+  leaves Metria during inference.
+- [ ] Any runtime telemetry is documented, consented, disabled, or replaced
+  before proceeding.
+- [ ] Ten consecutive physical-device runs complete without crash and record
+  latency, storage, battery, and thermal evidence.
+
+### Gate E — Go/no-go review
+
+- [ ] Test corpus results meet every criterion in `vision-spike-spec.md`.
+- [ ] A reviewer records the supported-device baseline and the decision to
+  proceed, change runtime/model, or defer vision.
+
 ## 0. Decisions and setup
 
 - [ ] Confirm Android-first device baseline and identify the physical test phone.
