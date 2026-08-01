@@ -18,7 +18,7 @@ nutrition estimates as exact facts.
 
 **Outcome:** prove the core differentiator before ordinary tracker features.
 
-- [ ] Complete the Android-first vision spike specified in
+- [ ] Complete the native Android-first vision spike specified in
   [vision-spike-spec.md](vision-spike-spec.md).
 - [ ] Complete the task backlog in
   [vision-spike-tasks.md](vision-spike-tasks.md).
@@ -28,7 +28,10 @@ nutrition estimates as exact facts.
 offline, on-device proposal on a physical Android phone, with the stated privacy
 and performance evidence.
 
-**Implementation control:** follow the commit and physical-device checkpoint
+**Implementation control:** M0 is implemented as a native Android application
+in `native-android/`. The earlier Expo experiment remains preserved as evidence
+for the model-artifact lifecycle, but is not a production runtime path. Follow
+the commit and physical-device checkpoint
 gates in [vision-spike-tasks.md](vision-spike-tasks.md). An implementation agent
 may not treat simulator output, unit tests, or a successful build as sufficient
 evidence for a native/model milestone.
@@ -56,7 +59,7 @@ estimated calorie number is visibly qualified.
 **Outcome:** a standalone mobile app that records and graphs member-confirmed
 weight entries offline.
 
-- [ ] Create Expo/TypeScript application shell and local development build.
+- [ ] Create Android/Kotlin application shell and local development build.
 - [ ] Implement encrypted biometric-protected local vault.
 - [ ] Add a weight-entry flow: value, date/time, optional note, units, edit,
   and delete confirmation.

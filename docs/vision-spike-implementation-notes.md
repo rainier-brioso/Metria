@@ -1,5 +1,33 @@
 # Vision spike implementation notes
 
+## Native Android migration decision - 2026-08-02
+
+**Chosen direction:** native Android (Kotlin + Jetpack Compose) in
+`native-android/`, with direct LiteRT-LM integration.
+
+**Why:** LiteRT-LM Android 0.13.0 and 0.10.2 publish Kotlin 2.3 metadata.
+The Expo SDK 53, 56, and 57 experiments compiled their own Android sources with
+Kotlin 2.0.21 or 2.1.20, so none could consume that artifact. Compiler metadata
+suppression is not an acceptable production foundation. Native Android gives
+Metria control of the supported Kotlin/Gradle pair and follows LiteRT-LM's
+intended API.
+
+**Migration boundary:** preserve the Expo project unchanged as the physical
+artifact-lifecycle prototype. Port and retest download, checksum, cancellation,
+restart discovery, storage reporting, and removal before declaring a native
+Gate B pass. Do not copy the already-downloaded model from a member device or
+infer any native Gate completion from the Expo result.
+
+## Native compile checkpoint - 2026-08-02
+
+- Project: `native-android/`, standalone Kotlin/Jetpack Compose application.
+- Runtime dependency: `com.google.ai.edge.litertlm:litertlm-android:0.13.0`.
+- Compiler: Kotlin `2.3.10`; no metadata-suppression flag is present.
+- Build command: `./gradlew.bat :app:assembleDebug --no-daemon`.
+- Result: passed locally after aligning Java and Kotlin bytecode targets to 17.
+- Scope: dependency linkage only; no LiteRT engine initialization, model load, or
+  inference claim yet. The next required evidence is physical-device Gate A.
+
 ## Gate A baseline
 
 This first implementation adds the Expo/TypeScript shell and an Android native

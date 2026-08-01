@@ -27,6 +27,19 @@ change.
   crashing the app.
 - [x] Automated TypeScript tests and native build checks pass.
 
+The checked Expo work above is retained as historical device evidence for the
+artifact lifecycle. New inference work must be completed in the native Android
+implementation; it does not inherit those checks as a pass.
+
+### Gate A - Native Android shell and LiteRT bridge
+
+- [ ] Native Kotlin/Compose debug build installs and launches on the physical
+  Android phone.
+- [ ] The app exposes a LiteRT runtime status and safely loads/unloads the
+  selected local model without blocking the UI.
+- [ ] Android unit tests and `assembleDebug` pass with the chosen supported
+  Kotlin/LiteRT version pair.
+
 ### Gate B — Local model lifecycle
 
 - [ ] Model download is explicit, cancellable, checks its checksum, and reports
@@ -63,13 +76,18 @@ change.
 - [ ] Review Gemma licensing and model-download distribution requirements.
 - [ ] Verify MediaPipe/AI Edge vision API maturity and telemetry behavior.
 - [ ] Define the exact model artifact, version, checksum, and download source.
-- [ ] Create the Expo TypeScript app and Android development-build pipeline.
+- [x] Preserve the Expo prototype as model-lifecycle evidence; do not extend it
+  with the LiteRT runtime.
+- [ ] Create the native Kotlin/Compose Android app and Android development-build
+  pipeline in `native-android/`.
+- [ ] Pin a Kotlin/LiteRT-LM version pair that compiles without suppressing
+  Kotlin metadata checks.
 
 ## 1. Native inference bridge
 
-- [ ] Add an Android native module with `loadModel`, `inferImage`, `cancel`,
-  `unloadModel`, and `runtimeStatus` methods.
-- [ ] Keep inference off the React Native UI thread.
+- [ ] Add an Android `VisionRuntime` with `loadModel`, `inferImage`, `cancel`,
+  `unloadModel`, and `runtimeStatus` operations.
+- [ ] Keep inference off the Compose/UI thread.
 - [ ] Implement cancellable loading and inference with clear memory cleanup.
 - [ ] Add model-download state: absent, downloading, ready, failed, removed.
 - [ ] Verify the model can run without network access after download.
