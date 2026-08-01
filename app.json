@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "name": "Metria",
+    "slug": "metria",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "android": {
+      "package": "app.metria.mobile"
+    }
+  }
+}

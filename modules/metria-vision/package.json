@@ -1,0 +1,10 @@
+{
+  "name": "@metria/vision",
+  "version": "0.1.0",
+  "private": true,
+  "main": "index.ts",
+  "types": "index.ts",
+  "dependencies": {
+    "expo-modules-core": "^2.4.0"
+  }
+}

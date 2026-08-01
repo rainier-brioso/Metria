@@ -1,0 +1,17 @@
+plugins {
+  id 'com.android.library'
+  id 'org.jetbrains.kotlin.android'
+}
+
+android {
+  namespace 'app.metria.vision'
+  compileSdk 35
+
+  defaultConfig {
+    minSdk 24
+  }
+}
+
+dependencies {
+  implementation project(':expo-modules-core')
+}

@@ -7,3 +7,5 @@ coverage/
 *.mobileprovision
 .env
 .env.*
+android/
+ios/
