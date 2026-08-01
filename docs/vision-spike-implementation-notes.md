@@ -28,6 +28,20 @@ infer any native Gate completion from the Expo result.
 - Scope: dependency linkage only; no LiteRT engine initialization, model load, or
   inference claim yet. The next required evidence is physical-device Gate A.
 
+## Native lifecycle physical evidence - 2026-08-02
+
+- Physical device: Samsung SM-S928B, Android 16.
+- Installation: native package `app.metria` installed separately from the
+  historical Expo prototype (`app.metria.mobile`).
+- Download: the member explicitly downloaded the pinned 2,588,147,712-byte
+  artifact through the native Kotlin app.
+- Restart recovery: the native app was force-stopped and relaunched; it
+  reported `verifying`, then `ready`, without starting another download.
+- Data isolation: the Expo prototype was cleared and uninstalled. Its model was
+  not reused; the native app owns its app-private verified model file.
+- Not yet exercised: native cancellation during an active download, native
+  removal, LiteRT engine initialization, offline inference, and image input.
+
 ## Gate A baseline
 
 This first implementation adds the Expo/TypeScript shell and an Android native
