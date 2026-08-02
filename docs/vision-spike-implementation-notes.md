@@ -205,6 +205,18 @@ infer any native Gate completion from the Expo result.
   but it is not yet acceptable as an instant or repeated-analysis experience.
   A product UI requires explicit progress, cancellation, cooldown guidance, and
   a later supported-device/backend evaluation.
+
+## GPU vision retry finding - 2026-08-02
+
+- A single follow-up GPU-vision initialization attempt on the Samsung SM-S928B
+  did not progress beyond `initializing`. This reproduces the earlier GPU
+  delegation incompatibility; it is not a viable fallback for this device.
+- The application was immediately rebuilt and reinstalled with CPU vision.
+  The stored model remained intact and the CPU runtime reached `loaded` after
+  a 2,075 ms initialization.
+- Decision: retain CPU as the only supported backend for this spike. Do not
+  perform further GPU retries until a LiteRT-supported device/backend matrix
+  identifies a compatible acceleration route.
 - Battery percentages during USB-connected ADB testing are not a valid battery
   drain measurement. Do not use them as a battery baseline.
 
