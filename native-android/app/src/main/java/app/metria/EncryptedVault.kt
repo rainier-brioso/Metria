@@ -102,12 +102,16 @@ class EncryptedVault(context: Context) {
         }
     }
 
-    fun addWeight(kilograms: Double, note: String?): Status {
+    fun addWeight(kilograms: Double, note: String?, recordedAt: Instant = Instant.now()): Status {
         if (!WeightUnits.isValidKilograms(kilograms)) {
             return Status.Failed("Enter a weight between 15 and 500 kg.")
         }
         if (sessionKey == null) return Status.Locked
-        val entry = WeightEntry(kilograms = kilograms, note = note?.trim()?.takeIf(String::isNotEmpty))
+        val entry = WeightEntry(
+            kilograms = kilograms,
+            recordedAt = recordedAt,
+            note = note?.trim()?.takeIf(String::isNotEmpty),
+        )
         return try {
             entries.add(entry)
             persist()
@@ -115,6 +119,42 @@ class EncryptedVault(context: Context) {
         } catch (_: Exception) {
             entries.remove(entry)
             Status.Failed("Weight could not be saved locally. Try again before locking the vault.")
+        }
+    }
+
+    fun updateWeight(id: String, kilograms: Double, note: String?, recordedAt: Instant): Status {
+        if (!WeightUnits.isValidKilograms(kilograms)) {
+            return Status.Failed("Enter a weight between 15 and 500 kg.")
+        }
+        if (sessionKey == null) return Status.Locked
+        val index = entries.indexOfFirst { it.id == id }
+        if (index < 0) return Status.Failed("That local entry is no longer available.")
+        val previous = entries[index]
+        entries[index] = previous.copy(
+            kilograms = kilograms,
+            recordedAt = recordedAt,
+            note = note?.trim()?.takeIf(String::isNotEmpty),
+        )
+        return try {
+            persist()
+            Status.Unlocked(entries.toList())
+        } catch (_: Exception) {
+            entries[index] = previous
+            Status.Failed("Weight changes could not be saved locally. Try again before locking the vault.")
+        }
+    }
+
+    fun deleteWeight(id: String): Status {
+        if (sessionKey == null) return Status.Locked
+        val index = entries.indexOfFirst { it.id == id }
+        if (index < 0) return Status.Failed("That local entry is no longer available.")
+        val removed = entries.removeAt(index)
+        return try {
+            persist()
+            Status.Unlocked(entries.toList())
+        } catch (_: Exception) {
+            entries.add(index, removed)
+            Status.Failed("Weight deletion could not be saved locally. Try again before locking the vault.")
         }
     }
 

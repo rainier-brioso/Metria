@@ -17,3 +17,12 @@
   previously saved local test weight returned.
 - This proves the foreground session key was discarded while the encrypted
   vault persisted across process restart.
+
+## Weight-management checkpoint — 2026-08-02
+
+- The member unlocked the existing vault, edited a weight, added an optional
+  note and date, and saved the changes.
+- The deletion dialog accurately described the local entry to be removed; both
+  keeping and deleting an entry behaved as expected.
+- Result: create, date, note, edit, and confirmed delete are proven on the
+  physical device. Trend/history presentation remains the next M2 slice.

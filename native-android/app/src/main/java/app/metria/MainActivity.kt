@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
@@ -33,6 +34,8 @@ import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import kotlinx.coroutines.delay
+import java.time.LocalDate
+import java.time.ZoneId
 
 class MainActivity : FragmentActivity() {
     private lateinit var modelLifecycle: ModelLifecycle
@@ -153,9 +156,18 @@ private fun MetriaApp(modelLifecycle: ModelLifecycle, vault: EncryptedVault, act
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text("Metria", style = MaterialTheme.typography.displaySmall)
-                VaultSection(vaultStatus, activity) { kilograms, note ->
-                    vaultStatus = vault.addWeight(kilograms, note)
-                }
+                VaultSection(
+                    vaultStatus,
+                    activity,
+                    addWeight = { kilograms, note, recordedAt ->
+                        vaultStatus = vault.addWeight(kilograms, note, recordedAt)
+                    },
+                    updateWeight = { id, kilograms, note, recordedAt ->
+                        vaultStatus = vault.updateWeight(id, kilograms, note, recordedAt)
+                    },
+                    deleteWeight = { id -> vaultStatus = vault.deleteWeight(id) },
+                    refresh = { vaultStatus = vault.status() },
+                )
                 Text(
                     "Native Android vision spike",
                     modifier = Modifier.padding(top = 8.dp),
@@ -234,7 +246,10 @@ private fun MetriaApp(modelLifecycle: ModelLifecycle, vault: EncryptedVault, act
 private fun VaultSection(
     status: EncryptedVault.Status,
     activity: MainActivity,
-    addWeight: (Double, String?) -> Unit,
+    addWeight: (Double, String?, java.time.Instant) -> Unit,
+    updateWeight: (String, Double, String?, java.time.Instant) -> Unit,
+    deleteWeight: (String) -> Unit,
+    refresh: () -> Unit,
 ) {
     Text("Private weight vault", style = MaterialTheme.typography.titleLarge)
     when (status) {
@@ -246,35 +261,88 @@ private fun VaultSection(
             Text("Your entries are encrypted and locked.")
             Button(onClick = { activity.authenticateVault(create = false) }) { Text("Unlock vault") }
         }
-        is EncryptedVault.Status.Unlocked -> WeightEntrySection(status.entries, addWeight)
+        is EncryptedVault.Status.Unlocked -> WeightEntrySection(status.entries, addWeight, updateWeight, deleteWeight)
         is EncryptedVault.Status.RecoveryRequired -> Text(status.message)
-        is EncryptedVault.Status.Failed -> Text(status.message)
+        is EncryptedVault.Status.Failed -> {
+            Text(status.message)
+            Button(onClick = refresh) { Text("Return to vault") }
+        }
     }
 }
 
 @Composable
-private fun WeightEntrySection(entries: List<WeightEntry>, addWeight: (Double, String?) -> Unit) {
+private fun WeightEntrySection(
+    entries: List<WeightEntry>,
+    addWeight: (Double, String?, java.time.Instant) -> Unit,
+    updateWeight: (String, Double, String?, java.time.Instant) -> Unit,
+    deleteWeight: (String) -> Unit,
+) {
     var value by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
+    var date by remember { mutableStateOf("") }
     var pounds by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf<WeightEntry?>(null) }
+    var deleting by remember { mutableStateOf<WeightEntry?>(null) }
+    var inputError by remember { mutableStateOf<String?>(null) }
+    fun recordedAtOrNull() = if (date.isBlank()) java.time.Instant.now() else runCatching {
+        LocalDate.parse(date).atStartOfDay(ZoneId.systemDefault()).toInstant()
+    }.getOrNull()
+    fun submit() {
+        val input = value.replace(',', '.').toDoubleOrNull()
+        val recordedAt = recordedAtOrNull()
+        if (input == null || recordedAt == null) {
+            inputError = "Enter a valid weight and an optional date as YYYY-MM-DD."
+            return
+        }
+        val kilograms = if (pounds) WeightUnits.poundsToKilograms(input) else input
+        editing?.let { updateWeight(it.id, kilograms, note, recordedAt) }
+            ?: addWeight(kilograms, note, recordedAt)
+        value = ""
+        note = ""
+        date = ""
+        editing = null
+        inputError = null
+    }
     Text("Vault unlocked — entries stay on this phone.")
+    editing?.let { Text("Editing a local entry") }
     OutlinedTextField(value, { value = it }, label = { Text(if (pounds) "Weight (lb)" else "Weight (kg)") })
     Column(horizontalAlignment = Alignment.Start) {
         Checkbox(checked = pounds, onCheckedChange = { pounds = it })
         Text("Enter in pounds")
     }
     OutlinedTextField(note, { note = it }, label = { Text("Optional note") })
-    Button(onClick = {
-        val input = value.replace(',', '.').toDoubleOrNull()
-        if (input == null) return@Button
-        addWeight(if (pounds) WeightUnits.poundsToKilograms(input) else input, note)
+    OutlinedTextField(date, { date = it }, label = { Text("Optional date (YYYY-MM-DD)") })
+    inputError?.let { Text(it) }
+    Button(onClick = ::submit) { Text(if (editing == null) "Save weight locally" else "Save changes locally") }
+    if (editing != null) Button(onClick = {
+        editing = null
         value = ""
         note = ""
-    }) { Text("Save weight locally") }
+        date = ""
+        inputError = null
+    }) { Text("Cancel edit") }
     Text("${entries.size} local weight ${if (entries.size == 1) "entry" else "entries"}")
     entries.sortedByDescending(WeightEntry::recordedAt).take(10).forEach { entry ->
-        Text("${entry.kilograms} kg — ${entry.recordedAt}")
+        Text("${entry.kilograms} kg — ${entry.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate()}")
         entry.note?.let { Text(it) }
+        Button(onClick = {
+            editing = entry
+            pounds = false
+            value = entry.kilograms.toString()
+            note = entry.note.orEmpty()
+            date = entry.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate().toString()
+            inputError = null
+        }) { Text("Edit") }
+        Button(onClick = { deleting = entry }) { Text("Delete") }
+    }
+    deleting?.let { entry ->
+        AlertDialog(
+            onDismissRequest = { deleting = null },
+            title = { Text("Delete local weight entry?") },
+            text = { Text("This removes ${entry.kilograms} kg from this phone's encrypted vault.") },
+            confirmButton = { Button(onClick = { deleteWeight(entry.id); deleting = null }) { Text("Delete") } },
+            dismissButton = { Button(onClick = { deleting = null }) { Text("Keep entry") } },
+        )
     }
 }
 
