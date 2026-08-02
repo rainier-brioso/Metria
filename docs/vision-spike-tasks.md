@@ -74,6 +74,11 @@ closing this gate.
 - [ ] Ten consecutive physical-device runs complete without crash and record
   latency, storage, battery, and thermal evidence.
 
+**Current Gate D finding:** three sequential CPU-only image runs stayed correct
+and crash-free but degraded from 26.3 s to 59.2 s while thermal status rose to
+moderate. Stop repeated-load testing until the product experience has a
+progress/cancel/cooldown design and a backend/device strategy is decided.
+
 ### Gate E — Go/no-go review
 
 - [ ] Test corpus results meet every criterion in `vision-spike-spec.md`.

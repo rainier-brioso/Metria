@@ -194,6 +194,20 @@ infer any native Gate completion from the Expo result.
   image path. Ten-run stability, battery/thermal trend, and network inspection
   remain outstanding Gate D work.
 
+## Native repeated-image thermal finding - 2026-08-02
+
+- Sequential measured image runs on the Samsung SM-S928B completed correctly
+  without a crash, but CPU-only inference slowed and warmed the device:
+  26,340 ms / thermal 1; 32,890 ms / thermal 1; 59,199 ms / thermal 2.
+- The third run's 59,199 ms latency and Android thermal status 2 (moderate)
+  caused the test to stop rather than continue loading the phone.
+- Conclusion: the CPU-only backend proves offline functionality and correctness,
+  but it is not yet acceptable as an instant or repeated-analysis experience.
+  A product UI requires explicit progress, cancellation, cooldown guidance, and
+  a later supported-device/backend evaluation.
+- Battery percentages during USB-connected ADB testing are not a valid battery
+  drain measurement. Do not use them as a battery baseline.
+
 ## Gate A baseline
 
 This first implementation adds the Expo/TypeScript shell and an Android native
