@@ -54,6 +54,8 @@ building features.
 **Acceptance:** a reviewer can explain who sees each data type and why every
 estimated calorie number is visibly qualified.
 
+**Initial decision record:** [M1 product and safety foundation](m1-product-safety-foundation.md).
+
 ## Milestone 2 — Private local tracker
 
 **Outcome:** a standalone mobile app that records and graphs member-confirmed

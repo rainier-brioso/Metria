@@ -105,6 +105,17 @@ evidence is complete.
 - [ ] Pin a Kotlin/LiteRT-LM version pair that compiles without suppressing
   Kotlin metadata checks.
 
+## M1 decision checkpoint
+
+- [x] Define local-only data boundaries, deletion expectation, and first-use
+  disclosure in `m1-product-safety-foundation.md`.
+- [x] Define assistant safety/confirmation rules and nutrition-confidence
+  labels.
+- [x] Select initial locales and units: Spanish (Spain), English, kg/lb.
+- [x] Decide no default food-data lookup; use manual/label input first and put
+  any future network database behind an explicit-consent adapter.
+- [x] Establish the Android accessibility baseline.
+
 ## 1. Native inference bridge
 
 - [ ] Add an Android `VisionRuntime` with `loadModel`, `inferImage`, `cancel`,
