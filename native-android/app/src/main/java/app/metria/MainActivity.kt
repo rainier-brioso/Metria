@@ -1,10 +1,10 @@
 package app.metria
 
 import android.os.Bundle
+import android.security.keystore.KeyPermanentlyInvalidatedException
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -28,26 +29,95 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.biometric.BiometricPrompt
+import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
 import kotlinx.coroutines.delay
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
     private lateinit var modelLifecycle: ModelLifecycle
+    private lateinit var vault: EncryptedVault
+    private lateinit var biometricPrompt: BiometricPrompt
+    private var vaultCallback: ((EncryptedVault.Status) -> Unit)? = null
+    private var pendingVaultOperation: VaultOperation? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         modelLifecycle = ModelLifecycle(applicationContext, filesDir, cacheDir)
-        setContent { MetriaApp(modelLifecycle) }
+        vault = EncryptedVault(applicationContext)
+        biometricPrompt = BiometricPrompt(this, ContextCompat.getMainExecutor(this),
+            object : BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                    val cipher = result.cryptoObject?.cipher
+                    val operation = pendingVaultOperation
+                    pendingVaultOperation = null
+                    vaultCallback?.invoke(if (cipher == null || operation == null) {
+                        EncryptedVault.Status.Failed("Vault authentication did not return a usable key operation.")
+                    } else if (operation == VaultOperation.Create) {
+                        vault.createAfterAuthentication(cipher)
+                    } else {
+                        vault.unlockAfterAuthentication(cipher)
+                    })
+                }
+
+                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                    pendingVaultOperation = null
+                    vaultCallback?.invoke(EncryptedVault.Status.Failed("Vault unlock was cancelled or unavailable."))
+                }
+            })
+        setContent { MetriaApp(modelLifecycle, vault, this) }
     }
 
     override fun onDestroy() {
+        vault.lock()
         modelLifecycle.close()
         super.onDestroy()
     }
+
+    override fun onStop() {
+        vault.lock()
+        super.onStop()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        vaultCallback?.invoke(vault.status())
+    }
+
+    fun setVaultCallback(callback: ((EncryptedVault.Status) -> Unit)?) {
+        vaultCallback = callback
+    }
+
+    fun authenticateVault(create: Boolean) {
+        val cipher = try {
+            if (create) vault.createCipherForSetup() else vault.createCipherForUnlock()
+        } catch (_: KeyPermanentlyInvalidatedException) {
+            vaultCallback?.invoke(EncryptedVault.Status.RecoveryRequired(
+                "Your phone's biometric security changed, so Android invalidated this vault key."
+            ))
+            return
+        } catch (_: Exception) {
+            vaultCallback?.invoke(EncryptedVault.Status.Failed("Vault authentication could not start."))
+            return
+        }
+        pendingVaultOperation = if (create) VaultOperation.Create else VaultOperation.Unlock
+        biometricPrompt.authenticate(
+            BiometricPrompt.PromptInfo.Builder()
+                .setTitle(if (create) "Protect your Metria vault" else "Unlock your Metria vault")
+                .setSubtitle("Your weight entries stay encrypted on this phone.")
+                .setNegativeButtonText("Cancel")
+                .build(),
+            BiometricPrompt.CryptoObject(cipher),
+        )
+    }
+
+    private enum class VaultOperation { Create, Unlock }
 }
 
 @Composable
-private fun MetriaApp(modelLifecycle: ModelLifecycle) {
+private fun MetriaApp(modelLifecycle: ModelLifecycle, vault: EncryptedVault, activity: MainActivity) {
     var status by remember { mutableStateOf(modelLifecycle.status()) }
+    var vaultStatus by remember { mutableStateOf(vault.status()) }
     val context = LocalContext.current
     LaunchedEffect(modelLifecycle) {
         while (true) {
@@ -57,6 +127,10 @@ private fun MetriaApp(modelLifecycle: ModelLifecycle) {
     }
     DisposableEffect(modelLifecycle) {
         onDispose { /* Activity owns lifecycle shutdown. */ }
+    }
+    DisposableEffect(activity) {
+        activity.setVaultCallback { vaultStatus = it }
+        onDispose { activity.setVaultCallback(null) }
     }
     val photoPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
@@ -79,6 +153,9 @@ private fun MetriaApp(modelLifecycle: ModelLifecycle) {
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text("Metria", style = MaterialTheme.typography.displaySmall)
+                VaultSection(vaultStatus, activity) { kilograms, note ->
+                    vaultStatus = vault.addWeight(kilograms, note)
+                }
                 Text(
                     "Native Android vision spike",
                     modifier = Modifier.padding(top = 8.dp),
@@ -150,6 +227,54 @@ private fun MetriaApp(modelLifecycle: ModelLifecycle) {
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun VaultSection(
+    status: EncryptedVault.Status,
+    activity: MainActivity,
+    addWeight: (Double, String?) -> Unit,
+) {
+    Text("Private weight vault", style = MaterialTheme.typography.titleLarge)
+    when (status) {
+        EncryptedVault.Status.Missing -> {
+            Text("Create an encrypted local vault before recording weight. No account is created.")
+            Button(onClick = { activity.authenticateVault(create = true) }) { Text("Create encrypted vault") }
+        }
+        EncryptedVault.Status.Locked -> {
+            Text("Your entries are encrypted and locked.")
+            Button(onClick = { activity.authenticateVault(create = false) }) { Text("Unlock vault") }
+        }
+        is EncryptedVault.Status.Unlocked -> WeightEntrySection(status.entries, addWeight)
+        is EncryptedVault.Status.RecoveryRequired -> Text(status.message)
+        is EncryptedVault.Status.Failed -> Text(status.message)
+    }
+}
+
+@Composable
+private fun WeightEntrySection(entries: List<WeightEntry>, addWeight: (Double, String?) -> Unit) {
+    var value by remember { mutableStateOf("") }
+    var note by remember { mutableStateOf("") }
+    var pounds by remember { mutableStateOf(false) }
+    Text("Vault unlocked — entries stay on this phone.")
+    OutlinedTextField(value, { value = it }, label = { Text(if (pounds) "Weight (lb)" else "Weight (kg)") })
+    Column(horizontalAlignment = Alignment.Start) {
+        Checkbox(checked = pounds, onCheckedChange = { pounds = it })
+        Text("Enter in pounds")
+    }
+    OutlinedTextField(note, { note = it }, label = { Text("Optional note") })
+    Button(onClick = {
+        val input = value.replace(',', '.').toDoubleOrNull()
+        if (input == null) return@Button
+        addWeight(if (pounds) WeightUnits.poundsToKilograms(input) else input, note)
+        value = ""
+        note = ""
+    }) { Text("Save weight locally") }
+    Text("${entries.size} local weight ${if (entries.size == 1) "entry" else "entries"}")
+    entries.sortedByDescending(WeightEntry::recordedAt).take(10).forEach { entry ->
+        Text("${entry.kilograms} kg — ${entry.recordedAt}")
+        entry.note?.let { Text(it) }
     }
 }
 

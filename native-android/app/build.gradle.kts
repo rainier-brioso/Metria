@@ -29,6 +29,7 @@ kotlin {
 dependencies {
     implementation(platform("androidx.compose:compose-bom:2024.12.01"))
     implementation("androidx.activity:activity-compose:1.10.0")
+    implementation("androidx.biometric:biometric:1.1.0")
     implementation("androidx.exifinterface:exifinterface:1.3.7")
     implementation("com.google.mlkit:text-recognition:16.0.1")
     testImplementation("junit:junit:4.13.2")
