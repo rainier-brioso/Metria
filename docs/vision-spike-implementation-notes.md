@@ -136,6 +136,15 @@ infer any native Gate completion from the Expo result.
 - Cleanup: `run-as app.metria ls cache` returned no temporary prepared image
   after label reading.
 
+## Native blurry-image rejection evidence - 2026-08-02
+
+- Input: a member-selected deliberately blurry image.
+- Result: Metria rejected the local analysis rather than presenting a food or
+  nutrition draft. No entry was created and no source image was retained.
+- Interpretation: this is a passing low-quality-input safety case. A blank
+  image remains to be tested separately before the complete Gate C failure
+  matrix is closed.
+
 ## Gate A baseline
 
 This first implementation adds the Expo/TypeScript shell and an Android native
