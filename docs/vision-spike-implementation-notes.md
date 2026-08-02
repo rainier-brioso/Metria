@@ -183,6 +183,17 @@ infer any native Gate completion from the Expo result.
 - Coverage status: this is an initial baseline, not the required ten-run
   stability/battery/thermal dataset.
 
+## Native offline image-inference evidence - 2026-08-02
+
+- Device state: Airplane mode visibly enabled on the Samsung SM-S928B.
+- Result: LiteRT remained loaded and local meal-image analysis completed with a
+  correct proposal. No network path was needed after the model download.
+- Measurement: 26,340 ms; 2,906 MB Android PSS estimate; battery 85%; thermal
+  status 1 (light).
+- Interpretation: M0's offline runtime requirement is proven for the selected
+  image path. Ten-run stability, battery/thermal trend, and network inspection
+  remain outstanding Gate D work.
+
 ## Gate A baseline
 
 This first implementation adds the Expo/TypeScript shell and an Android native
