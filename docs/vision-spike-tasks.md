@@ -108,6 +108,8 @@ closing this gate.
 - [ ] Resize/orient images locally and remove EXIF metadata before inference.
 - [ ] Add screenshot selection.
 - [ ] Add local OCR proof for nutrition labels.
+- [x] Add bundled on-device OCR proof for nutrition-label screenshots; it
+  displays temporary local text only and deletes its prepared image afterward.
 - [ ] Implement no-retention image handling by default.
 
 ## 3. Safe proposal UX

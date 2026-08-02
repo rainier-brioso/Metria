@@ -35,7 +35,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        modelLifecycle = ModelLifecycle(filesDir, cacheDir)
+        modelLifecycle = ModelLifecycle(applicationContext, filesDir, cacheDir)
         setContent { MetriaApp(modelLifecycle) }
     }
 
@@ -127,10 +127,18 @@ private fun MetriaApp(modelLifecycle: ModelLifecycle) {
                 Button(onClick = { status = modelLifecycle.analyzePreparedImage() }) {
                     Text("Analyze selected image locally")
                 }
+                Button(onClick = { status = modelLifecycle.readNutritionLabel() }) {
+                    Text("Read nutrition label locally")
+                }
                 Button(onClick = { status = modelLifecycle.discardPreparedImage() }) {
                     Text("Discard selected image")
                 }
                 status.proposal?.let { proposal -> EditableProposal(proposal) }
+                status.ocrText?.let { text ->
+                    Text("Local label text — not saved", style = MaterialTheme.typography.titleMedium)
+                    Text(text)
+                    Text("There is no save action in this vision spike.")
+                }
                 Button(onClick = { status = modelLifecycle.remove() }) {
                     Text("Remove model")
                 }

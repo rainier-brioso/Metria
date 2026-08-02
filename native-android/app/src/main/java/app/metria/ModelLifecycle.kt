@@ -1,11 +1,16 @@
 package app.metria
 
 import android.content.ContentResolver
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import android.net.Uri
 import androidx.exifinterface.media.ExifInterface
+import com.google.android.gms.tasks.Tasks
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Content
 import com.google.ai.edge.litertlm.Conversation
@@ -36,9 +41,11 @@ data class ModelStatus(
     val imageReason: String,
     val proposal: MealProposal?,
     val proposalDiagnostic: String?,
+    val ocrText: String?,
 )
 
 class ModelLifecycle(
+    private val appContext: Context,
     private val privateFilesDir: File,
     private val cacheDirectory: File,
 ) : AutoCloseable {
@@ -71,6 +78,7 @@ class ModelLifecycle(
     private var imageReason = "No image selected."
     private var proposal: MealProposal? = null
     private var proposalDiagnostic: String? = null
+    private var ocrText: String? = null
 
     @Synchronized
     fun status(): ModelStatus {
@@ -210,8 +218,23 @@ class ModelLifecycle(
         preparedImage = null
         proposal = null
         proposalDiagnostic = null
+        ocrText = null
         imageState = "none"
         imageReason = "Temporary image discarded."
+        return statusLocked()
+    }
+
+    @Synchronized
+    fun readNutritionLabel(): ModelStatus {
+        val image = preparedImage
+        if (imageState != "ready" || image == null || !image.isFile) {
+            imageReason = "Select and prepare a label image before reading it."
+            return statusLocked()
+        }
+        imageState = "reading_label"
+        imageReason = "Reading the selected label locally."
+        ocrText = null
+        executor.submit { readNutritionLabel(image) }
         return statusLocked()
     }
 
@@ -485,6 +508,33 @@ class ModelLifecycle(
         }
     }
 
+    private fun readNutritionLabel(image: File) {
+        val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+        try {
+            val input = InputImage.fromFilePath(appContext, Uri.fromFile(image))
+            val result = Tasks.await(recognizer.process(input))
+            synchronized(this) {
+                ocrText = result.text.take(4_000)
+                imageReason = if (ocrText.isNullOrBlank()) {
+                    "No readable label text was found. Enter details manually."
+                } else {
+                    "Label text was read locally. Review it before any future entry."
+                }
+            }
+        } catch (_: Exception) {
+            synchronized(this) {
+                imageReason = "Local label reading failed. Enter details manually."
+            }
+        } finally {
+            recognizer.close()
+            image.delete()
+            synchronized(this) {
+                if (preparedImage === image) preparedImage = null
+                imageState = "none"
+            }
+        }
+    }
+
     private fun sampleSize(width: Int, height: Int, maxDimension: Int): Int {
         var sample = 1
         var largest = maxOf(width, height)
@@ -565,5 +615,6 @@ class ModelLifecycle(
         imageReason,
         proposal,
         proposalDiagnostic,
+        ocrText,
     )
 }

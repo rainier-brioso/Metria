@@ -98,6 +98,31 @@ infer any native Gate completion from the Expo result.
 - Cleanup check: `run-as app.metria ls cache` returned no temporary image file
   after accepted analysis. There was no fatal-exception or native crash evidence.
 
+## Native non-food rejection evidence - 2026-08-02
+
+- Input: a member-selected screenshot of an error trace, not a meal or nutrition
+  label.
+- Result: the model returned a JSON-shaped response with the top-level proposal
+  keys, but it failed strict item-level validation and was withheld.
+- Member-visible outcome: `Local analysis completed, but its draft was not safe
+  to display. Enter details manually.` No entry was created.
+- Interpretation: this is a passing non-food safety case. The parser did not
+  treat schema-like output as trustworthy without validating all nested fields.
+
+## Native local OCR evidence - 2026-08-02
+
+- Input: member-selected nutrition-label screenshot with readable printed values.
+- Runtime: bundled ML Kit Latin text recognition, invoked from the native app;
+  it is an on-device library and does not use a cloud OCR endpoint.
+- Result: the app reported `Label text was read locally. Review it before any
+  future entry.` and displayed the extracted text only in memory with no save
+  action.
+- Cleanup: the prepared, metadata-stripped image was deleted after OCR;
+  `run-as app.metria ls cache` returned no cache file afterward.
+- Scope: this is text transcription only. Deterministic nutrition-field
+  extraction and confirmation remain later work; the VLM still safely rejects
+  label images that do not satisfy the meal-proposal contract.
+
 ## Gate A baseline
 
 This first implementation adds the Expo/TypeScript shell and an Android native
