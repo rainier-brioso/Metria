@@ -123,6 +123,19 @@ infer any native Gate completion from the Expo result.
   extraction and confirmation remain later work; the VLM still safely rejects
   label images that do not satisfy the meal-proposal contract.
 
+## Native editable OCR label-draft evidence - 2026-08-02
+
+- Input: the same member-selected nutrition-label screenshot used for the OCR
+  checkpoint.
+- Extraction: deterministic local patterns populated editable calories, protein,
+  carbohydrates, and total-fat fields from the OCR transcription.
+- Result: all expected label fields were visible to the member below the local
+  text, with an explicit warning to verify the packaging and no save action.
+- Test coverage: English labels, Spanish decimal labels, and unrelated text are
+  covered by native unit tests.
+- Cleanup: `run-as app.metria ls cache` returned no temporary prepared image
+  after label reading.
+
 ## Gate A baseline
 
 This first implementation adds the Expo/TypeScript shell and an Android native

@@ -110,6 +110,8 @@ closing this gate.
 - [ ] Add local OCR proof for nutrition labels.
 - [x] Add bundled on-device OCR proof for nutrition-label screenshots; it
   displays temporary local text only and deletes its prepared image afterward.
+- [x] Add deterministic, editable OCR extraction for calories, protein,
+  carbohydrates, and total fat; no field has a save path in the spike.
 - [ ] Implement no-retention image handling by default.
 
 ## 3. Safe proposal UX

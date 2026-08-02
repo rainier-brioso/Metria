@@ -139,12 +139,29 @@ private fun MetriaApp(modelLifecycle: ModelLifecycle) {
                     Text(text)
                     Text("There is no save action in this vision spike.")
                 }
+                status.labelDraft?.let { draft -> EditableLabelDraft(draft) }
                 Button(onClick = { status = modelLifecycle.remove() }) {
                     Text("Remove model")
                 }
             }
         }
     }
+}
+
+@Composable
+private fun EditableLabelDraft(draft: LabelNutritionDraft) {
+    var calories by remember(draft) { mutableStateOf(draft.caloriesKcal?.toString().orEmpty()) }
+    var protein by remember(draft) { mutableStateOf(draft.proteinGrams?.toString().orEmpty()) }
+    var carbohydrate by remember(draft) { mutableStateOf(draft.carbohydrateGrams?.toString().orEmpty()) }
+    var fat by remember(draft) { mutableStateOf(draft.totalFatGrams?.toString().orEmpty()) }
+
+    Text("Editable OCR label draft — not saved", style = MaterialTheme.typography.titleMedium)
+    Text("Verify each value against the packaging. OCR can make mistakes.")
+    OutlinedTextField(calories, { calories = it }, label = { Text("Calories (kcal)") })
+    OutlinedTextField(protein, { protein = it }, label = { Text("Protein (g)") })
+    OutlinedTextField(carbohydrate, { carbohydrate = it }, label = { Text("Carbohydrates (g)") })
+    OutlinedTextField(fat, { fat = it }, label = { Text("Total fat (g)") })
+    Text("There is no save action in this vision spike.")
 }
 
 @Composable

@@ -42,6 +42,7 @@ data class ModelStatus(
     val proposal: MealProposal?,
     val proposalDiagnostic: String?,
     val ocrText: String?,
+    val labelDraft: LabelNutritionDraft?,
 )
 
 class ModelLifecycle(
@@ -79,6 +80,7 @@ class ModelLifecycle(
     private var proposal: MealProposal? = null
     private var proposalDiagnostic: String? = null
     private var ocrText: String? = null
+    private var labelDraft: LabelNutritionDraft? = null
 
     @Synchronized
     fun status(): ModelStatus {
@@ -219,6 +221,7 @@ class ModelLifecycle(
         proposal = null
         proposalDiagnostic = null
         ocrText = null
+        labelDraft = null
         imageState = "none"
         imageReason = "Temporary image discarded."
         return statusLocked()
@@ -234,6 +237,7 @@ class ModelLifecycle(
         imageState = "reading_label"
         imageReason = "Reading the selected label locally."
         ocrText = null
+        labelDraft = null
         executor.submit { readNutritionLabel(image) }
         return statusLocked()
     }
@@ -515,6 +519,7 @@ class ModelLifecycle(
             val result = Tasks.await(recognizer.process(input))
             synchronized(this) {
                 ocrText = result.text.take(4_000)
+                labelDraft = LabelNutritionParser.extract(result.text)
                 imageReason = if (ocrText.isNullOrBlank()) {
                     "No readable label text was found. Enter details manually."
                 } else {
@@ -616,5 +621,6 @@ class ModelLifecycle(
         proposal,
         proposalDiagnostic,
         ocrText,
+        labelDraft,
     )
 }
