@@ -77,6 +77,8 @@ class ModelLifecycle(
     private var preparedImage: File? = null
     private var generation = 0L
     private var runtimeGeneration = 0L
+    private var analysisGeneration = 0L
+    private var nextImageAnalysisAt = 0L
     private var state = "absent"
     private var bytes = 0L
     private var reason = "No local model is installed."
@@ -207,6 +209,12 @@ class ModelLifecycle(
     fun analyzePreparedImage(): ModelStatus {
         val loadedEngine = engine
         val image = preparedImage
+        val remainingCooldownMillis = nextImageAnalysisAt - SystemClock.elapsedRealtime()
+        if (remainingCooldownMillis > 0) {
+            val remainingSeconds = (remainingCooldownMillis + 999) / 1_000
+            imageReason = "Let your phone cool for about $remainingSeconds seconds before another local analysis. You can enter details manually."
+            return statusLocked()
+        }
         if (state != "loaded" || loadedEngine == null || !loadedEngine.isInitialized()) {
             imageReason = "Initialize LiteRT before analyzing an image."
             return statusLocked()
@@ -220,8 +228,25 @@ class ModelLifecycle(
         testOutput = null
         proposal = null
         proposalDiagnostic = null
+        val currentAnalysisGeneration = ++analysisGeneration
         val startedAt = SystemClock.elapsedRealtime()
-        activeInference = executor.submit { analyzePreparedImage(loadedEngine, image, startedAt) }
+        activeInference = executor.submit {
+            analyzePreparedImage(loadedEngine, image, currentAnalysisGeneration, startedAt)
+        }
+        return statusLocked()
+    }
+
+    @Synchronized
+    fun cancelImageAnalysis(): ModelStatus {
+        if (imageState != "analyzing") return statusLocked()
+        analysisGeneration += 1
+        activeInference?.cancel(true)
+        activeInference = null
+        activeConversation?.cancelProcess()
+        preparedImage?.delete()
+        preparedImage = null
+        imageState = "none"
+        imageReason = "Local analysis stopped and its temporary image was discarded. Enter details manually or choose another image later."
         return statusLocked()
     }
 
@@ -479,7 +504,12 @@ class ModelLifecycle(
         }
     }
 
-    private fun analyzePreparedImage(loadedEngine: Engine, image: File, startedAt: Long) {
+    private fun analyzePreparedImage(
+        loadedEngine: Engine,
+        image: File,
+        currentAnalysisGeneration: Long,
+        startedAt: Long,
+    ) {
         var conversation: Conversation? = null
         try {
             conversation = loadedEngine.createConversation()
@@ -502,7 +532,7 @@ class ModelLifecycle(
                 .joinToString("") { it.text }
                 .trim()
             synchronized(this) {
-                if (engine === loadedEngine) {
+                if (engine === loadedEngine && currentAnalysisGeneration == analysisGeneration) {
                     proposal = MealProposalParser.parse(output)
                     if (proposal == null) {
                         proposalDiagnostic = MealProposalParser.describeFormat(output)
@@ -512,11 +542,14 @@ class ModelLifecycle(
                         imageReason = "Local image analysis completed. Temporary image discarded."
                     }
                     diagnostics = measurement("local image analysis", startedAt)
+                    if (SystemClock.elapsedRealtime() - startedAt >= 20_000) {
+                        nextImageAnalysisAt = SystemClock.elapsedRealtime() + 60_000
+                    }
                 }
             }
         } catch (error: Exception) {
             synchronized(this) {
-                if (engine === loadedEngine) {
+                if (engine === loadedEngine && currentAnalysisGeneration == analysisGeneration) {
                     val category = error.javaClass.simpleName.ifBlank { "runtime error" }
                     imageReason = "Local image analysis failed ($category). Try another image or enter details manually."
                 }

@@ -86,7 +86,8 @@ private fun MetriaApp(modelLifecycle: ModelLifecycle) {
                 )
                 Text(
                     "Photos and screenshots are processed locally after you choose them. " +
-                        "Metria deletes its temporary copy after analysis and cannot save an entry in this spike.",
+                        "Analysis can take up to a minute. Metria deletes its temporary copy after analysis " +
+                        "and cannot save an entry in this spike.",
                     modifier = Modifier.padding(top = 8.dp),
                 )
                 Text("Model: ${status.state}", modifier = Modifier.padding(top = 24.dp))
@@ -127,6 +128,9 @@ private fun MetriaApp(modelLifecycle: ModelLifecycle) {
                 }
                 Button(onClick = { status = modelLifecycle.analyzePreparedImage() }) {
                     Text("Analyze selected image locally")
+                }
+                Button(onClick = { status = modelLifecycle.cancelImageAnalysis() }) {
+                    Text("Stop local analysis")
                 }
                 Button(onClick = { status = modelLifecycle.readNutritionLabel() }) {
                     Text("Read nutrition label locally")
