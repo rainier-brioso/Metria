@@ -26,3 +26,13 @@
   keeping and deleting an entry behaved as expected.
 - Result: create, date, note, edit, and confirmed delete are proven on the
   physical device. Trend/history presentation remains the next M2 slice.
+
+## Member UX direction — 2026-08-03
+
+- The member reviewed the redesigned locked and member-facing screens on the
+  physical phone and approved the calm private-wellness visual direction.
+- The product UI now separates Today, History, and Privacy from diagnostic
+  model controls. The encrypted vault behavior remains unchanged beneath it.
+- Remaining M2 UX work: restore entry edit/delete from History, support custom
+  history ranges, and complete offline/biometric-cancellation accessibility
+  checks before declaring M2 complete.

@@ -8,12 +8,16 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -30,6 +34,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
@@ -68,7 +74,7 @@ class MainActivity : FragmentActivity() {
                     vaultCallback?.invoke(EncryptedVault.Status.Failed("Vault unlock was cancelled or unavailable."))
                 }
             })
-        setContent { MetriaApp(modelLifecycle, vault, this) }
+        setContent { MetriaMemberShell(vault, this) }
     }
 
     override fun onDestroy() {
@@ -89,6 +95,11 @@ class MainActivity : FragmentActivity() {
 
     fun setVaultCallback(callback: ((EncryptedVault.Status) -> Unit)?) {
         vaultCallback = callback
+    }
+
+    fun lockVault() {
+        vault.lock()
+        vaultCallback?.invoke(vault.status())
     }
 
     fun authenticateVault(create: Boolean) {
@@ -115,6 +126,119 @@ class MainActivity : FragmentActivity() {
     }
 
     private enum class VaultOperation { Create, Unlock }
+}
+
+@Composable
+private fun MemberApp(vault: EncryptedVault, activity: MainActivity) {
+    var status by remember { mutableStateOf(vault.status()) }
+    var tab by remember { mutableStateOf("Today") }
+    var editorFor by remember { mutableStateOf<WeightEntry?>(null) }
+    var showingEditor by remember { mutableStateOf(false) }
+    var deleting by remember { mutableStateOf<WeightEntry?>(null) }
+    DisposableEffect(activity) {
+        activity.setVaultCallback { status = it }
+        onDispose { activity.setVaultCallback(null) }
+    }
+    MaterialTheme {
+        Surface(modifier = Modifier.fillMaxSize()) {
+            Column(
+                modifier = Modifier.fillMaxSize().padding(24.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Text("Metria", style = MaterialTheme.typography.displaySmall)
+                Text("Private wellness, on your phone.", style = MaterialTheme.typography.titleMedium)
+                when (val vaultStatus = status) {
+                    EncryptedVault.Status.Missing -> {
+                        Text("Create your encrypted local vault. Metria does not create an account or upload your entries.")
+                        Button(onClick = { activity.authenticateVault(create = true) }) { Text("Create private vault") }
+                    }
+                    EncryptedVault.Status.Locked -> {
+                        Card { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text("Your vault is locked", style = MaterialTheme.typography.titleLarge)
+                            Text("Unlock with your fingerprint to view weights and trends.")
+                            Button(onClick = { activity.authenticateVault(create = false) }) { Text("Unlock vault") }
+                        } }
+                    }
+                    is EncryptedVault.Status.RecoveryRequired -> Text(vaultStatus.message)
+                    is EncryptedVault.Status.Failed -> {
+                        Text(vaultStatus.message)
+                        Button(onClick = { status = vault.status() }) { Text("Try again") }
+                    }
+                    is EncryptedVault.Status.Unlocked -> {
+                        Text("Today · History · Privacy")
+                        Button(onClick = { tab = "Today" }) { Text("Today") }
+                        Button(onClick = { tab = "History" }) { Text("History") }
+                        Button(onClick = { tab = "Privacy" }) { Text("Privacy") }
+                        when (tab) {
+                            "Today" -> {
+                                val latest = vaultStatus.entries.maxByOrNull(WeightEntry::recordedAt)
+                                Text("Today", style = MaterialTheme.typography.headlineMedium)
+                                Card { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text(if (latest == null) "No weight recorded yet" else "Latest weight")
+                                    Text(latest?.let { "${"%.1f".format(it.kilograms)} kg" } ?: "Add your first entry", style = MaterialTheme.typography.displaySmall)
+                                    Text(WeightTrend.description(WeightTrend.filter(vaultStatus.entries, LocalDate.now().minusDays(29), LocalDate.now())))
+                                } }
+                                Button(onClick = { editorFor = null; showingEditor = true }) { Text("Add weight") }
+                            }
+                            "History" -> {
+                                Text("History", style = MaterialTheme.typography.headlineMedium)
+                                WeightTrendSection(vaultStatus.entries)
+                                vaultStatus.entries.sortedByDescending(WeightEntry::recordedAt).forEach { entry ->
+                                    Card { Column(Modifier.padding(16.dp)) {
+                                        Text("${"%.1f".format(entry.kilograms)} kg · ${entry.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate()}")
+                                        entry.note?.let { Text(it) }
+                                        Button(onClick = { editorFor = entry; showingEditor = true }) { Text("Edit") }
+                                        Button(onClick = { deleting = entry }) { Text("Delete") }
+                                    } }
+                                }
+                            }
+                            else -> {
+                                Text("Privacy", style = MaterialTheme.typography.headlineMedium)
+                                Text("Your entries are encrypted on this phone. Metria has no account, default sync, advertising, or analytics.")
+                                Text("Photos used for optional local assistance are temporary and deleted after processing.")
+                                Button(onClick = { activity.lockVault(); tab = "Today" }) { Text("Lock vault now") }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if (showingEditor && status is EncryptedVault.Status.Unlocked) {
+        WeightEditor(editorFor, onDismiss = { showingEditor = false }) { kilograms, note, recordedAt ->
+            status = editorFor?.let { vault.updateWeight(it.id, kilograms, note, recordedAt) }
+                ?: vault.addWeight(kilograms, note, recordedAt)
+            showingEditor = false
+        }
+    }
+    deleting?.let { entry ->
+        AlertDialog(
+            onDismissRequest = { deleting = null }, title = { Text("Delete weight entry?") },
+            text = { Text("This removes ${"%.1f".format(entry.kilograms)} kg from this phone's encrypted vault.") },
+            confirmButton = { Button(onClick = { status = vault.deleteWeight(entry.id); deleting = null }) { Text("Delete") } },
+            dismissButton = { Button(onClick = { deleting = null }) { Text("Keep entry") } },
+        )
+    }
+}
+
+@Composable
+private fun WeightEditor(entry: WeightEntry?, onDismiss: () -> Unit, onSave: (Double, String?, java.time.Instant) -> Unit) {
+    var value by remember(entry) { mutableStateOf(entry?.kilograms?.toString().orEmpty()) }
+    var note by remember(entry) { mutableStateOf(entry?.note.orEmpty()) }
+    var date by remember(entry) { mutableStateOf(entry?.recordedAt?.atZone(ZoneId.systemDefault())?.toLocalDate()?.toString().orEmpty()) }
+    var error by remember { mutableStateOf<String?>(null) }
+    AlertDialog(onDismissRequest = onDismiss, title = { Text(if (entry == null) "Add weight" else "Edit weight") }, text = {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(value, { value = it }, label = { Text("Weight (kg)") })
+            OutlinedTextField(date, { date = it }, label = { Text("Date (YYYY-MM-DD, optional)") })
+            OutlinedTextField(note, { note = it }, label = { Text("Optional note") })
+            error?.let { Text(it) }
+        }
+    }, confirmButton = { Button(onClick = {
+        val kilograms = value.replace(',', '.').toDoubleOrNull()
+        val recordedAt = if (date.isBlank()) java.time.Instant.now() else runCatching { LocalDate.parse(date).atStartOfDay(ZoneId.systemDefault()).toInstant() }.getOrNull()
+        if (kilograms == null || recordedAt == null || !WeightUnits.isValidKilograms(kilograms)) error = "Enter 15–500 kg and a valid optional date." else onSave(kilograms, note, recordedAt)
+    }) { Text("Save") } }, dismissButton = { Button(onClick = onDismiss) { Text("Cancel") } })
 }
 
 @Composable
@@ -261,11 +385,57 @@ private fun VaultSection(
             Text("Your entries are encrypted and locked.")
             Button(onClick = { activity.authenticateVault(create = false) }) { Text("Unlock vault") }
         }
-        is EncryptedVault.Status.Unlocked -> WeightEntrySection(status.entries, addWeight, updateWeight, deleteWeight)
+        is EncryptedVault.Status.Unlocked -> {
+            WeightEntrySection(status.entries, addWeight, updateWeight, deleteWeight)
+            WeightTrendSection(status.entries)
+        }
         is EncryptedVault.Status.RecoveryRequired -> Text(status.message)
         is EncryptedVault.Status.Failed -> {
             Text(status.message)
             Button(onClick = refresh) { Text("Return to vault") }
+        }
+    }
+}
+
+@Composable
+private fun WeightTrendSection(entries: List<WeightEntry>) {
+    var range by remember { mutableStateOf("7 days") }
+    var average by remember { mutableStateOf(false) }
+    var startText by remember { mutableStateOf("") }
+    var endText by remember { mutableStateOf("") }
+    val today = LocalDate.now()
+    val start = when (range) {
+        "7 days" -> today.minusDays(6)
+        "30 days" -> today.minusDays(29)
+        else -> runCatching { LocalDate.parse(startText) }.getOrNull()
+    }
+    val end = if (range == "Custom") runCatching { LocalDate.parse(endText) }.getOrNull() else today
+    val points = WeightTrend.filter(entries, start, end)
+    val displayed = if (average) WeightTrend.movingAverage(points) else points
+    Text("Local weight trend", style = MaterialTheme.typography.titleLarge)
+    Button(onClick = { range = "7 days" }) { Text("7 days") }
+    Button(onClick = { range = "30 days" }) { Text("30 days") }
+    Button(onClick = { range = "Custom" }) { Text("Custom range") }
+    Checkbox(checked = average, onCheckedChange = { average = it })
+    Text("Show 3-entry moving average")
+    if (range == "Custom") {
+        OutlinedTextField(startText, { startText = it }, label = { Text("Start (YYYY-MM-DD)") })
+        OutlinedTextField(endText, { endText = it }, label = { Text("End (YYYY-MM-DD)") })
+    }
+    Text(WeightTrend.description(points))
+    if (displayed.size >= 2) {
+        Canvas(Modifier.fillMaxWidth().height(180.dp)) {
+            val low = displayed.minOf(WeightTrendPoint::kilograms)
+            val high = displayed.maxOf(WeightTrendPoint::kilograms)
+            val span = (high - low).takeIf { it > 0.0 } ?: 1.0
+            val step = size.width / (displayed.size - 1)
+            for (index in 1 until displayed.size) {
+                val previous = displayed[index - 1]
+                val current = displayed[index]
+                val from = Offset((index - 1) * step, size.height - (((previous.kilograms - low) / span) * size.height).toFloat())
+                val to = Offset(index * step, size.height - (((current.kilograms - low) / span) * size.height).toFloat())
+                drawLine(Color(0xFF5E35B1), from, to, strokeWidth = 6f)
+            }
         }
     }
 }
