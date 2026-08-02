@@ -236,6 +236,8 @@ infer any native Gate completion from the Expo result.
   while it was running.
 - Result: the operation returned to a safe state without displaying a late
   proposal. The temporary prepared image was discarded as designed.
+- A completed local image analysis followed by an immediate retry displayed the
+  member-visible cooldown message instead of starting another hot run.
 - Battery percentages during USB-connected ADB testing are not a valid battery
   drain measurement. Do not use them as a battery baseline.
 
