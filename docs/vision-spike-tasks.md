@@ -76,14 +76,21 @@ closing this gate.
 
 **Current Gate D finding:** three sequential CPU-only image runs stayed correct
 and crash-free but degraded from 26.3 s to 59.2 s while thermal status rose to
-moderate. Stop repeated-load testing until the product experience has a
-progress/cancel/cooldown design and a backend/device strategy is decided.
+moderate. Continue the CPU path as an explicitly experimental assisted-entry
+feature, but implement progress/cancel/cooldown and retain manual entry before
+resuming repeated-load testing. GPU and NPU are unsupported on the current
+device/runtime combination.
 
 ### Gate E — Go/no-go review
 
 - [ ] Test corpus results meet every criterion in `vision-spike-spec.md`.
 - [ ] A reviewer records the supported-device baseline and the decision to
   proceed, change runtime/model, or defer vision.
+
+**Current Gate E decision:** conditional continuation. Keep CPU vision in
+development as an optional, non-instant assisted-entry path; do not block M1/M2
+on accelerated vision. Gate E is not passed until its privacy and device-quality
+evidence is complete.
 
 ## 0. Decisions and setup
 

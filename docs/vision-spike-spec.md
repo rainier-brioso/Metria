@@ -161,3 +161,18 @@ Proceed to Metria meal persistence only if all are true:
 
 If any condition fails, retain manual entry as the primary route and either
 evaluate a smaller model/runtime or defer local vision.
+
+## Current decision — conditional continuation (2026-08-02)
+
+Continue developing the known CPU-only image path as an optional, explicitly
+experimental assisted-entry feature. It remains local, offline after download,
+editable, and non-saving. It must not be represented as instant, silent, or
+available on every Android device.
+
+The current Samsung SM-S928B evidence shows useful output but 26–59 second
+image latency and rising thermal status during sequential runs. GPU and NPU
+initialization are not supported for this model/runtime/device combination.
+The product path therefore requires visible progress, cancellation, a
+member-visible cooldown/retry state, and a manual-entry alternative. M0 remains
+open for network/telemetry evidence and lifecycle checks; M1/M2 may proceed
+without waiting for accelerated vision.
