@@ -145,6 +145,15 @@ infer any native Gate completion from the Expo result.
   image remains to be tested separately before the complete Gate C failure
   matrix is closed.
 
+## Native blank-image rejection evidence - 2026-08-02
+
+- Input: a member-selected blank/empty image.
+- Result: Metria rejected the analysis and exposed the manual-entry fallback;
+  it did not invent a food proposal or create an entry.
+- Coverage status: valid meal image, nutrition label, non-food screenshot,
+  blurry image, and blank image have now been exercised on the physical phone.
+  A deliberately corrupt image file remains the final Gate C failure variant.
+
 ## Gate A baseline
 
 This first implementation adds the Expo/TypeScript shell and an Android native
