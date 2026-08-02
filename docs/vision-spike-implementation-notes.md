@@ -166,6 +166,23 @@ infer any native Gate completion from the Expo result.
   blank, and corrupt-image cases have all passed their expected safety behavior
   on the physical device. There is no model-output save action in M0.
 
+## Native device-quality baseline - 2026-08-02
+
+- Physical device: Samsung SM-S928B, Android 16.
+- Runtime initialization: 2,075 ms; 2,879 MB Android PSS estimate; battery
+  78%; thermal status 0 (none).
+- Local pasta image analysis: 31,426 ms; 2,905 MB Android PSS estimate;
+  battery 82%; thermal status 1 (light). The proposal was visibly useful but
+  the latency requires an explicit progress/cancel experience in product UX.
+- Local nutrition-label OCR: 263 ms; 577 MB Android PSS estimate; battery
+  84%; thermal status 0.
+- Measurement note: PSS is an instantaneous OS estimate and should not be
+  compared as a precise model-memory figure across operations. Measurements are
+  visible only in-memory during the spike and contain no image, prompt, OCR,
+  or model-output data.
+- Coverage status: this is an initial baseline, not the required ten-run
+  stability/battery/thermal dataset.
+
 ## Gate A baseline
 
 This first implementation adds the Expo/TypeScript shell and an Android native

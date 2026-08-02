@@ -129,6 +129,8 @@ closing this gate.
 - [ ] Document any runtime telemetry and consent/configuration decision.
 - [ ] Add redacted diagnostics only: timing, memory status, model version,
   and failure category; never image/prompt/output content.
+- [x] Add in-memory, redacted local-operation diagnostics for duration, Android
+  PSS estimate, battery percentage, thermal state, and backend selection.
 
 ## 5. Verification
 

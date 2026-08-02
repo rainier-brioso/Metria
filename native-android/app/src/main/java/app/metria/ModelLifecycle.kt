@@ -6,6 +6,11 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import android.net.Uri
+import android.os.BatteryManager
+import android.os.Build
+import android.os.Debug
+import android.os.PowerManager
+import android.os.SystemClock
 import androidx.exifinterface.media.ExifInterface
 import com.google.android.gms.tasks.Tasks
 import com.google.mlkit.vision.common.InputImage
@@ -43,6 +48,7 @@ data class ModelStatus(
     val proposalDiagnostic: String?,
     val ocrText: String?,
     val labelDraft: LabelNutritionDraft?,
+    val diagnostics: String,
 )
 
 class ModelLifecycle(
@@ -81,6 +87,7 @@ class ModelLifecycle(
     private var proposalDiagnostic: String? = null
     private var ocrText: String? = null
     private var labelDraft: LabelNutritionDraft? = null
+    private var diagnostics = "No local performance measurement recorded yet."
 
     @Synchronized
     fun status(): ModelStatus {
@@ -143,7 +150,8 @@ class ModelLifecycle(
         val currentRuntimeGeneration = ++runtimeGeneration
         state = "initializing"
         reason = "Initializing LiteRT locally. This can take a moment."
-        activeRuntimeLoad = executor.submit { initializeRuntime(currentRuntimeGeneration) }
+        val startedAt = SystemClock.elapsedRealtime()
+        activeRuntimeLoad = executor.submit { initializeRuntime(currentRuntimeGeneration, startedAt) }
         return statusLocked()
     }
 
@@ -177,7 +185,8 @@ class ModelLifecycle(
         state = "testing"
         testOutput = null
         reason = "Running a fixed offline text smoke test."
-        activeInference = executor.submit { runTextSmokeTest(loadedEngine) }
+        val startedAt = SystemClock.elapsedRealtime()
+        activeInference = executor.submit { runTextSmokeTest(loadedEngine, startedAt) }
         return statusLocked()
     }
 
@@ -189,7 +198,8 @@ class ModelLifecycle(
         }
         imageState = "preparing"
         imageReason = "Preparing a temporary local image copy."
-        executor.submit { prepareImageInBackground(contentResolver, sourceUri) }
+        val startedAt = SystemClock.elapsedRealtime()
+        executor.submit { prepareImageInBackground(contentResolver, sourceUri, startedAt) }
         return statusLocked()
     }
 
@@ -210,7 +220,8 @@ class ModelLifecycle(
         testOutput = null
         proposal = null
         proposalDiagnostic = null
-        activeInference = executor.submit { analyzePreparedImage(loadedEngine, image) }
+        val startedAt = SystemClock.elapsedRealtime()
+        activeInference = executor.submit { analyzePreparedImage(loadedEngine, image, startedAt) }
         return statusLocked()
     }
 
@@ -238,7 +249,8 @@ class ModelLifecycle(
         imageReason = "Reading the selected label locally."
         ocrText = null
         labelDraft = null
-        executor.submit { readNutritionLabel(image) }
+        val startedAt = SystemClock.elapsedRealtime()
+        executor.submit { readNutritionLabel(image, startedAt) }
         return statusLocked()
     }
 
@@ -338,7 +350,7 @@ class ModelLifecycle(
         }
     }
 
-    private fun initializeRuntime(currentRuntimeGeneration: Long) {
+    private fun initializeRuntime(currentRuntimeGeneration: Long, startedAt: Long) {
         var candidate: Engine? = null
         try {
             val config = EngineConfig(
@@ -366,7 +378,8 @@ class ModelLifecycle(
                     return
                 }
                 state = "loaded"
-                reason = "LiteRT is initialized locally. Image inference is not enabled yet."
+                reason = "LiteRT is initialized locally. Text and image analysis are available locally."
+                diagnostics = measurement("LiteRT initialization", startedAt)
             }
         } catch (_: Exception) {
             synchronized(this) {
@@ -380,7 +393,7 @@ class ModelLifecycle(
         }
     }
 
-    private fun runTextSmokeTest(loadedEngine: Engine) {
+    private fun runTextSmokeTest(loadedEngine: Engine, startedAt: Long) {
         var conversation: Conversation? = null
         try {
             conversation = loadedEngine.createConversation()
@@ -395,6 +408,7 @@ class ModelLifecycle(
                 state = "loaded"
                 testOutput = output.take(500)
                 reason = "Offline text smoke test completed."
+                diagnostics = measurement("offline text test", startedAt)
             }
         } catch (_: Exception) {
             synchronized(this) {
@@ -411,7 +425,11 @@ class ModelLifecycle(
         }
     }
 
-    private fun prepareImageInBackground(contentResolver: ContentResolver, sourceUri: Uri) {
+    private fun prepareImageInBackground(
+        contentResolver: ContentResolver,
+        sourceUri: Uri,
+        startedAt: Long,
+    ) {
         var prepared: File? = null
         try {
             val orientation = contentResolver.openInputStream(sourceUri).use { input ->
@@ -450,6 +468,7 @@ class ModelLifecycle(
                 preparedImage = prepared
                 imageState = "ready"
                 imageReason = "Image prepared locally with metadata removed."
+                diagnostics = measurement("image preparation", startedAt)
             }
         } catch (_: Exception) {
             prepared?.delete()
@@ -460,7 +479,7 @@ class ModelLifecycle(
         }
     }
 
-    private fun analyzePreparedImage(loadedEngine: Engine, image: File) {
+    private fun analyzePreparedImage(loadedEngine: Engine, image: File, startedAt: Long) {
         var conversation: Conversation? = null
         try {
             conversation = loadedEngine.createConversation()
@@ -492,6 +511,7 @@ class ModelLifecycle(
                         proposalDiagnostic = null
                         imageReason = "Local image analysis completed. Temporary image discarded."
                     }
+                    diagnostics = measurement("local image analysis", startedAt)
                 }
             }
         } catch (error: Exception) {
@@ -512,7 +532,7 @@ class ModelLifecycle(
         }
     }
 
-    private fun readNutritionLabel(image: File) {
+    private fun readNutritionLabel(image: File, startedAt: Long) {
         val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
         try {
             val input = InputImage.fromFilePath(appContext, Uri.fromFile(image))
@@ -525,6 +545,7 @@ class ModelLifecycle(
                 } else {
                     "Label text was read locally. Review it before any future entry."
                 }
+                diagnostics = measurement("local OCR", startedAt)
             }
         } catch (_: Exception) {
             synchronized(this) {
@@ -609,6 +630,21 @@ class ModelLifecycle(
         return digest.digest().joinToString("") { "%02x".format(it) } == modelSha256
     }
 
+    private fun measurement(stage: String, startedAt: Long): String {
+        val elapsedMs = SystemClock.elapsedRealtime() - startedAt
+        val memoryMb = Debug.getPss() / 1024
+        val battery = appContext.getSystemService(BatteryManager::class.java)
+            ?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+            ?.takeIf { it in 0..100 }
+        val thermal = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            appContext.getSystemService(PowerManager::class.java)?.currentThermalStatus
+        } else {
+            null
+        }
+        return "$stage: ${elapsedMs} ms | process memory: ${memoryMb} MB | " +
+            "battery: ${battery ?: "unknown"}% | thermal: ${thermal ?: "unknown"}"
+    }
+
     private fun statusLocked() = ModelStatus(
         state,
         bytes,
@@ -622,5 +658,6 @@ class ModelLifecycle(
         proposalDiagnostic,
         ocrText,
         labelDraft,
+        diagnostics,
     )
 }

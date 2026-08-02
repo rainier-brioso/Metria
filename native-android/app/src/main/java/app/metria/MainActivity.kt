@@ -92,6 +92,7 @@ private fun MetriaApp(modelLifecycle: ModelLifecycle) {
                 Text("Model: ${status.state}", modifier = Modifier.padding(top = 24.dp))
                 Text(status.reason, modifier = Modifier.padding(top = 8.dp))
                 Text(status.backendSummary)
+                Text(status.diagnostics)
                 Text("Image: ${status.imageState}")
                 Text(status.imageReason)
                 status.proposalDiagnostic?.let { Text("Rejected format: $it") }
