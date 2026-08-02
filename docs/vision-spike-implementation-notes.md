@@ -217,6 +217,17 @@ infer any native Gate completion from the Expo result.
 - Decision: retain CPU as the only supported backend for this spike. Do not
   perform further GPU retries until a LiteRT-supported device/backend matrix
   identifies a compatible acceleration route.
+
+## NPU vision retry finding - 2026-08-02
+
+- A single NPU-vision initialization was attempted on the Samsung SM-S928B.
+  It did not reach `loaded`; after initialization was triggered, Metria lost
+  its foreground activity and Android returned to the launcher.
+- No image inference was attempted. The CPU build was rebuilt and reinstalled
+  immediately; Android subsequently launched its `MainActivity` successfully.
+- Decision: this model/runtime/device combination has no proven accelerated
+  vision backend. CPU is the sole supported spike configuration until a
+  supported LiteRT accelerator route is verified on the target device.
 - Battery percentages during USB-connected ADB testing are not a valid battery
   drain measurement. Do not use them as a battery baseline.
 
