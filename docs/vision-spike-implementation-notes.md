@@ -228,6 +228,14 @@ infer any native Gate completion from the Expo result.
 - Decision: this model/runtime/device combination has no proven accelerated
   vision backend. CPU is the sole supported spike configuration until a
   supported LiteRT accelerator route is verified on the target device.
+
+## CPU analysis-stop checkpoint - 2026-08-02
+
+- Physical device: Samsung SM-S928B, Android 16.
+- The member started a local image analysis and selected `Stop local analysis`
+  while it was running.
+- Result: the operation returned to a safe state without displaying a late
+  proposal. The temporary prepared image was discarded as designed.
 - Battery percentages during USB-connected ADB testing are not a valid battery
   drain measurement. Do not use them as a battery baseline.
 
