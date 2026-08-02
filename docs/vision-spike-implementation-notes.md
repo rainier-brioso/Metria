@@ -154,6 +154,18 @@ infer any native Gate completion from the Expo result.
   blurry image, and blank image have now been exercised on the physical phone.
   A deliberately corrupt image file remains the final Gate C failure variant.
 
+## Native corrupt-image rejection evidence - 2026-08-02
+
+- Fixture: `metria-corrupt-image.jpg`, a 118-byte non-JPEG test file containing
+  no member data, was added temporarily to the phone's Downloads directory.
+- Result: selecting it through the normal Android photo picker produced `Image
+  preparation failed.` The decoder rejected it before any LiteRT call.
+- Cleanup: the named fixture was removed from Downloads immediately after the
+  test; a follow-up device check confirmed it no longer existed.
+- Gate C: valid meal proposal, nutrition-label OCR draft, non-food, blurry,
+  blank, and corrupt-image cases have all passed their expected safety behavior
+  on the physical device. There is no model-output save action in M0.
+
 ## Gate A baseline
 
 This first implementation adds the Expo/TypeScript shell and an Android native

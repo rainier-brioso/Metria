@@ -54,10 +54,10 @@ and removal still need their own physical checks before this gate is closed.
 
 ### Gate C — Image proposal safety
 
-- [ ] A meal photo and a nutrition-label screenshot produce only validated,
+- [x] A meal photo and a nutrition-label screenshot produce only validated,
   editable proposals.
-- [ ] Blurry, empty, malformed, and non-food inputs fail safely to manual entry.
-- [ ] No model result can save a meal or weight entry without a member tap.
+- [x] Blurry, empty, malformed, and non-food inputs fail safely to manual entry.
+- [x] No model result can save a meal or weight entry without a member tap.
 
 **Native evidence so far:** an explicitly selected test image produced a
 strictly validated, editable, non-saving proposal on the physical Android
