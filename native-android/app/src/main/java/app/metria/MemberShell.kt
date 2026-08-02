@@ -1,6 +1,12 @@
 package app.metria
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.ShowChart
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -12,12 +18,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationBar
@@ -52,6 +61,8 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
     var status by remember { mutableStateOf(vault.status()) }
     var destination by remember { mutableStateOf("Today") }
     var addSheet by remember { mutableStateOf(false) }
+    var editEntry by remember { mutableStateOf<WeightEntry?>(null) }
+    var deleteEntry by remember { mutableStateOf<WeightEntry?>(null) }
     DisposableEffect(activity) {
         activity.setVaultCallback { status = it }
         onDispose { activity.setVaultCallback(null) }
@@ -78,15 +89,17 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                     Column(Modifier.padding(padding).verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
                         when (destination) {
                             "Today" -> TodayScreen(vaultStatus.entries, onAdd = { addSheet = true })
-                            "History" -> HistoryScreen(vaultStatus.entries)
+                            "History" -> HistoryScreen(vaultStatus.entries, onEdit = { editEntry = it }, onDelete = { deleteEntry = it })
                             else -> PrivacyScreen { activity.lockVault() }
                         }
                     }
                 }
-                if (addSheet) WeightBottomSheet(onDismiss = { addSheet = false }) { kilograms, note, date ->
-                    status = vault.addWeight(kilograms, note, date)
+                if (addSheet || editEntry != null) WeightBottomSheet(editEntry, onDismiss = { addSheet = false; editEntry = null }) { kilograms, note, date ->
+                    status = editEntry?.let { vault.updateWeight(it.id, kilograms, note, date) } ?: vault.addWeight(kilograms, note, date)
                     addSheet = false
+                    editEntry = null
                 }
+                deleteEntry?.let { entry -> AlertDialog(onDismissRequest = { deleteEntry = null }, title = { Text("Delete entry?") }, text = { Text("This removes ${"%.1f".format(entry.kilograms)} kg from your encrypted vault.") }, confirmButton = { Button(onClick = { status = vault.deleteWeight(entry.id); deleteEntry = null }) { Text("Delete") } }, dismissButton = { Button(onClick = { deleteEntry = null }) { Text("Keep entry") } }) }
             }
         }
     }
@@ -108,7 +121,12 @@ private fun VaultGate(title: String, body: String, action: () -> Unit) {
 private fun MemberNavigation(current: String, choose: (String) -> Unit) {
     NavigationBar(containerColor = Color.White) {
         listOf("Today", "History", "Privacy").forEach { item ->
-            NavigationBarItem(selected = current == item, onClick = { choose(item) }, icon = { Text(if (item == "Today") "●" else if (item == "History") "◌" else "◐") }, label = { Text(item) })
+            val icon = when (item) {
+                "Today" -> Icons.Default.Home
+                "History" -> Icons.Default.ShowChart
+                else -> Icons.Default.Lock
+            }
+            NavigationBarItem(selected = current == item, onClick = { choose(item) }, icon = { Icon(icon, contentDescription = item) }, label = { Text(item) })
         }
     }
 }
@@ -137,13 +155,19 @@ private fun TodayScreen(entries: List<WeightEntry>, onAdd: () -> Unit) {
 }
 
 @Composable
-private fun HistoryScreen(entries: List<WeightEntry>) {
+private fun HistoryScreen(entries: List<WeightEntry>, onEdit: (WeightEntry) -> Unit, onDelete: (WeightEntry) -> Unit) {
     var days by remember { mutableStateOf(30) }
-    val points = WeightTrend.filter(entries, LocalDate.now().minusDays((days - 1).toLong()), LocalDate.now())
+    var customStart by remember { mutableStateOf("") }
+    var customEnd by remember { mutableStateOf("") }
+    val start = if (days == 0) runCatching { LocalDate.parse(customStart) }.getOrNull() else LocalDate.now().minusDays((days - 1).toLong())
+    val end = if (days == 0) runCatching { LocalDate.parse(customEnd) }.getOrNull() else LocalDate.now()
+    val points = WeightTrend.filter(entries, start, end)
     Text("History", style = MaterialTheme.typography.displaySmall)
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         listOf(7, 30, 90).forEach { option -> FilterChip(selected = days == option, onClick = { days = option }, label = { Text("${option}D") }) }
+        FilterChip(selected = days == 0, onClick = { days = 0 }, label = { Text("Custom") })
     }
+    if (days == 0) { OutlinedTextField(customStart, { customStart = it }, label = { Text("Start · YYYY-MM-DD") }, modifier = Modifier.fillMaxWidth()); OutlinedTextField(customEnd, { customEnd = it }, label = { Text("End · YYYY-MM-DD") }, modifier = Modifier.fillMaxWidth()) }
     Card(colors = CardDefaults.cardColors(containerColor = Color.White)) { Column(Modifier.padding(20.dp)) {
         Text("Weight trend", style = MaterialTheme.typography.titleMedium)
         Text(WeightTrend.description(points), color = Color(0xFF655D6E))
@@ -153,7 +177,13 @@ private fun HistoryScreen(entries: List<WeightEntry>) {
     entries.sortedByDescending(WeightEntry::recordedAt).forEach { entry ->
         Card(colors = CardDefaults.cardColors(containerColor = Color.White)) { Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
             Column { Text("${"%.1f".format(entry.kilograms)} kg", style = MaterialTheme.typography.titleMedium); entry.note?.let { Text(it, color = Color(0xFF655D6E)) } }
-            Text(entry.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate().toString(), color = Color(0xFF655D6E))
+            Column(horizontalAlignment = Alignment.End) {
+                Text(entry.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate().toString(), color = Color(0xFF655D6E))
+                Row {
+                    IconButton(onClick = { onEdit(entry) }) { Icon(Icons.Default.Edit, contentDescription = "Edit weight entry") }
+                    IconButton(onClick = { onDelete(entry) }) { Icon(Icons.Default.Delete, contentDescription = "Delete weight entry") }
+                }
+            }
         } }
     }
 }
@@ -181,10 +211,10 @@ private fun MiniTrend(points: List<WeightTrendPoint>) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun WeightBottomSheet(onDismiss: () -> Unit, save: (Double, String?, Instant) -> Unit) {
-    var value by remember { mutableStateOf("") }; var note by remember { mutableStateOf("") }; var date by remember { mutableStateOf("") }; var error by remember { mutableStateOf<String?>(null) }
+private fun WeightBottomSheet(entry: WeightEntry?, onDismiss: () -> Unit, save: (Double, String?, Instant) -> Unit) {
+    var value by remember(entry) { mutableStateOf(entry?.kilograms?.toString().orEmpty()) }; var note by remember(entry) { mutableStateOf(entry?.note.orEmpty()) }; var date by remember(entry) { mutableStateOf(entry?.recordedAt?.atZone(ZoneId.systemDefault())?.toLocalDate()?.toString().orEmpty()) }; var error by remember { mutableStateOf<String?>(null) }
     ModalBottomSheet(onDismissRequest = onDismiss) { Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Record weight", style = MaterialTheme.typography.headlineMedium)
+        Text(if (entry == null) "Record weight" else "Edit weight", style = MaterialTheme.typography.headlineMedium)
         Text("Saved only after you confirm.", color = Color(0xFF655D6E))
         OutlinedTextField(value, { value = it }, label = { Text("Weight in kg") }, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(date, { date = it }, label = { Text("Date · YYYY-MM-DD (optional)") }, modifier = Modifier.fillMaxWidth())
