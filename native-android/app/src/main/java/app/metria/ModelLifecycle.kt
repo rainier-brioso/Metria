@@ -226,6 +226,13 @@ class ModelLifecycle(
     }
 
     @Synchronized
+    fun clearMealDraft(): ModelStatus {
+        assistantProposal = null
+        assistantDiagnostic = null
+        return statusLocked()
+    }
+
+    @Synchronized
     fun prepareImage(contentResolver: ContentResolver, sourceUri: Uri): ModelStatus {
         if (activeInference?.isDone == false) {
             imageReason = "Wait for the active local operation to finish."

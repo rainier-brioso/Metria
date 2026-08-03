@@ -26,7 +26,11 @@ class EncryptedVault(context: Context) {
     sealed interface Status {
         data object Missing : Status
         data object Locked : Status
-        data class Unlocked(val entries: List<WeightEntry>, val displayUnit: String = "kg") : Status
+        data class Unlocked(
+            val entries: List<WeightEntry>,
+            val displayUnit: String = "kg",
+            val meals: List<MealEntry> = emptyList(),
+        ) : Status
         data class RecoveryRequired(val message: String) : Status
         data class Failed(val message: String) : Status
     }
@@ -36,10 +40,11 @@ class EncryptedVault(context: Context) {
     private val dataFile = File(vaultDirectory, "weights.json.enc")
     private var sessionKey: ByteArray? = null
     private var entries: MutableList<WeightEntry> = mutableListOf()
+    private var meals: MutableList<MealEntry> = mutableListOf()
     private var displayUnit = "kg"
 
     fun status(): Status = when {
-        sessionKey != null -> Status.Unlocked(entries.toList(), displayUnit)
+        sessionKey != null -> Status.Unlocked(entries.toList(), displayUnit, meals.toList())
         envelopeFile.isFile && dataFile.isFile -> Status.Locked
         envelopeFile.isFile || dataFile.isFile -> Status.RecoveryRequired(
             "This vault is incomplete and cannot be opened safely. Remove its local data to start again."
@@ -64,8 +69,9 @@ class EncryptedVault(context: Context) {
             writeAtomic(envelopeFile, envelope.toString().toByteArray(Charsets.UTF_8))
             sessionKey = dataKey
             entries = mutableListOf()
+            meals = mutableListOf()
             persist()
-            Status.Unlocked(entries.toList())
+            Status.Unlocked(entries.toList(), meals = meals.toList())
         } catch (error: Exception) {
             dataKey.fill(0)
             Status.Failed("Vault setup could not complete. No entries were saved.")
@@ -86,11 +92,12 @@ class EncryptedVault(context: Context) {
             val envelope = readEnvelope()
             val dataKey = authenticatedCipher.doFinal(decode(envelope.getString("wrappedKey")))
             require(dataKey.size == 32) { "Unexpected vault key length." }
-            val loadedEntries = decryptEntries(dataKey)
+            val loaded = decryptPayload(dataKey)
             lock()
             sessionKey = dataKey
-            entries = loadedEntries.toMutableList()
-            Status.Unlocked(entries.toList())
+            entries = loaded.entries.toMutableList()
+            meals = loaded.meals.toMutableList()
+            Status.Unlocked(entries.toList(), displayUnit, meals.toList())
         } catch (_: KeyPermanentlyInvalidatedException) {
             lock()
             Status.RecoveryRequired(
@@ -116,7 +123,7 @@ class EncryptedVault(context: Context) {
         return try {
             entries.add(entry)
             persist()
-            Status.Unlocked(entries.toList())
+            Status.Unlocked(entries.toList(), displayUnit, meals.toList())
         } catch (_: Exception) {
             entries.remove(entry)
             Status.Failed("Weight could not be saved locally. Try again before locking the vault.")
@@ -138,7 +145,7 @@ class EncryptedVault(context: Context) {
         )
         return try {
             persist()
-            Status.Unlocked(entries.toList())
+            Status.Unlocked(entries.toList(), displayUnit, meals.toList())
         } catch (_: Exception) {
             entries[index] = previous
             Status.Failed("Weight changes could not be saved locally. Try again before locking the vault.")
@@ -152,7 +159,7 @@ class EncryptedVault(context: Context) {
         val removed = entries.removeAt(index)
         return try {
             persist()
-            Status.Unlocked(entries.toList())
+            Status.Unlocked(entries.toList(), displayUnit, meals.toList())
         } catch (_: Exception) {
             entries.add(index, removed)
             Status.Failed("Weight deletion could not be saved locally. Try again before locking the vault.")
@@ -166,7 +173,7 @@ class EncryptedVault(context: Context) {
         displayUnit = unit
         return try {
             persist()
-            Status.Unlocked(entries.toList(), displayUnit)
+            Status.Unlocked(entries.toList(), displayUnit, meals.toList())
         } catch (_: Exception) {
             displayUnit = previous
             Status.Failed("Weight unit could not be saved locally.")
@@ -177,6 +184,7 @@ class EncryptedVault(context: Context) {
         sessionKey?.fill(0)
         sessionKey = null
         entries = mutableListOf()
+        meals = mutableListOf()
         displayUnit = "kg"
     }
 
@@ -190,6 +198,25 @@ class EncryptedVault(context: Context) {
                     .put("recordedAt", entry.recordedAt.toString())
                     .put("note", entry.note))
             }
+        }).put("meals", JSONArray().apply {
+            meals.forEach { meal ->
+                put(JSONObject()
+                    .put("id", meal.id)
+                    .put("recordedAt", meal.recordedAt.toString())
+                    .put("confidence", meal.confidence)
+                    .put("source", meal.source)
+                    .put("assumptions", JSONArray(meal.assumptions))
+                    .put("items", JSONArray().apply {
+                        meal.items.forEach { item -> put(JSONObject()
+                            .put("name", item.name).put("grams", item.grams)
+                            .put("preparation", item.preparation)) }
+                    })
+                    .put("nutrition", meal.nutrition?.let { nutrition -> JSONObject()
+                        .put("caloriesKcal", nutrition.caloriesKcal).put("proteinGrams", nutrition.proteinGrams)
+                        .put("carbohydrateGrams", nutrition.carbohydrateGrams).put("fatGrams", nutrition.fatGrams)
+                        .put("source", nutrition.source)
+                    }))
+            }
         }).toString().toByteArray(Charsets.UTF_8)
         val encrypted = cipher(Cipher.ENCRYPT_MODE, rawKey(key))
         val envelope = JSONObject()
@@ -199,7 +226,9 @@ class EncryptedVault(context: Context) {
         writeAtomic(dataFile, envelope.toString().toByteArray(Charsets.UTF_8))
     }
 
-    private fun decryptEntries(key: ByteArray): List<WeightEntry> {
+    private data class LoadedPayload(val entries: List<WeightEntry>, val meals: List<MealEntry>)
+
+    private fun decryptPayload(key: ByteArray): LoadedPayload {
         val envelope = JSONObject(dataFile.readText(Charsets.UTF_8))
         require(envelope.getInt("version") == 1) { "Unsupported vault version." }
         val decrypted = cipher(Cipher.DECRYPT_MODE, rawKey(key), decode(envelope.getString("iv")))
@@ -207,7 +236,7 @@ class EncryptedVault(context: Context) {
         val root = JSONObject(decrypted.toString(Charsets.UTF_8))
         displayUnit = root.optString("displayUnit", "kg").takeIf { it == "kg" || it == "lb" } ?: "kg"
         val items = root.getJSONArray("entries")
-        return buildList {
+        val loadedEntries = buildList {
             for (index in 0 until items.length()) {
                 val item = items.getJSONObject(index)
                 add(WeightEntry(
@@ -218,7 +247,54 @@ class EncryptedVault(context: Context) {
                 ))
             }
         }
+        val loadedMeals = root.optJSONArray("meals")?.let { items -> buildList {
+            for (index in 0 until items.length()) {
+                val item = items.getJSONObject(index)
+                val nutrition = item.optJSONObject("nutrition")?.let { values -> MealNutrition(
+                    caloriesKcal = values.optNullableDouble("caloriesKcal"),
+                    proteinGrams = values.optNullableDouble("proteinGrams"),
+                    carbohydrateGrams = values.optNullableDouble("carbohydrateGrams"),
+                    fatGrams = values.optNullableDouble("fatGrams"),
+                    source = values.optString("source", "manual_entry"),
+                )
+                }
+                val meal = MealEntry(
+                    id = item.getString("id"), recordedAt = Instant.parse(item.getString("recordedAt")),
+                    confidence = item.getString("confidence"), source = item.getString("source"),
+                    assumptions = item.getJSONArray("assumptions").let { assumptions -> List(assumptions.length()) { assumptions.getString(it) } },
+                    items = item.getJSONArray("items").let { mealItems -> List(mealItems.length()) { position ->
+                        mealItems.getJSONObject(position).let { entry -> MealEntryItem(
+                            name = entry.getString("name"),
+                            grams = entry.optNullableInt("grams"),
+                            preparation = entry.optString("preparation").takeIf(String::isNotEmpty),
+                        ) }
+                    } }, nutrition = nutrition,
+                )
+                require(MealEntryValidation.valid(meal)) { "Invalid meal record." }
+                add(meal)
+            }
+        } } ?: emptyList()
+        return LoadedPayload(loadedEntries, loadedMeals)
     }
+
+    fun addMeal(entry: MealEntry): Status {
+        if (sessionKey == null) return Status.Locked
+        if (!MealEntryValidation.valid(entry)) return Status.Failed("This meal draft contains invalid values.")
+        meals.add(entry)
+        return try {
+            persist()
+            Status.Unlocked(entries.toList(), displayUnit, meals.toList())
+        } catch (_: Exception) {
+            meals.remove(entry)
+            Status.Failed("Meal could not be saved locally. Try again before locking the vault.")
+        }
+    }
+
+    private fun JSONObject.optNullableDouble(name: String): Double? =
+        if (isNull(name)) null else optDouble(name).takeIf { !it.isNaN() }
+
+    private fun JSONObject.optNullableInt(name: String): Int? =
+        if (isNull(name)) null else optInt(name).takeIf { it != 0 || opt(name) == 0 }
 
     private fun readEnvelope(): JSONObject {
         require(envelopeFile.isFile && dataFile.isFile) { "No complete vault is available." }

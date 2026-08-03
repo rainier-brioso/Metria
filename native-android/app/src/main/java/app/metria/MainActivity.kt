@@ -132,6 +132,8 @@ class MainActivity : FragmentActivity() {
 
     fun askLocalMealAssistant(description: String): ModelStatus = modelLifecycle.proposeMealFromText(description)
 
+    fun clearLocalMealDraft(): ModelStatus = modelLifecycle.clearMealDraft()
+
     fun lockVault() {
         vault.lock()
         vaultCallback?.invoke(vault.status())

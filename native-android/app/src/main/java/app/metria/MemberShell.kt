@@ -68,6 +68,7 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
     var deleteEntry by remember { mutableStateOf<WeightEntry?>(null) }
     var voiceDraft by remember { mutableStateOf<VoiceWeightDraft?>(null) }
     var modelStatus by remember { mutableStateOf(activity.modelStatus()) }
+    var mealProposalForConfirmation by remember { mutableStateOf<MealProposal?>(null) }
     DisposableEffect(activity) {
         activity.setVaultCallback { status = it }
         activity.setVoiceDraftCallback { voiceDraft = it }
@@ -103,12 +104,13 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                 ) { padding ->
                     Column(Modifier.padding(padding).verticalScroll(rememberScrollState()).padding(20.dp).padding(bottom = 104.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
                         when (destination) {
-                            "Today" -> TodayScreen(vaultStatus.entries, vaultStatus.displayUnit, onAdd = { addSheet = true })
-                            "History" -> HistoryScreen(vaultStatus.entries, vaultStatus.displayUnit, onEdit = { editEntry = it }, onDelete = { deleteEntry = it })
+                            "Today" -> TodayScreen(vaultStatus.entries, vaultStatus.meals, vaultStatus.displayUnit, onAdd = { addSheet = true })
+                            "History" -> HistoryScreen(vaultStatus.entries, vaultStatus.meals, vaultStatus.displayUnit, onEdit = { editEntry = it }, onDelete = { deleteEntry = it })
                             "Assistant" -> AssistantScreen(
                                 modelStatus = modelStatus,
                                 prepare = { modelStatus = activity.prepareLocalAssistant() },
                                 ask = { modelStatus = activity.askLocalMealAssistant(it) },
+                                review = { mealProposalForConfirmation = it },
                             )
                             else -> PrivacyScreen(vaultStatus.displayUnit, { status = vault.setDisplayUnit(if (vaultStatus.displayUnit == "kg") "lb" else "kg") }) { activity.lockVault() }
                         }
@@ -121,6 +123,15 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                     voiceDraft = null
                 }
                 deleteEntry?.let { entry -> AlertDialog(onDismissRequest = { deleteEntry = null }, title = { Text("Delete entry?") }, text = { Text("This removes ${"%.1f".format(entry.kilograms)} kg from your encrypted vault.") }, confirmButton = { Button(onClick = { status = vault.deleteWeight(entry.id); deleteEntry = null }) { Text("Delete") } }, dismissButton = { Button(onClick = { deleteEntry = null }) { Text("Keep entry") } }) }
+                mealProposalForConfirmation?.let { proposal -> MealConfirmationSheet(
+                    proposal = proposal,
+                    onDismiss = { mealProposalForConfirmation = null },
+                    onSave = { meal ->
+                        status = vault.addMeal(meal)
+                        mealProposalForConfirmation = null
+                        modelStatus = activity.clearLocalMealDraft()
+                    },
+                ) }
             }
         }
     }
@@ -154,7 +165,7 @@ private fun MemberNavigation(current: String, choose: (String) -> Unit) {
 }
 
 @Composable
-private fun AssistantScreen(modelStatus: ModelStatus, prepare: () -> Unit, ask: (String) -> Unit) {
+private fun AssistantScreen(modelStatus: ModelStatus, prepare: () -> Unit, ask: (String) -> Unit, review: (MealProposal) -> Unit) {
     var mealText by remember { mutableStateOf("") }
     Text("Ask Metria", style = MaterialTheme.typography.displaySmall)
     Text("Describe a meal in your own words. It stays on this phone and becomes an editable estimate, never an automatic entry.", color = Color(0xFF655D6E))
@@ -187,14 +198,15 @@ private fun AssistantScreen(modelStatus: ModelStatus, prepare: () -> Unit, ask: 
                 }
                 proposal.assumptions.forEach { Text("Assumption: $it") }
                 proposal.questions.forEach { Text("Question: $it") }
-                Text("Saving meals is the next M3 step. This draft is not stored.", color = Plum)
+                Text("Nothing has been saved. Review every portion before confirming.", color = Plum)
+                Button(onClick = { review(proposal) }, modifier = Modifier.fillMaxWidth()) { Text("Review and confirm meal") }
             }
         }
     }
 }
 
 @Composable
-private fun TodayScreen(entries: List<WeightEntry>, unit: String, onAdd: () -> Unit) {
+private fun TodayScreen(entries: List<WeightEntry>, meals: List<MealEntry>, unit: String, onAdd: () -> Unit) {
     val latest = entries.maxByOrNull(WeightEntry::recordedAt)
     val month = WeightTrend.filter(entries, LocalDate.now().minusDays(29), LocalDate.now())
     Text("Today", style = MaterialTheme.typography.displaySmall)
@@ -213,11 +225,19 @@ private fun TodayScreen(entries: List<WeightEntry>, unit: String, onAdd: () -> U
             if (month.size >= 2) MiniTrend(month)
         }
     }
+    Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Meals", style = MaterialTheme.typography.titleMedium)
+            val latestMeal = meals.maxByOrNull(MealEntry::recordedAt)
+            Text(if (latestMeal == null) "No meals recorded yet." else latestMeal.items.joinToString { it.name }, color = Color(0xFF655D6E))
+            Text(if (meals.isEmpty()) "Use Assistant to create an editable private meal draft." else "${meals.size} private meal ${if (meals.size == 1) "record" else "records"} on this phone.", color = Color(0xFF655D6E))
+        }
+    }
     Button(onClick = onAdd, modifier = Modifier.fillMaxWidth()) { Text("Record today’s weight") }
 }
 
 @Composable
-private fun HistoryScreen(entries: List<WeightEntry>, unit: String, onEdit: (WeightEntry) -> Unit, onDelete: (WeightEntry) -> Unit) {
+private fun HistoryScreen(entries: List<WeightEntry>, meals: List<MealEntry>, unit: String, onEdit: (WeightEntry) -> Unit, onDelete: (WeightEntry) -> Unit) {
     var days by remember { mutableStateOf(30) }
     var customStart by remember { mutableStateOf("") }
     var customEnd by remember { mutableStateOf("") }
@@ -248,6 +268,18 @@ private fun HistoryScreen(entries: List<WeightEntry>, unit: String, onEdit: (Wei
             }
         } }
     }
+    if (meals.isNotEmpty()) {
+        Text("Meals", style = MaterialTheme.typography.titleLarge)
+        meals.sortedByDescending(MealEntry::recordedAt).forEach { meal ->
+            Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(meal.items.joinToString { it.name }, style = MaterialTheme.typography.titleMedium)
+                    Text("${meal.source.replace('_', ' ')} - ${meal.confidence} confidence - ${meal.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate()}", color = Color(0xFF655D6E))
+                    meal.nutrition?.let { nutrition -> Text(nutritionSummary(nutrition), color = Color(0xFF655D6E)) }
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -263,6 +295,61 @@ private fun PrivacyScreen(unit: String, changeUnit: () -> Unit, lock: () -> Unit
 }
 
 private fun formatWeight(kilograms: Double, unit: String): String = if (unit == "lb") "${"%.1f".format(WeightUnits.kilogramsToPounds(kilograms))} lb" else "${"%.1f".format(kilograms)} kg"
+
+private data class EditableMealItem(val name: String, val grams: String, val preparation: String)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MealConfirmationSheet(proposal: MealProposal, onDismiss: () -> Unit, onSave: (MealEntry) -> Unit) {
+    var items by remember(proposal) { mutableStateOf(proposal.items.map { item ->
+        EditableMealItem(item.name, ((item.estimatedGramsRange.min + item.estimatedGramsRange.max) / 2).toString(), item.preparation)
+    }) }
+    var date by remember(proposal) { mutableStateOf(LocalDate.now().toString()) }
+    var calories by remember { mutableStateOf("") }
+    var protein by remember { mutableStateOf("") }
+    var carbs by remember { mutableStateOf("") }
+    var fat by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.padding(24.dp).padding(bottom = 72.dp).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("Confirm meal", style = MaterialTheme.typography.headlineMedium)
+            Text("AI estimate - correct each portion and preparation before saving. This is a private meal record, not medical advice.", color = Plum)
+            items.forEachIndexed { index, item ->
+                OutlinedTextField(item.name, { value -> items = items.toMutableList().also { it[index] = item.copy(name = value) } }, label = { Text("Food") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(item.grams, { value -> items = items.toMutableList().also { it[index] = item.copy(grams = value) } }, label = { Text("Portion in grams") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(item.preparation, { value -> items = items.toMutableList().also { it[index] = item.copy(preparation = value) } }, label = { Text("Preparation (optional)") }, modifier = Modifier.fillMaxWidth())
+            }
+            Text("Optional nutrition you enter yourself", style = MaterialTheme.typography.titleMedium)
+            Text("Metria has no food database yet, so it will not calculate these values for you.", color = Color(0xFF655D6E))
+            OutlinedTextField(calories, { calories = it }, label = { Text("Calories (kcal)") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(protein, { protein = it }, label = { Text("Protein (g)") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(carbs, { carbs = it }, label = { Text("Carbohydrates (g)") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(fat, { fat = it }, label = { Text("Fat (g)") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(date, { date = it }, label = { Text("Date - YYYY-MM-DD") }, modifier = Modifier.fillMaxWidth())
+            error?.let { Text(it, color = Color(0xFFB3261E)) }
+            Button(onClick = {
+                val recordedAt = runCatching { LocalDate.parse(date).atStartOfDay(ZoneId.systemDefault()).toInstant() }.getOrNull()
+                val savedItems = items.map { item -> MealEntryItem(item.name.trim(), item.grams.replace(',', '.').toIntOrNull(), item.preparation.trim().takeIf(String::isNotEmpty)) }
+                val rawNutrition = listOf(calories, protein, carbs, fat)
+                val nutritionValues = rawNutrition.map { it.replace(',', '.').toDoubleOrNull() }
+                val containsInvalidNutrition = rawNutrition.zip(nutritionValues).any { (raw, value) -> raw.isNotBlank() && value == null }
+                val nutrition = if (rawNutrition.all(String::isBlank)) null else MealNutrition(nutritionValues[0], nutritionValues[1], nutritionValues[2], nutritionValues[3])
+                val meal = if (recordedAt == null) null else MealEntry(recordedAt = recordedAt, items = savedItems, assumptions = proposal.assumptions, confidence = proposal.overallConfidence, source = "ai_estimate", nutrition = nutrition)
+                if (containsInvalidNutrition || meal == null || !MealEntryValidation.valid(meal)) error = "Review the food names, portions (1-2,000 g), nutrition values, and date." else onSave(meal)
+            }, modifier = Modifier.fillMaxWidth()) { Text("Save confirmed meal locally") }
+        }
+    }
+}
+
+private fun nutritionSummary(nutrition: MealNutrition): String = listOfNotNull(
+    nutrition.caloriesKcal?.let { "${"%.0f".format(it)} kcal" },
+    nutrition.proteinGrams?.let { "${"%.1f".format(it)} g protein" },
+    nutrition.carbohydrateGrams?.let { "${"%.1f".format(it)} g carbs" },
+    nutrition.fatGrams?.let { "${"%.1f".format(it)} g fat" },
+).joinToString(" - ").ifBlank { "No nutrition values entered." }
 
 @Composable
 private fun MiniTrend(points: List<WeightTrendPoint>) {
