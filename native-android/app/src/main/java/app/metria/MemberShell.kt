@@ -37,6 +37,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -63,9 +64,14 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
     var addSheet by remember { mutableStateOf(false) }
     var editEntry by remember { mutableStateOf<WeightEntry?>(null) }
     var deleteEntry by remember { mutableStateOf<WeightEntry?>(null) }
+    var voiceDraft by remember { mutableStateOf<VoiceWeightDraft?>(null) }
     DisposableEffect(activity) {
         activity.setVaultCallback { status = it }
-        onDispose { activity.setVaultCallback(null) }
+        activity.setVoiceDraftCallback { voiceDraft = it }
+        onDispose { activity.setVaultCallback(null); activity.setVoiceDraftCallback(null) }
+    }
+    LaunchedEffect(status, voiceDraft) {
+        if (status is EncryptedVault.Status.Unlocked && voiceDraft != null) addSheet = true
     }
     MaterialTheme(colorScheme = MaterialTheme.colorScheme.copy(
         primary = Plum, onPrimary = Color.White, secondary = Sage,
@@ -94,10 +100,11 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                         }
                     }
                 }
-                if (addSheet || editEntry != null) WeightBottomSheet(editEntry, onDismiss = { addSheet = false; editEntry = null }) { kilograms, note, date ->
+                if (addSheet || editEntry != null) WeightBottomSheet(editEntry, voiceDraft, onDismiss = { addSheet = false; editEntry = null; voiceDraft = null }) { kilograms, note, date ->
                     status = editEntry?.let { vault.updateWeight(it.id, kilograms, note, date) } ?: vault.addWeight(kilograms, note, date)
                     addSheet = false
                     editEntry = null
+                    voiceDraft = null
                 }
                 deleteEntry?.let { entry -> AlertDialog(onDismissRequest = { deleteEntry = null }, title = { Text("Delete entry?") }, text = { Text("This removes ${"%.1f".format(entry.kilograms)} kg from your encrypted vault.") }, confirmButton = { Button(onClick = { status = vault.deleteWeight(entry.id); deleteEntry = null }) { Text("Delete") } }, dismissButton = { Button(onClick = { deleteEntry = null }) { Text("Keep entry") } }) }
             }
@@ -214,10 +221,11 @@ private fun MiniTrend(points: List<WeightTrendPoint>) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun WeightBottomSheet(entry: WeightEntry?, onDismiss: () -> Unit, save: (Double, String?, Instant) -> Unit) {
-    var value by remember(entry) { mutableStateOf(entry?.kilograms?.toString().orEmpty()) }; var note by remember(entry) { mutableStateOf(entry?.note.orEmpty()) }; var date by remember(entry) { mutableStateOf(entry?.recordedAt?.atZone(ZoneId.systemDefault())?.toLocalDate()?.toString().orEmpty()) }; var error by remember { mutableStateOf<String?>(null) }
+private fun WeightBottomSheet(entry: WeightEntry?, voiceDraft: VoiceWeightDraft?, onDismiss: () -> Unit, save: (Double, String?, Instant) -> Unit) {
+    var value by remember(entry, voiceDraft) { mutableStateOf(entry?.kilograms?.toString() ?: voiceDraft?.kilograms?.toString().orEmpty()) }; var note by remember(entry) { mutableStateOf(entry?.note.orEmpty()) }; var date by remember(entry, voiceDraft) { mutableStateOf(entry?.recordedAt?.atZone(ZoneId.systemDefault())?.toLocalDate()?.toString() ?: voiceDraft?.recordedAt?.atZone(ZoneId.systemDefault())?.toLocalDate()?.toString().orEmpty()) }; var error by remember { mutableStateOf<String?>(null) }
     ModalBottomSheet(onDismissRequest = onDismiss) { Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(if (entry == null) "Record weight" else "Edit weight", style = MaterialTheme.typography.headlineMedium)
+        if (voiceDraft != null) Text("Voice draft — review before saving.", color = Plum)
         Text("Saved only after you confirm.", color = Color(0xFF655D6E))
         OutlinedTextField(value, { value = it }, label = { Text("Weight in kg") }, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(date, { date = it }, label = { Text("Date · YYYY-MM-DD (optional)") }, modifier = Modifier.fillMaxWidth())

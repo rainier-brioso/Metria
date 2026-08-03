@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <capability android:name="custom.actions.intent.RECORD_WEIGHT"
+        app:queryPatterns="@array/record_weight_queries">
+        <intent android:targetPackage="app.metria" android:targetClass="app.metria.MainActivity">
+            <url-template android:value="metria://weight{?weight,date}" />
+            <parameter android:name="weight" android:key="weight" android:mimeType="https://schema.org/Number" />
+            <parameter android:name="date" android:key="date" android:mimeType="https://schema.org/Date" />
+        </intent>
+    </capability>
+</shortcuts>

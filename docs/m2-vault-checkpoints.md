@@ -47,3 +47,12 @@
   covering the final entry actions.
 - Orientation changes preserve the foreground unlocked session and visible
   state; actual app backgrounding still locks the vault.
+
+## Voice draft handoff — 2026-08-03
+
+- A local Android VIEW intent carrying `weight=75` and `date=2026-08-03`
+  reached Metria while the vault was locked.
+- After biometric unlock, Metria opened the ordinary confirmation sheet with a
+  visible `Voice draft — review before saving` label and the values prefilled.
+- The member explicitly saved the entry. The handoff itself did not write to
+  the vault, proving confirmation-first behavior.

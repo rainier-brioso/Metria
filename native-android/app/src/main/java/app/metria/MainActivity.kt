@@ -1,6 +1,7 @@
 package app.metria
 
 import android.os.Bundle
+import android.content.Intent
 import android.security.keystore.KeyPermanentlyInvalidatedException
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -49,11 +50,14 @@ class MainActivity : FragmentActivity() {
     private lateinit var biometricPrompt: BiometricPrompt
     private var vaultCallback: ((EncryptedVault.Status) -> Unit)? = null
     private var pendingVaultOperation: VaultOperation? = null
+    private var voiceDraftCallback: ((VoiceWeightDraft) -> Unit)? = null
+    private var pendingVoiceDraft: VoiceWeightDraft? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         modelLifecycle = ModelLifecycle(applicationContext, filesDir, cacheDir)
         vault = EncryptedVault(applicationContext)
+        handleVoiceIntent(intent)
         biometricPrompt = BiometricPrompt(this, ContextCompat.getMainExecutor(this),
             object : BiometricPrompt.AuthenticationCallback() {
                 override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
@@ -93,6 +97,31 @@ class MainActivity : FragmentActivity() {
         vaultCallback?.invoke(vault.status())
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleVoiceIntent(intent)
+    }
+
+    fun setVoiceDraftCallback(callback: ((VoiceWeightDraft) -> Unit)?) {
+        voiceDraftCallback = callback
+        pendingVoiceDraft?.let { draft -> callback?.invoke(draft) }
+    }
+
+    private fun handleVoiceIntent(intent: Intent?) {
+        val data = intent?.data ?: return
+        if (data.scheme != "metria" || data.host != "weight") return
+        val kilograms = data.getQueryParameter("weight")?.toDoubleOrNull() ?: return
+        if (!WeightUnits.isValidKilograms(kilograms)) return
+        val date = data.getQueryParameter("date")?.let {
+            runCatching { java.time.LocalDate.parse(it).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant() }.getOrNull()
+        } ?: java.time.Instant.now()
+        VoiceWeightDraft(kilograms, date).also {
+            pendingVoiceDraft = it
+            voiceDraftCallback?.invoke(it)
+        }
+    }
+
     fun setVaultCallback(callback: ((EncryptedVault.Status) -> Unit)?) {
         vaultCallback = callback
     }
@@ -127,6 +156,8 @@ class MainActivity : FragmentActivity() {
 
     private enum class VaultOperation { Create, Unlock }
 }
+
+data class VoiceWeightDraft(val kilograms: Double, val recordedAt: java.time.Instant)
 
 @Composable
 private fun MemberApp(vault: EncryptedVault, activity: MainActivity) {
