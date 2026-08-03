@@ -36,3 +36,14 @@
 - Remaining M2 UX work: restore entry edit/delete from History, support custom
   history ranges, and complete offline/biometric-cancellation accessibility
   checks before declaring M2 complete.
+
+## Offline, rotation, and interaction checks — 2026-08-03
+
+- Airplane-mode use passed: existing encrypted entries remained viewable and a
+  weight could be added, edited, or deleted without network access.
+- Cancelling biometric authentication left the app safely locked with a retry
+  path.
+- History's protected bottom spacing prevents the floating add action from
+  covering the final entry actions.
+- Orientation changes preserve the foreground unlocked session and visible
+  state; actual app backgrounding still locks the vault.

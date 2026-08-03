@@ -26,7 +26,7 @@ class EncryptedVault(context: Context) {
     sealed interface Status {
         data object Missing : Status
         data object Locked : Status
-        data class Unlocked(val entries: List<WeightEntry>) : Status
+        data class Unlocked(val entries: List<WeightEntry>, val displayUnit: String = "kg") : Status
         data class RecoveryRequired(val message: String) : Status
         data class Failed(val message: String) : Status
     }
@@ -36,9 +36,10 @@ class EncryptedVault(context: Context) {
     private val dataFile = File(vaultDirectory, "weights.json.enc")
     private var sessionKey: ByteArray? = null
     private var entries: MutableList<WeightEntry> = mutableListOf()
+    private var displayUnit = "kg"
 
     fun status(): Status = when {
-        sessionKey != null -> Status.Unlocked(entries.toList())
+        sessionKey != null -> Status.Unlocked(entries.toList(), displayUnit)
         envelopeFile.isFile && dataFile.isFile -> Status.Locked
         envelopeFile.isFile || dataFile.isFile -> Status.RecoveryRequired(
             "This vault is incomplete and cannot be opened safely. Remove its local data to start again."
@@ -158,15 +159,30 @@ class EncryptedVault(context: Context) {
         }
     }
 
+    fun setDisplayUnit(unit: String): Status {
+        if (unit !in setOf("kg", "lb")) return Status.Failed("Unsupported weight unit.")
+        if (sessionKey == null) return Status.Locked
+        val previous = displayUnit
+        displayUnit = unit
+        return try {
+            persist()
+            Status.Unlocked(entries.toList(), displayUnit)
+        } catch (_: Exception) {
+            displayUnit = previous
+            Status.Failed("Weight unit could not be saved locally.")
+        }
+    }
+
     fun lock() {
         sessionKey?.fill(0)
         sessionKey = null
         entries = mutableListOf()
+        displayUnit = "kg"
     }
 
     private fun persist() {
         val key = requireNotNull(sessionKey) { "Vault is locked." }
-        val payload = JSONObject().put("version", 1).put("entries", JSONArray().apply {
+        val payload = JSONObject().put("version", 1).put("displayUnit", displayUnit).put("entries", JSONArray().apply {
             entries.forEach { entry ->
                 put(JSONObject()
                     .put("id", entry.id)
@@ -188,7 +204,9 @@ class EncryptedVault(context: Context) {
         require(envelope.getInt("version") == 1) { "Unsupported vault version." }
         val decrypted = cipher(Cipher.DECRYPT_MODE, rawKey(key), decode(envelope.getString("iv")))
             .doFinal(decode(envelope.getString("ciphertext")))
-        val items = JSONObject(decrypted.toString(Charsets.UTF_8)).getJSONArray("entries")
+        val root = JSONObject(decrypted.toString(Charsets.UTF_8))
+        displayUnit = root.optString("displayUnit", "kg").takeIf { it == "kg" || it == "lb" } ?: "kg"
+        val items = root.getJSONArray("entries")
         return buildList {
             for (index in 0 until items.length()) {
                 val item = items.getJSONObject(index)

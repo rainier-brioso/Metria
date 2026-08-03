@@ -86,11 +86,11 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                     bottomBar = { MemberNavigation(destination) { destination = it } },
                     floatingActionButton = { if (destination != "Privacy") FloatingActionButton(onClick = { addSheet = true }, containerColor = Plum) { Text("+") } },
                 ) { padding ->
-                    Column(Modifier.padding(padding).verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                    Column(Modifier.padding(padding).verticalScroll(rememberScrollState()).padding(20.dp).padding(bottom = 104.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
                         when (destination) {
-                            "Today" -> TodayScreen(vaultStatus.entries, onAdd = { addSheet = true })
-                            "History" -> HistoryScreen(vaultStatus.entries, onEdit = { editEntry = it }, onDelete = { deleteEntry = it })
-                            else -> PrivacyScreen { activity.lockVault() }
+                            "Today" -> TodayScreen(vaultStatus.entries, vaultStatus.displayUnit, onAdd = { addSheet = true })
+                            "History" -> HistoryScreen(vaultStatus.entries, vaultStatus.displayUnit, onEdit = { editEntry = it }, onDelete = { deleteEntry = it })
+                            else -> PrivacyScreen(vaultStatus.displayUnit, { status = vault.setDisplayUnit(if (vaultStatus.displayUnit == "kg") "lb" else "kg") }) { activity.lockVault() }
                         }
                     }
                 }
@@ -132,7 +132,7 @@ private fun MemberNavigation(current: String, choose: (String) -> Unit) {
 }
 
 @Composable
-private fun TodayScreen(entries: List<WeightEntry>, onAdd: () -> Unit) {
+private fun TodayScreen(entries: List<WeightEntry>, unit: String, onAdd: () -> Unit) {
     val latest = entries.maxByOrNull(WeightEntry::recordedAt)
     val month = WeightTrend.filter(entries, LocalDate.now().minusDays(29), LocalDate.now())
     Text("Today", style = MaterialTheme.typography.displaySmall)
@@ -140,7 +140,7 @@ private fun TodayScreen(entries: List<WeightEntry>, onAdd: () -> Unit) {
     Card(colors = CardDefaults.cardColors(containerColor = Plum), modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("LATEST WEIGHT", color = Color(0xFFEADFF1), style = MaterialTheme.typography.labelMedium)
-            Text(latest?.let { "${"%.1f".format(it.kilograms)} kg" } ?: "No entry yet", color = Color.White, style = MaterialTheme.typography.displayMedium)
+            Text(latest?.let { formatWeight(it.kilograms, unit) } ?: "No entry yet", color = Color.White, style = MaterialTheme.typography.displayMedium)
             Text(latest?.recordedAt?.atZone(ZoneId.systemDefault())?.toLocalDate()?.toString() ?: "Your first entry stays on this phone.", color = Color(0xFFEADFF1))
         }
     }
@@ -155,7 +155,7 @@ private fun TodayScreen(entries: List<WeightEntry>, onAdd: () -> Unit) {
 }
 
 @Composable
-private fun HistoryScreen(entries: List<WeightEntry>, onEdit: (WeightEntry) -> Unit, onDelete: (WeightEntry) -> Unit) {
+private fun HistoryScreen(entries: List<WeightEntry>, unit: String, onEdit: (WeightEntry) -> Unit, onDelete: (WeightEntry) -> Unit) {
     var days by remember { mutableStateOf(30) }
     var customStart by remember { mutableStateOf("") }
     var customEnd by remember { mutableStateOf("") }
@@ -176,7 +176,7 @@ private fun HistoryScreen(entries: List<WeightEntry>, onEdit: (WeightEntry) -> U
     Text("Entries", style = MaterialTheme.typography.titleLarge)
     entries.sortedByDescending(WeightEntry::recordedAt).forEach { entry ->
         Card(colors = CardDefaults.cardColors(containerColor = Color.White)) { Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-            Column { Text("${"%.1f".format(entry.kilograms)} kg", style = MaterialTheme.typography.titleMedium); entry.note?.let { Text(it, color = Color(0xFF655D6E)) } }
+            Column { Text(formatWeight(entry.kilograms, unit), style = MaterialTheme.typography.titleMedium); entry.note?.let { Text(it, color = Color(0xFF655D6E)) } }
             Column(horizontalAlignment = Alignment.End) {
                 Text(entry.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate().toString(), color = Color(0xFF655D6E))
                 Row {
@@ -189,15 +189,18 @@ private fun HistoryScreen(entries: List<WeightEntry>, onEdit: (WeightEntry) -> U
 }
 
 @Composable
-private fun PrivacyScreen(lock: () -> Unit) {
+private fun PrivacyScreen(unit: String, changeUnit: () -> Unit, lock: () -> Unit) {
     Text("Private by default", style = MaterialTheme.typography.displaySmall)
     Card(colors = CardDefaults.cardColors(containerColor = Color.White)) { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Your data stays with you", style = MaterialTheme.typography.titleLarge)
         Text("Weight entries are encrypted on this phone. Metria has no account, advertising, analytics, or default sync.")
         Text("Optional photo assistance is processed locally and temporary copies are deleted after use.")
     } }
+    Button(onClick = changeUnit, modifier = Modifier.fillMaxWidth()) { Text(if (unit == "kg") "Use pounds" else "Use kilograms") }
     Button(onClick = lock, modifier = Modifier.fillMaxWidth()) { Text("Lock vault") }
 }
+
+private fun formatWeight(kilograms: Double, unit: String): String = if (unit == "lb") "${"%.1f".format(WeightUnits.kilogramsToPounds(kilograms))} lb" else "${"%.1f".format(kilograms)} kg"
 
 @Composable
 private fun MiniTrend(points: List<WeightTrendPoint>) {
