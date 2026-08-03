@@ -126,6 +126,12 @@ class MainActivity : FragmentActivity() {
         vaultCallback = callback
     }
 
+    fun modelStatus(): ModelStatus = modelLifecycle.status()
+
+    fun prepareLocalAssistant(): ModelStatus = modelLifecycle.initializeRuntime()
+
+    fun askLocalMealAssistant(description: String): ModelStatus = modelLifecycle.proposeMealFromText(description)
+
     fun lockVault() {
         vault.lock()
         vaultCallback?.invoke(vault.status())

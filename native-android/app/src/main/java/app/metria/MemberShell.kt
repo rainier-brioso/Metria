@@ -6,6 +6,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.ShowChart
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -50,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import kotlinx.coroutines.delay
 
 private val Ink = Color(0xFF201A2B)
 private val Plum = Color(0xFF5C3E77)
@@ -65,6 +67,7 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
     var editEntry by remember { mutableStateOf<WeightEntry?>(null) }
     var deleteEntry by remember { mutableStateOf<WeightEntry?>(null) }
     var voiceDraft by remember { mutableStateOf<VoiceWeightDraft?>(null) }
+    var modelStatus by remember { mutableStateOf(activity.modelStatus()) }
     DisposableEffect(activity) {
         activity.setVaultCallback { status = it }
         activity.setVoiceDraftCallback { voiceDraft = it }
@@ -72,6 +75,12 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
     }
     LaunchedEffect(status, voiceDraft) {
         if (status is EncryptedVault.Status.Unlocked && voiceDraft != null) addSheet = true
+    }
+    LaunchedEffect(destination) {
+        while (destination == "Assistant") {
+            modelStatus = activity.modelStatus()
+            delay(500)
+        }
     }
     MaterialTheme(colorScheme = MaterialTheme.colorScheme.copy(
         primary = Plum, onPrimary = Color.White, secondary = Sage,
@@ -96,6 +105,11 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                         when (destination) {
                             "Today" -> TodayScreen(vaultStatus.entries, vaultStatus.displayUnit, onAdd = { addSheet = true })
                             "History" -> HistoryScreen(vaultStatus.entries, vaultStatus.displayUnit, onEdit = { editEntry = it }, onDelete = { deleteEntry = it })
+                            "Assistant" -> AssistantScreen(
+                                modelStatus = modelStatus,
+                                prepare = { modelStatus = activity.prepareLocalAssistant() },
+                                ask = { modelStatus = activity.askLocalMealAssistant(it) },
+                            )
                             else -> PrivacyScreen(vaultStatus.displayUnit, { status = vault.setDisplayUnit(if (vaultStatus.displayUnit == "kg") "lb" else "kg") }) { activity.lockVault() }
                         }
                     }
@@ -127,13 +141,54 @@ private fun VaultGate(title: String, body: String, action: () -> Unit) {
 @Composable
 private fun MemberNavigation(current: String, choose: (String) -> Unit) {
     NavigationBar(containerColor = Color.White) {
-        listOf("Today", "History", "Privacy").forEach { item ->
+        listOf("Today", "History", "Assistant", "Privacy").forEach { item ->
             val icon = when (item) {
                 "Today" -> Icons.Default.Home
                 "History" -> Icons.Default.ShowChart
+                "Assistant" -> Icons.Default.SmartToy
                 else -> Icons.Default.Lock
             }
             NavigationBarItem(selected = current == item, onClick = { choose(item) }, icon = { Icon(icon, contentDescription = item) }, label = { Text(item) })
+        }
+    }
+}
+
+@Composable
+private fun AssistantScreen(modelStatus: ModelStatus, prepare: () -> Unit, ask: (String) -> Unit) {
+    var mealText by remember { mutableStateOf("") }
+    Text("Ask Metria", style = MaterialTheme.typography.displaySmall)
+    Text("Describe a meal in your own words. It stays on this phone and becomes an editable estimate, never an automatic entry.", color = Color(0xFF655D6E))
+    Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Private local assistant", style = MaterialTheme.typography.titleMedium)
+            when (modelStatus.state) {
+                "loaded" -> Text("Ready on this phone. Estimates can be wrong—review every assumption.", color = Sage)
+                "thinking" -> Text("Thinking locally. This can take a little while on your phone.", color = Plum)
+                "ready" -> {
+                    Text("Your optional local model is ready to prepare.")
+                    Button(onClick = prepare, modifier = Modifier.fillMaxWidth()) { Text("Prepare assistant") }
+                }
+                else -> Text("The optional local model is ${modelStatus.state}. This developer build needs a downloaded model before chat can run.")
+            }
+            OutlinedTextField(mealText, { mealText = it }, enabled = modelStatus.state == "loaded", label = { Text("For example: chicken breast with half a plate of rice") }, modifier = Modifier.fillMaxWidth(), minLines = 3)
+            Button(onClick = { ask(mealText) }, enabled = modelStatus.state == "loaded" && mealText.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text("Create editable estimate") }
+        }
+    }
+    modelStatus.assistantDiagnostic?.let { Text(it, color = Color(0xFFB3261E)) }
+    modelStatus.assistantProposal?.let { proposal ->
+        Card(colors = CardDefaults.cardColors(containerColor = PlumSoft)) {
+            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Review this estimate", style = MaterialTheme.typography.titleLarge)
+                Text("Confidence: ${proposal.overallConfidence}. Nothing has been saved.", color = Color(0xFF655D6E))
+                proposal.items.forEach { item ->
+                    Text(item.name, style = MaterialTheme.typography.titleMedium)
+                    Text("${item.visiblePortion} · ${item.estimatedGramsRange.min}–${item.estimatedGramsRange.max} g · ${item.confidence} confidence")
+                    Text(item.preparation, color = Color(0xFF655D6E))
+                }
+                proposal.assumptions.forEach { Text("Assumption: $it") }
+                proposal.questions.forEach { Text("Question: $it") }
+                Text("Saving meals is the next M3 step. This draft is not stored.", color = Plum)
+            }
         }
     }
 }
