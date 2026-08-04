@@ -5,6 +5,7 @@ import android.os.SystemClock
 import android.util.Base64
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -22,13 +23,17 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.ShowChart
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -50,6 +55,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -65,6 +72,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.unit.dp
 import java.time.Instant
 import java.time.LocalDate
@@ -84,6 +92,7 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
     var addSheet by remember { mutableStateOf(false) }
     var editEntry by remember { mutableStateOf<WeightEntry?>(null) }
     var deleteEntry by remember { mutableStateOf<WeightEntry?>(null) }
+    var editMeal by remember { mutableStateOf<MealEntry?>(null) }
     var voiceDraft by remember { mutableStateOf<VoiceWeightDraft?>(null) }
     var modelStatus by remember { mutableStateOf(activity.modelStatus()) }
     var mealProposalForConfirmation by remember { mutableStateOf<MealProposal?>(null) }
@@ -140,7 +149,7 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                     Column(Modifier.padding(padding).verticalScroll(rememberScrollState()).padding(20.dp).padding(bottom = 104.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
                         when (destination) {
                             "Today" -> TodayScreen(vaultStatus.entries, vaultStatus.meals, vaultStatus.displayUnit, onAdd = { addSheet = true })
-                            "History" -> HistoryScreen(vaultStatus.entries, vaultStatus.meals, vaultStatus.displayUnit, onEdit = { editEntry = it }, onDelete = { deleteEntry = it })
+                            "History" -> HistoryScreen(vaultStatus.entries, vaultStatus.meals, vaultStatus.displayUnit, onEdit = { editEntry = it }, onDelete = { deleteEntry = it }, onEditMeal = { editMeal = it })
                             "Assistant" -> AssistantScreen(
                                 modelStatus = modelStatus,
                                 showLoadingPreview = showAssistantLoadingPreview,
@@ -167,6 +176,13 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                     voiceDraft = null
                 }
                 deleteEntry?.let { entry -> AlertDialog(onDismissRequest = { deleteEntry = null }, title = { Text("Delete entry?") }, text = { Text("This removes ${"%.1f".format(entry.kilograms)} kg from your encrypted vault.") }, confirmButton = { Button(onClick = { status = vault.deleteWeight(entry.id); deleteEntry = null }) { Text("Delete") } }, dismissButton = { Button(onClick = { deleteEntry = null }) { Text("Keep entry") } }) }
+                editMeal?.let { meal -> MealEditSheet(
+                    meal,
+                    onDismiss = { editMeal = null },
+                    onSave = { updated -> status = vault.updateMeal(updated); editMeal = null },
+                    onRemoveReference = { status = vault.updateMeal(meal.copy(referenceThumbnailBase64 = null)) },
+                    onDelete = { status = vault.deleteMeal(meal.id); editMeal = null },
+                ) }
                 mealProposalForConfirmation?.let { proposal -> MealConfirmationSheet(
                     proposal = proposal,
                     referenceThumbnailBase64 = modelStatus.referenceThumbnailBase64,
@@ -492,26 +508,34 @@ private fun TodayScreen(entries: List<WeightEntry>, meals: List<MealEntry>, unit
 }
 
 @Composable
-private fun HistoryScreen(entries: List<WeightEntry>, meals: List<MealEntry>, unit: String, onEdit: (WeightEntry) -> Unit, onDelete: (WeightEntry) -> Unit) {
+private fun HistoryScreen(entries: List<WeightEntry>, meals: List<MealEntry>, unit: String, onEdit: (WeightEntry) -> Unit, onDelete: (WeightEntry) -> Unit, onEditMeal: (MealEntry) -> Unit) {
     var days by remember { mutableStateOf(30) }
+    var selectedTab by remember { mutableStateOf(0) }
     var customStart by remember { mutableStateOf("") }
     var customEnd by remember { mutableStateOf("") }
     val start = if (days == 0) runCatching { LocalDate.parse(customStart) }.getOrNull() else LocalDate.now().minusDays((days - 1).toLong())
     val end = if (days == 0) runCatching { LocalDate.parse(customEnd) }.getOrNull() else LocalDate.now()
     val points = WeightTrend.filter(entries, start, end)
     Text("History", style = MaterialTheme.typography.displaySmall)
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    TabRow(selectedTabIndex = selectedTab, containerColor = Color.Transparent) {
+        listOf("Weight", "Meals").forEachIndexed { index, label ->
+            Tab(selected = selectedTab == index, onClick = { selectedTab = index }, text = { Text(label) })
+        }
+    }
+    if (selectedTab == 0) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         listOf(7, 30, 90).forEach { option -> FilterChip(selected = days == option, onClick = { days = option }, label = { Text("${option}D") }) }
         FilterChip(selected = days == 0, onClick = { days = 0 }, label = { Text("Custom") })
     }
+    if (selectedTab == 0) {
     if (days == 0) { OutlinedTextField(customStart, { customStart = it }, label = { Text("Start · YYYY-MM-DD") }, modifier = Modifier.fillMaxWidth()); OutlinedTextField(customEnd, { customEnd = it }, label = { Text("End · YYYY-MM-DD") }, modifier = Modifier.fillMaxWidth()) }
-    Card(colors = CardDefaults.cardColors(containerColor = Color.White)) { Column(Modifier.padding(20.dp)) {
+    }
+    if (selectedTab == 0) Card(colors = CardDefaults.cardColors(containerColor = Color.White)) { Column(Modifier.padding(20.dp)) {
         Text("Weight trend", style = MaterialTheme.typography.titleMedium)
         Text(WeightTrend.description(points), color = Color(0xFF655D6E))
         if (points.size >= 2) MiniTrend(points)
     } }
-    Text("Entries", style = MaterialTheme.typography.titleLarge)
-    entries.sortedByDescending(WeightEntry::recordedAt).forEach { entry ->
+    if (selectedTab == 0) Text("Entries", style = MaterialTheme.typography.titleLarge)
+    if (selectedTab == 0) entries.sortedByDescending(WeightEntry::recordedAt).forEach { entry ->
         Card(colors = CardDefaults.cardColors(containerColor = Color.White)) { Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
             Column { Text(formatWeight(entry.kilograms, unit), style = MaterialTheme.typography.titleMedium); entry.note?.let { Text(it, color = Color(0xFF655D6E)) } }
             Column(horizontalAlignment = Alignment.End) {
@@ -523,13 +547,14 @@ private fun HistoryScreen(entries: List<WeightEntry>, meals: List<MealEntry>, un
             }
         } }
     }
-    if (meals.isNotEmpty()) {
+    if (selectedTab == 1 && meals.isNotEmpty()) {
         Text("Meals", style = MaterialTheme.typography.titleLarge)
         meals.sortedByDescending(MealEntry::recordedAt).forEach { meal ->
             Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
-                Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    meal.referenceThumbnailBase64?.let { ReferenceThumbnail(it) }
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                val photo = meal.referenceThumbnailBase64
+                Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).clickable { onEditMeal(meal) }) {
+                    photo?.let { HistoryReferenceThumbnail(it) }
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(meal.items.joinToString { it.name }, style = MaterialTheme.typography.titleMedium)
                         Text("${meal.source.replace('_', ' ')} - ${meal.confidence} confidence - ${meal.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate()}", color = Color(0xFF655D6E))
                         meal.nutrition?.let { nutrition -> Text(nutritionSummary(nutrition), color = Color(0xFF655D6E)) }
@@ -572,7 +597,7 @@ private fun PrivateReferenceOption(checked: Boolean, onCheckedChange: (Boolean) 
 }
 
 @Composable
-private fun ReferenceThumbnail(encoded: String) {
+private fun ReferenceThumbnail(encoded: String, size: androidx.compose.ui.unit.Dp = 64.dp) {
     val bitmap = remember(encoded) {
         runCatching {
             val bytes = Base64.decode(encoded, Base64.DEFAULT)
@@ -583,7 +608,25 @@ private fun ReferenceThumbnail(encoded: String) {
         Image(
             bitmap = it,
             contentDescription = "Private meal reference",
-            modifier = Modifier.size(64.dp),
+            modifier = Modifier.size(size),
+        )
+    }
+}
+
+@Composable
+private fun HistoryReferenceThumbnail(encoded: String) {
+    val bitmap = remember(encoded) {
+        runCatching {
+            val bytes = Base64.decode(encoded, Base64.DEFAULT)
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+        }.getOrNull()
+    }
+    bitmap?.let {
+        Image(
+            bitmap = it,
+            contentDescription = "Private meal reference",
+            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+            modifier = Modifier.width(116.dp).fillMaxHeight(),
         )
     }
 }
@@ -642,6 +685,82 @@ private fun nutritionSummary(nutrition: MealNutrition): String = listOfNotNull(
     nutrition.carbohydrateGrams?.let { "${"%.1f".format(it)} g carbs" },
     nutrition.fatGrams?.let { "${"%.1f".format(it)} g fat" },
 ).joinToString(" - ").ifBlank { "No nutrition values entered." }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MealEditSheet(meal: MealEntry, onDismiss: () -> Unit, onSave: (MealEntry) -> Unit, onRemoveReference: () -> Unit, onDelete: () -> Unit) {
+    var items by remember(meal) { mutableStateOf(meal.items.map { EditableMealItem(it.name, it.grams?.toString().orEmpty(), it.preparation.orEmpty()) }) }
+    var date by remember(meal) { mutableStateOf(meal.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate().toString()) }
+    var calories by remember(meal) { mutableStateOf(meal.nutrition?.caloriesKcal?.toString().orEmpty()) }
+    var protein by remember(meal) { mutableStateOf(meal.nutrition?.proteinGrams?.toString().orEmpty()) }
+    var carbs by remember(meal) { mutableStateOf(meal.nutrition?.carbohydrateGrams?.toString().orEmpty()) }
+    var fat by remember(meal) { mutableStateOf(meal.nutrition?.fatGrams?.toString().orEmpty()) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var confirmReferenceRemoval by remember { mutableStateOf(false) }
+    var confirmMealDeletion by remember { mutableStateOf(false) }
+    var referenceThumbnail by remember(meal) { mutableStateOf(meal.referenceThumbnailBase64) }
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.padding(24.dp).padding(bottom = 72.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Edit meal", style = MaterialTheme.typography.headlineMedium)
+            referenceThumbnail?.let { reference ->
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(152.dp)) {
+                        ReferenceThumbnail(reference, 152.dp)
+                        Surface(
+                            color = Color.White.copy(alpha = 0.72f),
+                            shape = CircleShape,
+                            modifier = Modifier.align(Alignment.TopEnd).padding(8.dp).size(36.dp),
+                        ) {
+                            IconButton(onClick = { confirmReferenceRemoval = true }, modifier = Modifier.fillMaxSize()) {
+                                Icon(Icons.Default.Delete, contentDescription = "Remove private reference photo", tint = Ink)
+                            }
+                        }
+                    }
+                }
+            }
+            items.forEachIndexed { index, item ->
+                OutlinedTextField(item.name, { value -> items = items.toMutableList().also { it[index] = item.copy(name = value) } }, label = { Text("Food") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(item.grams, { value -> items = items.toMutableList().also { it[index] = item.copy(grams = value) } }, label = { Text("Portion in grams") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(item.preparation, { value -> items = items.toMutableList().also { it[index] = item.copy(preparation = value) } }, label = { Text("Preparation (optional)") }, modifier = Modifier.fillMaxWidth())
+            }
+            OutlinedTextField(calories, { calories = it }, label = { Text("Calories (kcal)") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(protein, { protein = it }, label = { Text("Protein (g)") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(carbs, { carbs = it }, label = { Text("Carbohydrates (g)") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(fat, { fat = it }, label = { Text("Fat (g)") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(date, { date = it }, label = { Text("Date - YYYY-MM-DD") }, modifier = Modifier.fillMaxWidth())
+            error?.let { Text(it, color = Color(0xFFB3261E)) }
+            Button(onClick = {
+                val recordedAt = runCatching { LocalDate.parse(date).atStartOfDay(ZoneId.systemDefault()).toInstant() }.getOrNull()
+                val updatedItems = items.map { MealEntryItem(it.name.trim(), it.grams.replace(',', '.').toIntOrNull(), it.preparation.trim().takeIf(String::isNotEmpty)) }
+                val rawNutrition = listOf(calories, protein, carbs, fat)
+                val values = rawNutrition.map { it.replace(',', '.').toDoubleOrNull() }
+                val invalidNutrition = rawNutrition.zip(values).any { (raw, value) -> raw.isNotBlank() && value == null }
+                val nutrition = if (rawNutrition.all(String::isBlank)) null else MealNutrition(values[0], values[1], values[2], values[3], meal.nutrition?.source ?: "manual_entry")
+                val updated = if (recordedAt == null) null else meal.copy(recordedAt = recordedAt, items = updatedItems, nutrition = nutrition, referenceThumbnailBase64 = referenceThumbnail)
+                if (invalidNutrition || updated == null || !MealEntryValidation.valid(updated)) error = "Review the food names, portions (1-2,000 g), nutrition values, and date." else onSave(updated)
+            }, modifier = Modifier.fillMaxWidth()) { Text("Save meal changes") }
+            Button(onClick = { confirmMealDeletion = true }, modifier = Modifier.fillMaxWidth()) { Text("Delete meal") }
+        }
+    }
+    if (confirmReferenceRemoval) {
+        AlertDialog(
+            onDismissRequest = { confirmReferenceRemoval = false },
+            title = { Text("Remove private reference?") },
+            text = { Text("This removes only the encrypted thumbnail. The meal details stay in your vault.") },
+            confirmButton = { Button(onClick = { onRemoveReference(); referenceThumbnail = null; confirmReferenceRemoval = false }) { Text("Remove photo") } },
+            dismissButton = { Button(onClick = { confirmReferenceRemoval = false }) { Text("Keep photo") } },
+        )
+    }
+    if (confirmMealDeletion) {
+        AlertDialog(
+            onDismissRequest = { confirmMealDeletion = false },
+            title = { Text("Delete meal?") },
+            text = { Text("This permanently removes the meal and its optional private reference from your encrypted vault.") },
+            confirmButton = { Button(onClick = onDelete) { Text("Delete") } },
+            dismissButton = { Button(onClick = { confirmMealDeletion = false }) { Text("Keep meal") } },
+        )
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

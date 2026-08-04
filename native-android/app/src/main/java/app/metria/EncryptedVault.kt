@@ -292,6 +292,36 @@ class EncryptedVault(context: Context) {
         }
     }
 
+    fun updateMeal(entry: MealEntry): Status {
+        if (sessionKey == null) return Status.Locked
+        if (!MealEntryValidation.valid(entry)) return Status.Failed("This meal contains invalid values.")
+        val index = meals.indexOfFirst { it.id == entry.id }
+        if (index < 0) return Status.Failed("This meal record is no longer available.")
+        val previous = meals[index]
+        meals[index] = entry
+        return try {
+            persist()
+            Status.Unlocked(entries.toList(), displayUnit, meals.toList())
+        } catch (_: Exception) {
+            meals[index] = previous
+            Status.Failed("Meal changes could not be saved locally. Try again before locking the vault.")
+        }
+    }
+
+    fun deleteMeal(id: String): Status {
+        if (sessionKey == null) return Status.Locked
+        val index = meals.indexOfFirst { it.id == id }
+        if (index < 0) return Status.Failed("This meal record is no longer available.")
+        val removed = meals.removeAt(index)
+        return try {
+            persist()
+            Status.Unlocked(entries.toList(), displayUnit, meals.toList())
+        } catch (_: Exception) {
+            meals.add(index, removed)
+            Status.Failed("Meal deletion could not be saved locally. Try again before locking the vault.")
+        }
+    }
+
     private fun JSONObject.optNullableDouble(name: String): Double? =
         if (isNull(name)) null else optDouble(name).takeIf { !it.isNaN() }
 
