@@ -1,9 +1,22 @@
 package app.metria
 
+import android.graphics.BitmapFactory
+import android.os.SystemClock
+import android.util.Base64
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.SmartToy
@@ -22,6 +35,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -35,6 +49,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -46,7 +61,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.dp
 import java.time.Instant
 import java.time.LocalDate
@@ -69,6 +87,9 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
     var voiceDraft by remember { mutableStateOf<VoiceWeightDraft?>(null) }
     var modelStatus by remember { mutableStateOf(activity.modelStatus()) }
     var mealProposalForConfirmation by remember { mutableStateOf<MealProposal?>(null) }
+    var labelDraftForConfirmation by remember { mutableStateOf<LabelNutritionDraft?>(null) }
+    var manualMealText by remember { mutableStateOf(false) }
+    var showAssistantLoadingPreview by remember { mutableStateOf(false) }
     DisposableEffect(activity) {
         activity.setVaultCallback { status = it }
         activity.setVoiceDraftCallback { voiceDraft = it }
@@ -80,7 +101,21 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
     LaunchedEffect(destination) {
         while (destination == "Assistant") {
             modelStatus = activity.modelStatus()
-            delay(500)
+            delay(250)
+        }
+    }
+    LaunchedEffect(destination, modelStatus.state) {
+        if (destination == "Assistant" && modelStatus.state == "ready") {
+            modelStatus = activity.prepareLocalAssistant()
+        }
+    }
+    LaunchedEffect(destination) {
+        if (destination == "Assistant" && BuildConfig.DEBUG) {
+            showAssistantLoadingPreview = true
+            delay(1800)
+            showAssistantLoadingPreview = false
+        } else {
+            showAssistantLoadingPreview = false
         }
     }
     MaterialTheme(colorScheme = MaterialTheme.colorScheme.copy(
@@ -91,7 +126,7 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
             EncryptedVault.Status.Missing -> VaultGate("A private space for your health.", "Create an encrypted vault on this phone. No account is needed.") {
                 activity.authenticateVault(true)
             }
-            EncryptedVault.Status.Locked -> VaultGate("Welcome back.", "Your entries are protected until you unlock your vault.") {
+            EncryptedVault.Status.Locked -> VaultGate("Welcome back.", "Your entries are protected until you unlock your vault.", autoAuthenticate = true) {
                 activity.authenticateVault(false)
             }
             is EncryptedVault.Status.RecoveryRequired -> VaultGate("Vault unavailable", vaultStatus.message) {}
@@ -100,7 +135,7 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                 Scaffold(
                     containerColor = MetriaCanvas,
                     bottomBar = { MemberNavigation(destination) { destination = it } },
-                    floatingActionButton = { if (destination != "Privacy") FloatingActionButton(onClick = { addSheet = true }, containerColor = Plum) { Text("+") } },
+                    floatingActionButton = { if (destination in setOf("Today", "History")) FloatingActionButton(onClick = { addSheet = true }, containerColor = Plum) { Text("+") } },
                 ) { padding ->
                     Column(Modifier.padding(padding).verticalScroll(rememberScrollState()).padding(20.dp).padding(bottom = 104.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
                         when (destination) {
@@ -108,9 +143,18 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                             "History" -> HistoryScreen(vaultStatus.entries, vaultStatus.meals, vaultStatus.displayUnit, onEdit = { editEntry = it }, onDelete = { deleteEntry = it })
                             "Assistant" -> AssistantScreen(
                                 modelStatus = modelStatus,
-                                prepare = { modelStatus = activity.prepareLocalAssistant() },
-                                ask = { modelStatus = activity.askLocalMealAssistant(it) },
+                                showLoadingPreview = showAssistantLoadingPreview,
+                                openManualText = { manualMealText = true },
                                 review = { mealProposalForConfirmation = it },
+                                prepareImage = { uri -> modelStatus = activity.prepareLocalMealImage(uri) },
+                                analyzeImage = { modelStatus = activity.analyzeLocalMealImage() },
+                                readLabel = { modelStatus = activity.readLocalNutritionLabel() },
+                                discardImage = { modelStatus = activity.discardLocalMealImage() },
+                                reviewLabel = { labelDraftForConfirmation = it },
+                                newCameraUri = { activity.newLocalCameraCaptureUri() },
+                                prepareCapturedImage = { uri -> modelStatus = activity.prepareLocalCapturedMealImage(uri) },
+                                discardPendingCapture = { activity.discardPendingCameraCapture() },
+                                beginExternalImageFlow = { activity.beginExternalImageFlow() },
                             )
                             else -> PrivacyScreen(vaultStatus.displayUnit, { status = vault.setDisplayUnit(if (vaultStatus.displayUnit == "kg") "lb" else "kg") }) { activity.lockVault() }
                         }
@@ -125,6 +169,7 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                 deleteEntry?.let { entry -> AlertDialog(onDismissRequest = { deleteEntry = null }, title = { Text("Delete entry?") }, text = { Text("This removes ${"%.1f".format(entry.kilograms)} kg from your encrypted vault.") }, confirmButton = { Button(onClick = { status = vault.deleteWeight(entry.id); deleteEntry = null }) { Text("Delete") } }, dismissButton = { Button(onClick = { deleteEntry = null }) { Text("Keep entry") } }) }
                 mealProposalForConfirmation?.let { proposal -> MealConfirmationSheet(
                     proposal = proposal,
+                    referenceThumbnailBase64 = modelStatus.referenceThumbnailBase64,
                     onDismiss = { mealProposalForConfirmation = null },
                     onSave = { meal ->
                         status = vault.addMeal(meal)
@@ -132,19 +177,43 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                         modelStatus = activity.clearLocalMealDraft()
                     },
                 ) }
+                labelDraftForConfirmation?.let { label -> LabelConfirmationSheet(
+                    draft = label,
+                    referenceThumbnailBase64 = modelStatus.referenceThumbnailBase64,
+                    onDismiss = { labelDraftForConfirmation = null },
+                    onSave = { meal ->
+                        status = vault.addMeal(meal)
+                        labelDraftForConfirmation = null
+                        modelStatus = activity.clearLocalMealDraft()
+                    },
+                ) }
+                if (manualMealText) ManualMealTextSheet(
+                    onDismiss = { manualMealText = false },
+                    onSubmit = { text -> modelStatus = activity.askLocalMealAssistant(text); manualMealText = false },
+                )
             }
         }
     }
 }
 
 @Composable
-private fun VaultGate(title: String, body: String, action: () -> Unit) {
+private fun VaultGate(title: String, body: String, autoAuthenticate: Boolean = false, action: () -> Unit) {
+    // Approved unlock UX: prompt once on entering a locked vault; the icon is a retry only.
+    LaunchedEffect(autoAuthenticate) {
+        if (autoAuthenticate) action()
+    }
     Surface(color = MetriaCanvas, modifier = Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().padding(28.dp), verticalArrangement = Arrangement.Center) {
             Text("METRIA", color = Plum, style = MaterialTheme.typography.labelLarge)
             Text(title, style = MaterialTheme.typography.displaySmall, modifier = Modifier.padding(top = 20.dp))
             Text(body, modifier = Modifier.padding(top = 12.dp, bottom = 28.dp))
-            Button(onClick = action, enabled = title != "Vault unavailable") { Text(if (title == "Welcome back.") "Unlock with biometrics" else "Create private vault") }
+            if (autoAuthenticate) {
+                IconButton(onClick = action, modifier = Modifier.size(68.dp)) {
+                    Icon(Icons.Default.Fingerprint, contentDescription = "Unlock with biometrics", modifier = Modifier.size(40.dp), tint = Plum)
+                }
+            } else {
+                Button(onClick = action, enabled = title != "Vault unavailable") { Text("Create private vault") }
+            }
         }
     }
 }
@@ -165,24 +234,159 @@ private fun MemberNavigation(current: String, choose: (String) -> Unit) {
 }
 
 @Composable
-private fun AssistantScreen(modelStatus: ModelStatus, prepare: () -> Unit, ask: (String) -> Unit, review: (MealProposal) -> Unit) {
-    var mealText by remember { mutableStateOf("") }
-    Text("Ask Metria", style = MaterialTheme.typography.displaySmall)
-    Text("Describe a meal in your own words. It stays on this phone and becomes an editable estimate, never an automatic entry.", color = Color(0xFF655D6E))
+private fun QuietProgress(title: String, detail: String) {
+    Card(colors = CardDefaults.cardColors(containerColor = PlumSoft), modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            CircularProgressIndicator(Modifier.size(28.dp), color = Plum, strokeWidth = 3.dp)
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(title, style = MaterialTheme.typography.titleMedium)
+                Text(detail, color = Color(0xFF655D6E))
+            }
+        }
+    }
+}
+
+/** Metria's local-AI loading identity: a food-aware apple absorbs small bytes. */
+@Composable
+private fun AppleByteLoading(title: String, detail: String) {
+    val transition = rememberInfiniteTransition(label = "metria-apple")
+    val phase by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(1800, easing = LinearEasing)),
+        label = "bytes",
+    )
+    Column(
+        Modifier.fillMaxWidth().height(520.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Canvas(Modifier.size(180.dp)) {
+            val center = Offset(size.width / 2, size.height / 2 + 10.dp.toPx())
+            val body = 42.dp.toPx()
+            drawCircle(PlumSoft, radius = body, center = center.copy(x = center.x - body * .42f))
+            drawCircle(PlumSoft, radius = body, center = center.copy(x = center.x + body * .42f))
+            drawCircle(PlumSoft, radius = body * 1.05f, center = center.copy(y = center.y + body * .25f))
+            drawCircle(Plum, radius = body, center = center.copy(x = center.x - body * .42f), style = androidx.compose.ui.graphics.drawscope.Stroke(5.dp.toPx()))
+            drawCircle(Plum, radius = body, center = center.copy(x = center.x + body * .42f), style = androidx.compose.ui.graphics.drawscope.Stroke(5.dp.toPx()))
+            drawOval(Sage, topLeft = Offset(center.x + 7.dp.toPx(), center.y - body - 25.dp.toPx()), size = Size(28.dp.toPx(), 15.dp.toPx()))
+            listOf(0f, .33f, .66f).forEachIndexed { index, offset ->
+                val step = (phase + offset) % 1f
+                val x = size.width * (.1f + step * .36f)
+                val y = size.height * (.26f + index * .19f) + kotlin.math.sin((phase + index) * 6.28).toFloat() * 8.dp.toPx()
+                val alpha = if (step < .15f) step / .15f else 1f - ((step - .7f) / .3f).coerceIn(0f, 1f)
+                drawRoundRect(Plum.copy(alpha = alpha), Offset(x, y), Size(11.dp.toPx(), 11.dp.toPx()), CornerRadius(3.dp.toPx()))
+            }
+        }
+        Text(title, style = MaterialTheme.typography.titleLarge)
+        Text(detail, color = Color(0xFF655D6E), modifier = Modifier.padding(top = 8.dp))
+    }
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun AssistantScreen(
+    modelStatus: ModelStatus,
+    showLoadingPreview: Boolean,
+    openManualText: () -> Unit,
+    review: (MealProposal) -> Unit,
+    prepareImage: (android.net.Uri) -> Unit,
+    analyzeImage: () -> Unit,
+    readLabel: () -> Unit,
+    discardImage: () -> Unit,
+    reviewLabel: (LabelNutritionDraft) -> Unit,
+    newCameraUri: () -> android.net.Uri,
+    prepareCapturedImage: (android.net.Uri) -> Unit,
+    discardPendingCapture: () -> Unit,
+    beginExternalImageFlow: () -> Unit,
+) {
+    var sourceChoice by remember { mutableStateOf<String?>(null) }
+    var pendingImagePurpose by remember { mutableStateOf<String?>(null) }
+    var capturedUri by remember { mutableStateOf<android.net.Uri?>(null) }
+    var showOcrText by remember { mutableStateOf(false) }
+    var showDeveloperResponse by remember { mutableStateOf(false) }
+    val photoPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        if (uri != null) prepareImage(uri) else {
+            pendingImagePurpose = null
+            discardPendingCapture()
+        }
+    }
+    val camera = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture(),
+    ) { success ->
+        val uri = capturedUri
+        capturedUri = null
+        if (success && uri != null) prepareCapturedImage(uri) else {
+            pendingImagePurpose = null
+            discardPendingCapture()
+        }
+    }
+    LaunchedEffect(modelStatus.imageState, pendingImagePurpose) {
+        if (modelStatus.imageState == "ready") {
+            when (pendingImagePurpose) {
+                "label" -> readLabel()
+                "meal" -> analyzeImage()
+            }
+            pendingImagePurpose = null
+        }
+    }
+    LaunchedEffect(modelStatus.imageState, modelStatus.imageRetryAtElapsedRealtime) {
+        if (modelStatus.imageState == "cooling_down") {
+            val retryAt = modelStatus.imageRetryAtElapsedRealtime ?: return@LaunchedEffect
+            delay((retryAt - SystemClock.elapsedRealtime()).coerceAtLeast(250L))
+            analyzeImage()
+        }
+    }
+    val loading = when {
+        showLoadingPreview -> "Metria is getting ready." to "Preparing locally on this phone."
+        modelStatus.state in setOf("ready", "initializing") -> "Getting your private assistant ready." to "Preparing locally on this phone."
+        modelStatus.state == "thinking" -> "Metria is reading your meal." to "Creating an editable estimate locally."
+        modelStatus.imageState == "preparing" -> "Metria is preparing your image." to "A temporary local copy is being made."
+        modelStatus.imageState == "ready" && pendingImagePurpose != null -> "Metria is getting your result ready." to "Nothing is saved automatically."
+        modelStatus.imageState == "cooling_down" -> "Giving your phone a moment." to "Metria will continue locally when it has cooled down."
+        modelStatus.imageState == "analyzing" -> "Metria is reading your meal photo." to "This can take a little while on your phone."
+        modelStatus.imageState == "reading_label" -> "Metria is reading your label." to "Text is read locally and must be reviewed."
+        else -> null
+    }
+    if (loading != null) {
+        AppleByteLoading(loading.first, loading.second)
+        return
+    }
     Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Private local assistant", style = MaterialTheme.typography.titleMedium)
-            when (modelStatus.state) {
+            if (modelStatus.state != "loaded") when (modelStatus.state) {
                 "loaded" -> Text("Ready on this phone. Estimates can be wrong—review every assumption.", color = Sage)
-                "thinking" -> Text("Thinking locally. This can take a little while on your phone.", color = Plum)
-                "ready" -> {
-                    Text("Your optional local model is ready to prepare.")
-                    Button(onClick = prepare, modifier = Modifier.fillMaxWidth()) { Text("Prepare assistant") }
-                }
                 else -> Text("The optional local model is ${modelStatus.state}. This developer build needs a downloaded model before chat can run.")
             }
-            OutlinedTextField(mealText, { mealText = it }, enabled = modelStatus.state == "loaded", label = { Text("For example: chicken breast with half a plate of rice") }, modifier = Modifier.fillMaxWidth(), minLines = 3)
-            Button(onClick = { ask(mealText) }, enabled = modelStatus.state == "loaded" && mealText.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text("Create editable estimate") }
+            if (modelStatus.state == "loaded") {
+                Button(onClick = openManualText, modifier = Modifier.fillMaxWidth()) { Text("Describe a meal") }
+                Button(onClick = { sourceChoice = "label" }, modifier = Modifier.fillMaxWidth()) { Text("Scan nutrition label") }
+                Button(onClick = { sourceChoice = "meal" }, modifier = Modifier.fillMaxWidth()) { Text("Analyze meal photo") }
+            }
+            if (modelStatus.imageState == "failed") Text(modelStatus.imageReason, color = Color(0xFFB3261E))
+        }
+    }
+    sourceChoice?.let { choice ->
+        ModalBottomSheet(onDismissRequest = { sourceChoice = null }) {
+            Column(Modifier.padding(24.dp).padding(bottom = 56.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(if (choice == "label") "Scan nutrition label" else "Analyze meal photo", style = MaterialTheme.typography.headlineSmall)
+                Text("The image is processed locally and the temporary copy is deleted after analysis.", color = Color(0xFF655D6E))
+                Button(onClick = {
+                    val uri = newCameraUri()
+                    capturedUri = uri
+                    pendingImagePurpose = choice
+                    sourceChoice = null
+                    camera.launch(uri)
+                }, modifier = Modifier.fillMaxWidth()) { Text("Take photo") }
+                Button(onClick = {
+                    sourceChoice = null
+                    pendingImagePurpose = choice
+                    beginExternalImageFlow()
+                    photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                }, modifier = Modifier.fillMaxWidth()) { Text("Choose from library") }
+            }
         }
     }
     modelStatus.assistantDiagnostic?.let { Text(it, color = Color(0xFFB3261E)) }
@@ -199,6 +403,57 @@ private fun AssistantScreen(modelStatus: ModelStatus, prepare: () -> Unit, ask: 
                 proposal.assumptions.forEach { Text("Assumption: $it") }
                 proposal.questions.forEach { Text("Question: $it") }
                 Text("Nothing has been saved. Review every portion before confirming.", color = Plum)
+                Button(onClick = { review(proposal) }, modifier = Modifier.fillMaxWidth()) { Text("Review and confirm meal") }
+            }
+        }
+    }
+    modelStatus.proposalDiagnostic?.let { Text(modelStatus.imageReason, color = Color(0xFFB3261E)) }
+    if (BuildConfig.DEBUG && modelStatus.debugLatestModelResponse != null) {
+        Button(onClick = { showDeveloperResponse = !showDeveloperResponse }, modifier = Modifier.fillMaxWidth()) {
+            Text(if (showDeveloperResponse) "Hide development response" else "Inspect latest local response")
+        }
+        if (showDeveloperResponse) {
+            Card(colors = CardDefaults.cardColors(containerColor = PlumSoft)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Development-only response inspector", style = MaterialTheme.typography.titleMedium)
+                    Text("In memory only. It clears on the next operation, vault lock, backgrounding, or restart.", color = Color(0xFF655D6E))
+                    Text(modelStatus.debugLatestModelResponse, color = Ink)
+                }
+            }
+        }
+    }
+    modelStatus.ocrText?.takeIf { it.isNotBlank() }?.let {
+        val draft = modelStatus.labelDraft ?: LabelNutritionDraft(null, null, null, null)
+        Card(colors = CardDefaults.cardColors(containerColor = PlumSoft)) {
+            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Review nutrition label", style = MaterialTheme.typography.titleLarge)
+                Text(
+                    if (modelStatus.labelDraft == null) "Local OCR read the label, but could not safely extract nutrition values. Enter them from the package."
+                    else "Verified label draft. Check it against the packaging before saving.",
+                    color = Color(0xFF655D6E),
+                )
+                Text(nutritionSummary(MealNutrition(draft.caloriesKcal, draft.proteinGrams, draft.carbohydrateGrams, draft.totalFatGrams, "verified_label")))
+                Button(onClick = { showOcrText = !showOcrText }, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (showOcrText) "Hide local OCR text" else "Show local OCR text")
+                }
+                if (showOcrText) Text(it, color = Color(0xFF655D6E))
+                Button(onClick = { reviewLabel(draft) }, modifier = Modifier.fillMaxWidth()) { Text("Review and confirm label") }
+            }
+        }
+    }
+    modelStatus.proposal?.let { proposal ->
+        Card(colors = CardDefaults.cardColors(containerColor = PlumSoft)) {
+            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Review image estimate", style = MaterialTheme.typography.titleLarge)
+                Text("Confidence: ${proposal.overallConfidence}. Nothing has been saved.", color = Color(0xFF655D6E))
+                proposal.items.forEach { item ->
+                    Text(item.name, style = MaterialTheme.typography.titleMedium)
+                    Text("${item.visiblePortion} - ${item.estimatedGramsRange.min}-${item.estimatedGramsRange.max} g - ${item.confidence} confidence")
+                    Text(item.preparation, color = Color(0xFF655D6E))
+                }
+                proposal.assumptions.forEach { Text("Assumption: $it") }
+                proposal.questions.forEach { Text("Question: $it") }
+                Text("The temporary image was discarded. Review every portion before confirming.", color = Plum)
                 Button(onClick = { review(proposal) }, modifier = Modifier.fillMaxWidth()) { Text("Review and confirm meal") }
             }
         }
@@ -272,10 +527,13 @@ private fun HistoryScreen(entries: List<WeightEntry>, meals: List<MealEntry>, un
         Text("Meals", style = MaterialTheme.typography.titleLarge)
         meals.sortedByDescending(MealEntry::recordedAt).forEach { meal ->
             Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(meal.items.joinToString { it.name }, style = MaterialTheme.typography.titleMedium)
-                    Text("${meal.source.replace('_', ' ')} - ${meal.confidence} confidence - ${meal.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate()}", color = Color(0xFF655D6E))
-                    meal.nutrition?.let { nutrition -> Text(nutritionSummary(nutrition), color = Color(0xFF655D6E)) }
+                Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    meal.referenceThumbnailBase64?.let { ReferenceThumbnail(it) }
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(meal.items.joinToString { it.name }, style = MaterialTheme.typography.titleMedium)
+                        Text("${meal.source.replace('_', ' ')} - ${meal.confidence} confidence - ${meal.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate()}", color = Color(0xFF655D6E))
+                        meal.nutrition?.let { nutrition -> Text(nutritionSummary(nutrition), color = Color(0xFF655D6E)) }
+                    }
                 }
             }
         }
@@ -288,7 +546,7 @@ private fun PrivacyScreen(unit: String, changeUnit: () -> Unit, lock: () -> Unit
     Card(colors = CardDefaults.cardColors(containerColor = Color.White)) { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Your data stays with you", style = MaterialTheme.typography.titleLarge)
         Text("Weight entries are encrypted on this phone. Metria has no account, advertising, analytics, or default sync.")
-        Text("Optional photo assistance is processed locally and temporary copies are deleted after use.")
+        Text("Optional photo assistance is processed locally and temporary copies are deleted after use. A reduced reference thumbnail is kept only when you confirm an entry and leave that option enabled.")
     } }
     Button(onClick = changeUnit, modifier = Modifier.fillMaxWidth()) { Text(if (unit == "kg") "Use pounds" else "Use kilograms") }
     Button(onClick = lock, modifier = Modifier.fillMaxWidth()) { Text("Lock vault") }
@@ -298,9 +556,41 @@ private fun formatWeight(kilograms: Double, unit: String): String = if (unit == 
 
 private data class EditableMealItem(val name: String, val grams: String, val preparation: String)
 
+@Composable
+private fun PrivateReferenceOption(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.padding(end = 12.dp)) {
+            Text("Keep private reference photo", style = MaterialTheme.typography.titleSmall)
+            Text("A reduced thumbnail only; encrypted here. The original is deleted and never uploaded.", color = Color(0xFF655D6E))
+        }
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
+}
+
+@Composable
+private fun ReferenceThumbnail(encoded: String) {
+    val bitmap = remember(encoded) {
+        runCatching {
+            val bytes = Base64.decode(encoded, Base64.DEFAULT)
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+        }.getOrNull()
+    }
+    bitmap?.let {
+        Image(
+            bitmap = it,
+            contentDescription = "Private meal reference",
+            modifier = Modifier.size(64.dp),
+        )
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun MealConfirmationSheet(proposal: MealProposal, onDismiss: () -> Unit, onSave: (MealEntry) -> Unit) {
+private fun MealConfirmationSheet(proposal: MealProposal, referenceThumbnailBase64: String?, onDismiss: () -> Unit, onSave: (MealEntry) -> Unit) {
     var items by remember(proposal) { mutableStateOf(proposal.items.map { item ->
         EditableMealItem(item.name, ((item.estimatedGramsRange.min + item.estimatedGramsRange.max) / 2).toString(), item.preparation)
     }) }
@@ -309,6 +599,7 @@ private fun MealConfirmationSheet(proposal: MealProposal, onDismiss: () -> Unit,
     var protein by remember { mutableStateOf("") }
     var carbs by remember { mutableStateOf("") }
     var fat by remember { mutableStateOf("") }
+    var keepReference by remember(referenceThumbnailBase64) { mutableStateOf(referenceThumbnailBase64 != null) }
     var error by remember { mutableStateOf<String?>(null) }
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
@@ -328,6 +619,7 @@ private fun MealConfirmationSheet(proposal: MealProposal, onDismiss: () -> Unit,
             OutlinedTextField(protein, { protein = it }, label = { Text("Protein (g)") }, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(carbs, { carbs = it }, label = { Text("Carbohydrates (g)") }, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(fat, { fat = it }, label = { Text("Fat (g)") }, modifier = Modifier.fillMaxWidth())
+            if (referenceThumbnailBase64 != null) PrivateReferenceOption(keepReference) { keepReference = it }
             OutlinedTextField(date, { date = it }, label = { Text("Date - YYYY-MM-DD") }, modifier = Modifier.fillMaxWidth())
             error?.let { Text(it, color = Color(0xFFB3261E)) }
             Button(onClick = {
@@ -337,7 +629,7 @@ private fun MealConfirmationSheet(proposal: MealProposal, onDismiss: () -> Unit,
                 val nutritionValues = rawNutrition.map { it.replace(',', '.').toDoubleOrNull() }
                 val containsInvalidNutrition = rawNutrition.zip(nutritionValues).any { (raw, value) -> raw.isNotBlank() && value == null }
                 val nutrition = if (rawNutrition.all(String::isBlank)) null else MealNutrition(nutritionValues[0], nutritionValues[1], nutritionValues[2], nutritionValues[3])
-                val meal = if (recordedAt == null) null else MealEntry(recordedAt = recordedAt, items = savedItems, assumptions = proposal.assumptions, confidence = proposal.overallConfidence, source = "ai_estimate", nutrition = nutrition)
+                val meal = if (recordedAt == null) null else MealEntry(recordedAt = recordedAt, items = savedItems, assumptions = proposal.assumptions, confidence = proposal.overallConfidence, source = "ai_estimate", nutrition = nutrition, referenceThumbnailBase64 = referenceThumbnailBase64.takeIf { keepReference })
                 if (containsInvalidNutrition || meal == null || !MealEntryValidation.valid(meal)) error = "Review the food names, portions (1-2,000 g), nutrition values, and date." else onSave(meal)
             }, modifier = Modifier.fillMaxWidth()) { Text("Save confirmed meal locally") }
         }
@@ -350,6 +642,64 @@ private fun nutritionSummary(nutrition: MealNutrition): String = listOfNotNull(
     nutrition.carbohydrateGrams?.let { "${"%.1f".format(it)} g carbs" },
     nutrition.fatGrams?.let { "${"%.1f".format(it)} g fat" },
 ).joinToString(" - ").ifBlank { "No nutrition values entered." }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ManualMealTextSheet(onDismiss: () -> Unit, onSubmit: (String) -> Unit) {
+    var text by remember { mutableStateOf("") }
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.padding(24.dp).padding(bottom = 56.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Describe a meal", style = MaterialTheme.typography.headlineMedium)
+            Text("Metria creates an editable local estimate. Nothing is saved automatically.", color = Color(0xFF655D6E))
+            OutlinedTextField(text, { text = it }, label = { Text("For example: chicken breast with half a plate of rice") }, modifier = Modifier.fillMaxWidth(), minLines = 4)
+            Button(onClick = { onSubmit(text) }, enabled = text.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text("Create editable estimate") }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun LabelConfirmationSheet(draft: LabelNutritionDraft, referenceThumbnailBase64: String?, onDismiss: () -> Unit, onSave: (MealEntry) -> Unit) {
+    var name by remember { mutableStateOf("") }
+    var date by remember { mutableStateOf(LocalDate.now().toString()) }
+    var calories by remember { mutableStateOf(draft.caloriesKcal?.toString().orEmpty()) }
+    var protein by remember { mutableStateOf(draft.proteinGrams?.toString().orEmpty()) }
+    var carbs by remember { mutableStateOf(draft.carbohydrateGrams?.toString().orEmpty()) }
+    var fat by remember { mutableStateOf(draft.totalFatGrams?.toString().orEmpty()) }
+    var keepReference by remember(referenceThumbnailBase64) { mutableStateOf(referenceThumbnailBase64 != null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.padding(24.dp).padding(bottom = 72.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Confirm nutrition label", style = MaterialTheme.typography.headlineMedium)
+            Text("These values were read locally from a label. Compare them with the package; OCR can make mistakes.", color = Plum)
+            OutlinedTextField(name, { name = it }, label = { Text("Food or product name") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(calories, { calories = it }, label = { Text("Calories (kcal)") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(protein, { protein = it }, label = { Text("Protein (g)") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(carbs, { carbs = it }, label = { Text("Carbohydrates (g)") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(fat, { fat = it }, label = { Text("Fat (g)") }, modifier = Modifier.fillMaxWidth())
+            if (referenceThumbnailBase64 != null) PrivateReferenceOption(keepReference) { keepReference = it }
+            OutlinedTextField(date, { date = it }, label = { Text("Date - YYYY-MM-DD") }, modifier = Modifier.fillMaxWidth())
+            error?.let { Text(it, color = Color(0xFFB3261E)) }
+            Button(onClick = {
+                fun value(raw: String) = raw.replace(',', '.').toDoubleOrNull()
+                val values = listOf(value(calories), value(protein), value(carbs), value(fat))
+                val raw = listOf(calories, protein, carbs, fat)
+                val invalid = raw.zip(values).any { (input, parsed) -> input.isNotBlank() && parsed == null }
+                val recordedAt = runCatching { LocalDate.parse(date).atStartOfDay(ZoneId.systemDefault()).toInstant() }.getOrNull()
+                val meal = if (recordedAt == null) null else MealEntry(
+                    recordedAt = recordedAt,
+                    items = listOf(MealEntryItem(name.trim(), null, null)),
+                    assumptions = listOf("Nutrition values were reviewed from a package label."),
+                    confidence = "high",
+                    source = "manual_entry",
+                    nutrition = MealNutrition(values[0], values[1], values[2], values[3], "verified_label"),
+                    referenceThumbnailBase64 = referenceThumbnailBase64.takeIf { keepReference },
+                )
+                if (invalid || meal == null || !MealEntryValidation.valid(meal)) error = "Enter a product name, valid non-negative values, and a valid date." else onSave(meal)
+            }, modifier = Modifier.fillMaxWidth()) { Text("Save verified label locally") }
+        }
+    }
+}
 
 @Composable
 private fun MiniTrend(points: List<WeightTrendPoint>) {

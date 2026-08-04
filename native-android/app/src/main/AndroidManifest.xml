@@ -5,6 +5,13 @@
         android:label="Metria"
         android:theme="@style/Theme.Metria">
         <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.capture"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/capture_paths" />
+        </provider>
         <activity
             android:name=".MainActivity"
             android:configChanges="orientation|screenSize|keyboardHidden"

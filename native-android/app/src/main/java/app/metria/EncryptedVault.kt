@@ -205,6 +205,7 @@ class EncryptedVault(context: Context) {
                     .put("recordedAt", meal.recordedAt.toString())
                     .put("confidence", meal.confidence)
                     .put("source", meal.source)
+                    .put("referenceThumbnail", meal.referenceThumbnailBase64)
                     .put("assumptions", JSONArray(meal.assumptions))
                     .put("items", JSONArray().apply {
                         meal.items.forEach { item -> put(JSONObject()
@@ -269,6 +270,7 @@ class EncryptedVault(context: Context) {
                             preparation = entry.optString("preparation").takeIf(String::isNotEmpty),
                         ) }
                     } }, nutrition = nutrition,
+                    referenceThumbnailBase64 = item.optString("referenceThumbnail").takeIf(String::isNotEmpty),
                 )
                 require(MealEntryValidation.valid(meal)) { "Invalid meal record." }
                 add(meal)

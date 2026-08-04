@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.Debug
 import android.os.PowerManager
 import android.os.SystemClock
+import android.util.Base64
 import androidx.exifinterface.media.ExifInterface
 import com.google.android.gms.tasks.Tasks
 import com.google.mlkit.vision.common.InputImage
@@ -48,6 +49,9 @@ data class ModelStatus(
     val proposalDiagnostic: String?,
     val ocrText: String?,
     val labelDraft: LabelNutritionDraft?,
+    val referenceThumbnailBase64: String?,
+    val imageRetryAtElapsedRealtime: Long?,
+    val debugLatestModelResponse: String?,
     val assistantProposal: MealProposal?,
     val assistantDiagnostic: String?,
     val diagnostics: String,
@@ -81,6 +85,9 @@ class ModelLifecycle(
     private var runtimeGeneration = 0L
     private var analysisGeneration = 0L
     private var nextImageAnalysisAt = 0L
+    // Product decision: permit three demanding runs before the fourth pauses.
+    // This is process-local safety telemetry only; it is never persisted or uploaded.
+    private var consecutiveLongImageRuns = 0
     private var state = "absent"
     private var bytes = 0L
     private var reason = "No local model is installed."
@@ -91,9 +98,13 @@ class ModelLifecycle(
     private var proposalDiagnostic: String? = null
     private var ocrText: String? = null
     private var labelDraft: LabelNutritionDraft? = null
+    private var referenceThumbnailBase64: String? = null
     private var assistantProposal: MealProposal? = null
     private var assistantDiagnostic: String? = null
     private var diagnostics = "No local performance measurement recorded yet."
+    // Debug builds expose only the latest response in-memory to diagnose strict-parser rejects.
+    // It is cleared on the next operation, lock/background, and process death; never logged or saved.
+    private var debugLatestModelResponse: String? = null
 
     @Synchronized
     fun status(): ModelStatus {
@@ -217,6 +228,7 @@ class ModelLifecycle(
         }
         if (activeInference?.isDone == false) return statusLocked()
         state = "thinking"
+        clearDeveloperResponseLocked()
         reason = "Thinking locally about an editable meal draft."
         assistantProposal = null
         assistantDiagnostic = null
@@ -227,21 +239,28 @@ class ModelLifecycle(
 
     @Synchronized
     fun clearMealDraft(): ModelStatus {
+        clearDeveloperResponseLocked()
         assistantProposal = null
         assistantDiagnostic = null
+        proposal = null
+        proposalDiagnostic = null
+        ocrText = null
+        labelDraft = null
+        referenceThumbnailBase64 = null
         return statusLocked()
     }
 
     @Synchronized
-    fun prepareImage(contentResolver: ContentResolver, sourceUri: Uri): ModelStatus {
+    fun prepareImage(contentResolver: ContentResolver, sourceUri: Uri, deleteSourceAfterCopy: File? = null): ModelStatus {
         if (activeInference?.isDone == false) {
             imageReason = "Wait for the active local operation to finish."
             return statusLocked()
         }
         imageState = "preparing"
+        clearDeveloperResponseLocked()
         imageReason = "Preparing a temporary local image copy."
         val startedAt = SystemClock.elapsedRealtime()
-        executor.submit { prepareImageInBackground(contentResolver, sourceUri, startedAt) }
+        executor.submit { prepareImageInBackground(contentResolver, sourceUri, deleteSourceAfterCopy, startedAt) }
         return statusLocked()
     }
 
@@ -249,10 +268,19 @@ class ModelLifecycle(
     fun analyzePreparedImage(): ModelStatus {
         val loadedEngine = engine
         val image = preparedImage
-        val remainingCooldownMillis = nextImageAnalysisAt - SystemClock.elapsedRealtime()
+        val now = SystemClock.elapsedRealtime()
+        val remainingCooldownMillis = nextImageAnalysisAt - now
         if (remainingCooldownMillis > 0) {
             val remainingSeconds = (remainingCooldownMillis + 999) / 1_000
+            imageState = "cooling_down"
             imageReason = "Let your phone cool for about $remainingSeconds seconds before another local analysis. You can enter details manually."
+            return statusLocked()
+        }
+        if (consecutiveLongImageRuns >= 3) {
+            consecutiveLongImageRuns = 0
+            nextImageAnalysisAt = now + 60_000
+            imageState = "cooling_down"
+            imageReason = "Three demanding local image analyses completed. Giving your phone about one minute to cool down before continuing."
             return statusLocked()
         }
         if (state != "loaded" || loadedEngine == null || !loadedEngine.isInitialized()) {
@@ -285,6 +313,9 @@ class ModelLifecycle(
         activeConversation?.cancelProcess()
         preparedImage?.delete()
         preparedImage = null
+        referenceThumbnailBase64 = null
+        clearDeveloperResponseLocked()
+        nextImageAnalysisAt = 0L
         imageState = "none"
         imageReason = "Local analysis stopped and its temporary image was discarded. Enter details manually or choose another image later."
         return statusLocked()
@@ -298,6 +329,8 @@ class ModelLifecycle(
         proposalDiagnostic = null
         ocrText = null
         labelDraft = null
+        referenceThumbnailBase64 = null
+        clearDeveloperResponseLocked()
         imageState = "none"
         imageReason = "Temporary image discarded."
         return statusLocked()
@@ -345,6 +378,12 @@ class ModelLifecycle(
         activeVerification?.cancel(true)
         partialFile().delete()
         executor.shutdownNow()
+    }
+
+    @Synchronized
+    fun clearDeveloperResponse(): ModelStatus {
+        clearDeveloperResponseLocked()
+        return statusLocked()
     }
 
     private fun modelFile() = File(privateFilesDir, modelFileName)
@@ -513,6 +552,7 @@ class ModelLifecycle(
                 .trim()
             synchronized(this) {
                 if (engine !== loadedEngine) return
+                debugLatestModelResponse = output.take(16_000).takeIf { BuildConfig.DEBUG }
                 state = "loaded"
                 assistantProposal = MealProposalParser.parse(output)
                 assistantDiagnostic = if (assistantProposal == null) {
@@ -547,6 +587,7 @@ class ModelLifecycle(
     private fun prepareImageInBackground(
         contentResolver: ContentResolver,
         sourceUri: Uri,
+        deleteSourceAfterCopy: File?,
         startedAt: Long,
     ) {
         var prepared: File? = null
@@ -581,6 +622,9 @@ class ModelLifecycle(
                     "Temporary image conversion failed."
                 }
             }
+            // The full source is temporary; only this reduced, EXIF-free thumbnail may
+            // later be retained if the member explicitly confirms an entry.
+            referenceThumbnailBase64 = createReferenceThumbnail(normalized)
             normalized.recycle()
             synchronized(this) {
                 preparedImage?.delete()
@@ -592,9 +636,12 @@ class ModelLifecycle(
         } catch (_: Exception) {
             prepared?.delete()
             synchronized(this) {
+                referenceThumbnailBase64 = null
                 imageState = "failed"
                 imageReason = "Image preparation failed. Choose a different image or enter details manually."
             }
+        } finally {
+            deleteSourceAfterCopy?.delete()
         }
     }
 
@@ -627,6 +674,7 @@ class ModelLifecycle(
                 .trim()
             synchronized(this) {
                 if (engine === loadedEngine && currentAnalysisGeneration == analysisGeneration) {
+                    debugLatestModelResponse = output.take(16_000).takeIf { BuildConfig.DEBUG }
                     proposal = MealProposalParser.parse(output)
                     if (proposal == null) {
                         proposalDiagnostic = MealProposalParser.describeFormat(output)
@@ -637,7 +685,9 @@ class ModelLifecycle(
                     }
                     diagnostics = measurement("local image analysis", startedAt)
                     if (SystemClock.elapsedRealtime() - startedAt >= 20_000) {
-                        nextImageAnalysisAt = SystemClock.elapsedRealtime() + 60_000
+                        consecutiveLongImageRuns += 1
+                    } else {
+                        consecutiveLongImageRuns = 0
                     }
                 }
             }
@@ -666,7 +716,10 @@ class ModelLifecycle(
             val result = Tasks.await(recognizer.process(input))
             synchronized(this) {
                 ocrText = result.text.take(4_000)
-                labelDraft = LabelNutritionParser.extract(result.text)
+                val lines = result.textBlocks.flatMap { block -> block.lines }.mapNotNull { line ->
+                    line.boundingBox?.let { bounds -> OcrTextLine(line.text, bounds.left, bounds.top, bounds.right, bounds.bottom) }
+                }
+                labelDraft = LabelNutritionParser.extract(result.text, lines)
                 imageReason = if (ocrText.isNullOrBlank()) {
                     "No readable label text was found. Enter details manually."
                 } else {
@@ -718,6 +771,23 @@ class ModelLifecycle(
         return if (matrix.isIdentity) bitmap else Bitmap.createBitmap(
             bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true
         )
+    }
+
+    private fun createReferenceThumbnail(source: Bitmap): String? {
+        val maxDimension = 320
+        val largest = maxOf(source.width, source.height)
+        val scale = minOf(1f, maxDimension.toFloat() / largest.toFloat())
+        val width = (source.width * scale).toInt().coerceAtLeast(1)
+        val height = (source.height * scale).toInt().coerceAtLeast(1)
+        val thumbnail = Bitmap.createScaledBitmap(source, width, height, true)
+        return try {
+            java.io.ByteArrayOutputStream().use { output ->
+                require(thumbnail.compress(Bitmap.CompressFormat.JPEG, 78, output))
+                Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP)
+            }
+        } finally {
+            if (thumbnail !== source) thumbnail.recycle()
+        }
     }
 
     @Synchronized
@@ -785,8 +855,15 @@ class ModelLifecycle(
         proposalDiagnostic,
         ocrText,
         labelDraft,
+        referenceThumbnailBase64,
+        nextImageAnalysisAt.takeIf { it > SystemClock.elapsedRealtime() },
+        debugLatestModelResponse,
         assistantProposal,
         assistantDiagnostic,
         diagnostics,
     )
+
+    private fun clearDeveloperResponseLocked() {
+        debugLatestModelResponse = null
+    }
 }

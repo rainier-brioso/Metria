@@ -2,6 +2,9 @@ package app.metria
 
 import android.os.Bundle
 import android.content.Intent
+import android.net.Uri
+import androidx.core.content.FileProvider
+import java.io.File
 import android.security.keystore.KeyPermanentlyInvalidatedException
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -52,6 +55,8 @@ class MainActivity : FragmentActivity() {
     private var pendingVaultOperation: VaultOperation? = null
     private var voiceDraftCallback: ((VoiceWeightDraft) -> Unit)? = null
     private var pendingVoiceDraft: VoiceWeightDraft? = null
+    private var pendingCameraCapture: File? = null
+    private var externalImageFlowInProgress = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -88,7 +93,10 @@ class MainActivity : FragmentActivity() {
     }
 
     override fun onStop() {
-        vault.lock()
+        if (!externalImageFlowInProgress) {
+            vault.lock()
+            modelLifecycle.clearDeveloperResponse()
+        }
         super.onStop()
     }
 
@@ -134,8 +142,45 @@ class MainActivity : FragmentActivity() {
 
     fun clearLocalMealDraft(): ModelStatus = modelLifecycle.clearMealDraft()
 
+    fun prepareLocalMealImage(uri: Uri): ModelStatus {
+        externalImageFlowInProgress = false
+        return modelLifecycle.prepareImage(contentResolver, uri)
+    }
+
+    fun beginExternalImageFlow() {
+        externalImageFlowInProgress = true
+    }
+
+    fun newLocalCameraCaptureUri(): Uri {
+        externalImageFlowInProgress = true
+        val file = File.createTempFile("metria-camera-", ".jpg", cacheDir)
+        pendingCameraCapture?.delete()
+        pendingCameraCapture = file
+        return FileProvider.getUriForFile(this, "$packageName.capture", file)
+    }
+
+    fun prepareLocalCapturedMealImage(uri: Uri): ModelStatus {
+        externalImageFlowInProgress = false
+        val file = pendingCameraCapture
+        pendingCameraCapture = null
+        return modelLifecycle.prepareImage(contentResolver, uri, file)
+    }
+
+    fun discardPendingCameraCapture() {
+        externalImageFlowInProgress = false
+        pendingCameraCapture?.delete()
+        pendingCameraCapture = null
+    }
+
+    fun analyzeLocalMealImage(): ModelStatus = modelLifecycle.analyzePreparedImage()
+
+    fun readLocalNutritionLabel(): ModelStatus = modelLifecycle.readNutritionLabel()
+
+    fun discardLocalMealImage(): ModelStatus = modelLifecycle.discardPreparedImage()
+
     fun lockVault() {
         vault.lock()
+        modelLifecycle.clearDeveloperResponse()
         vaultCallback?.invoke(vault.status())
     }
 

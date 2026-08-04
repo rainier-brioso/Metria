@@ -8,6 +8,8 @@ import java.util.UUID
  * A model may supply an AI-estimate draft, but its text is never a meal record
  * until the member confirms it here. Nutrition remains null unless the member
  * enters it manually; Metria has intentionally selected no food database yet.
+ * A reference is an optional, reduced, metadata-free thumbnail saved only after
+ * confirmation. It stays encrypted in this vault and is never the source photo.
  */
 data class MealEntry(
     val id: String = UUID.randomUUID().toString(),
@@ -17,6 +19,7 @@ data class MealEntry(
     val confidence: String,
     val source: String,
     val nutrition: MealNutrition? = null,
+    val referenceThumbnailBase64: String? = null,
 )
 
 data class MealEntryItem(
@@ -44,10 +47,11 @@ object MealEntryValidation {
             entry.assumptions.size <= 12 && entry.assumptions.all { it.length <= 280 } &&
             entry.confidence in setOf("low", "medium", "high") &&
             entry.source in setOf("ai_estimate", "manual_entry") &&
+            (entry.referenceThumbnailBase64 == null || entry.referenceThumbnailBase64.length in 1..180_000) &&
             entry.nutrition?.let(::validNutrition) != false
 
     private fun validNutrition(nutrition: MealNutrition): Boolean =
-        nutrition.source == "manual_entry" && listOf(
+        nutrition.source in setOf("manual_entry", "verified_label") && listOf(
             nutrition.caloriesKcal,
             nutrition.proteinGrams,
             nutrition.carbohydrateGrams,

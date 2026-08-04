@@ -18,6 +18,7 @@ revised first.
 | --- | --- | --- |
 | Weight entries, notes, meals, and trends | Encrypted vault on the member's device | The member after vault unlock |
 | Chosen meal photo or label screenshot | Temporary private cache during local processing only | The member while processing; deleted after completion, failure, or cancellation |
+| Optional confirmed reference thumbnail | Reduced, metadata-free image encrypted inside the member's vault | The member after vault unlock; only when they leave the default-on option enabled while confirming |
 | Downloaded optional model | Private app storage | The operating-system app sandbox; not a member record |
 | Diagnostics | In-memory, redacted technical values only | The member while the app is open |
 
@@ -34,7 +35,9 @@ Show before the first vault creation and before any optional model download:
 > Your entries stay encrypted on this phone. Metria does not create an account
 > or send your weight, meal details, photos, or screenshots to Metria servers.
 > If you choose local photo analysis, the app makes a temporary private copy
-> and deletes it after processing. Deleting the app removes your local data
+> and deletes it after processing. When you confirm a meal, you can keep a
+> small private reference thumbnail in your encrypted vault; the original is
+> still deleted and no image is sent anywhere. Deleting the app removes your local data
 > unless you have first made a future encrypted export.
 
 The model download itself is an explicit member action and may contact the
