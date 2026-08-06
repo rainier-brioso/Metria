@@ -98,7 +98,10 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
     var mealProposalForConfirmation by remember { mutableStateOf<MealProposal?>(null) }
     var labelDraftForConfirmation by remember { mutableStateOf<LabelNutritionDraft?>(null) }
     var manualMealText by remember { mutableStateOf(false) }
+    var browseFoodCatalog by remember { mutableStateOf(false) }
+    var catalogFoodForConfirmation by remember { mutableStateOf<CatalogFood?>(null) }
     var showAssistantLoadingPreview by remember { mutableStateOf(false) }
+    val foodCatalog = remember { runCatching { FoodCatalog.load(activity.applicationContext) }.getOrNull() }
     DisposableEffect(activity) {
         activity.setVaultCallback { status = it }
         activity.setVoiceDraftCallback { voiceDraft = it }
@@ -154,6 +157,7 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                                 modelStatus = modelStatus,
                                 showLoadingPreview = showAssistantLoadingPreview,
                                 openManualText = { manualMealText = true },
+                                openFoodCatalog = { browseFoodCatalog = true },
                                 review = { mealProposalForConfirmation = it },
                                 prepareImage = { uri -> modelStatus = activity.prepareLocalMealImage(uri) },
                                 analyzeImage = { modelStatus = activity.analyzeLocalMealImage() },
@@ -180,6 +184,7 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                 deleteEntry?.let { entry -> AlertDialog(onDismissRequest = { deleteEntry = null }, title = { Text("Delete entry?") }, text = { Text("This removes ${"%.1f".format(entry.kilograms)} kg from your encrypted vault.") }, confirmButton = { Button(onClick = { status = vault.deleteWeight(entry.id); deleteEntry = null }) { Text("Delete") } }, dismissButton = { Button(onClick = { deleteEntry = null }) { Text("Keep entry") } }) }
                 editMeal?.let { meal -> MealEditSheet(
                     meal,
+                    catalog = foodCatalog,
                     onDismiss = { editMeal = null },
                     onSave = { updated -> status = vault.updateMeal(updated); editMeal = null },
                     onRemoveReference = { status = vault.updateMeal(meal.copy(referenceThumbnailBase64 = null)) },
@@ -187,6 +192,7 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                 ) }
                 mealProposalForConfirmation?.let { proposal -> MealConfirmationSheet(
                     proposal = proposal,
+                    catalog = foodCatalog,
                     referenceThumbnailBase64 = modelStatus.referenceThumbnailBase64,
                     onDismiss = { mealProposalForConfirmation = null },
                     onSave = { meal ->
@@ -209,6 +215,20 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                     onDismiss = { manualMealText = false },
                     onSubmit = { text -> modelStatus = activity.askLocalMealAssistant(text); manualMealText = false },
                 )
+                if (browseFoodCatalog) OfflineCatalogSearchSheet(
+                    catalog = foodCatalog,
+                    onDismiss = { browseFoodCatalog = false },
+                    onSelect = { food -> catalogFoodForConfirmation = food; browseFoodCatalog = false },
+                )
+                catalogFoodForConfirmation?.let { food -> CatalogMealConfirmationSheet(
+                    food = food,
+                    catalog = foodCatalog,
+                    onDismiss = { catalogFoodForConfirmation = null },
+                    onSave = { meal ->
+                        status = vault.addMeal(meal)
+                        catalogFoodForConfirmation = null
+                    },
+                ) }
             }
         }
     }
@@ -341,6 +361,7 @@ private fun AssistantScreen(
     modelStatus: ModelStatus,
     showLoadingPreview: Boolean,
     openManualText: () -> Unit,
+    openFoodCatalog: () -> Unit,
     review: (MealProposal) -> Unit,
     prepareImage: (android.net.Uri) -> Unit,
     analyzeImage: () -> Unit,
@@ -427,6 +448,7 @@ private fun AssistantScreen(
             }
             if (modelStatus.state == "loaded") {
                 Button(onClick = openManualText, modifier = Modifier.fillMaxWidth()) { Text("Describe a meal") }
+                Button(onClick = openFoodCatalog, modifier = Modifier.fillMaxWidth()) { Text("Search offline food catalog") }
                 Button(onClick = { if (beginImageFlow().imageState != "cooling_down") sourceChoice = "label" }, modifier = Modifier.fillMaxWidth()) { Text("Scan nutrition label") }
                 Button(onClick = { if (beginImageFlow().imageState != "cooling_down") sourceChoice = "meal" }, modifier = Modifier.fillMaxWidth()) { Text("Analyze meal photo") }
             }
@@ -682,7 +704,7 @@ private fun HistoryReferenceThumbnail(encoded: String) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun MealConfirmationSheet(proposal: MealProposal, referenceThumbnailBase64: String?, onDismiss: () -> Unit, onSave: (MealEntry) -> Unit) {
+private fun MealConfirmationSheet(proposal: MealProposal, catalog: OfflineFoodCatalog?, referenceThumbnailBase64: String?, onDismiss: () -> Unit, onSave: (MealEntry) -> Unit) {
     var items by remember(proposal) { mutableStateOf(proposal.items.map { item ->
         EditableMealItem(item.name, ((item.estimatedGramsRange.min + item.estimatedGramsRange.max) / 2).toString(), item.preparation)
     }) }
@@ -693,6 +715,30 @@ private fun MealConfirmationSheet(proposal: MealProposal, referenceThumbnailBase
     var fat by remember { mutableStateOf("") }
     var keepReference by remember(referenceThumbnailBase64) { mutableStateOf(referenceThumbnailBase64 != null) }
     var error by remember { mutableStateOf<String?>(null) }
+    // Approved M3 direction: every assistant item has an independently
+    // reviewable catalog match. A total is shown only when all items match.
+    var catalogMatches by remember(proposal, catalog) {
+        mutableStateOf(proposal.items.map { item -> catalog?.let { FoodCatalog.search(it, item.name, 1).firstOrNull() } })
+    }
+    var catalogSearchIndex by remember { mutableStateOf<Int?>(null) }
+    val parsedGrams = items.map { it.grams.replace(',', '.').toIntOrNull()?.takeIf { grams -> grams in 1..2_000 } }
+    val perItemNutrition = items.indices.map { index ->
+        catalogMatches.getOrNull(index)?.let { food -> parsedGrams[index]?.let { FoodCatalog.calculate(food, it) } }
+    }
+    val hasCatalogMatchForEveryItem = catalog != null && catalogMatches.size == items.size &&
+        catalogMatches.all { it != null } && parsedGrams.all { it != null }
+    val catalogTotals = perItemNutrition.takeIf { hasCatalogMatchForEveryItem && it.all { nutrition ->
+        nutrition?.caloriesKcal != null && nutrition.proteinGrams != null &&
+            nutrition.carbohydrateGrams != null && nutrition.fatGrams != null
+    } }?.let { values ->
+        CatalogNutrition(
+            values.sumOf { it!!.caloriesKcal!! },
+            values.sumOf { it!!.proteinGrams!! },
+            values.sumOf { it!!.carbohydrateGrams!! },
+            values.sumOf { it!!.fatGrams!! },
+            values.any { it!!.caloriesDerivedFromMacros },
+        )
+    }
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             Modifier.padding(24.dp).padding(bottom = 72.dp).verticalScroll(rememberScrollState()),
@@ -701,31 +747,68 @@ private fun MealConfirmationSheet(proposal: MealProposal, referenceThumbnailBase
             Text("Confirm meal", style = MaterialTheme.typography.headlineMedium)
             Text("AI estimate - correct each portion and preparation before saving. This is a private meal record, not medical advice.", color = Plum)
             items.forEachIndexed { index, item ->
-                OutlinedTextField(item.name, { value -> items = items.toMutableList().also { it[index] = item.copy(name = value) } }, label = { Text("Food") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(item.name, { value ->
+                    items = items.toMutableList().also { it[index] = item.copy(name = value) }
+                    catalogMatches = catalogMatches.toMutableList().also { it[index] = null }
+                }, label = { Text("Food") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(item.grams, { value -> items = items.toMutableList().also { it[index] = item.copy(grams = value) } }, label = { Text("Portion in grams") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(item.preparation, { value -> items = items.toMutableList().also { it[index] = item.copy(preparation = value) } }, label = { Text("Preparation (optional)") }, modifier = Modifier.fillMaxWidth())
+                val match = catalogMatches.getOrNull(index)
+                if (match == null) {
+                    Text("No catalog match selected; this item is not included in a nutrition total.", color = Color(0xFF655D6E), style = MaterialTheme.typography.bodySmall)
+                } else {
+                    Text("Suggested match: ${match.description}", color = Plum, style = MaterialTheme.typography.bodySmall)
+                }
+                Button(onClick = { catalogSearchIndex = index }, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (match == null) "Choose offline match" else "Change offline match")
+                }
             }
-            Text("Optional nutrition you enter yourself", style = MaterialTheme.typography.titleMedium)
-            Text("Metria has no food database yet, so it will not calculate these values for you.", color = Color(0xFF655D6E))
-            OutlinedTextField(calories, { calories = it }, label = { Text("Calories (kcal)") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(protein, { protein = it }, label = { Text("Protein (g)") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(carbs, { carbs = it }, label = { Text("Carbohydrates (g)") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(fat, { fat = it }, label = { Text("Fat (g)") }, modifier = Modifier.fillMaxWidth())
+            if (catalogTotals == null) {
+                Text("Nutrition total unavailable", style = MaterialTheme.typography.titleMedium)
+                Text("Choose a match and a valid gram portion for every item to calculate the total. You can still save this reviewed meal without nutrition values.", color = Color(0xFF655D6E))
+            } else {
+                Text("Member-confirmed catalog estimate", style = MaterialTheme.typography.titleMedium)
+                Text(nutritionSummary(MealNutrition(
+                    catalogTotals.caloriesKcal, catalogTotals.proteinGrams,
+                    catalogTotals.carbohydrateGrams, catalogTotals.fatGrams,
+                    "member_confirmed_catalog", catalogRelease = catalog!!.sourceRelease,
+                )))
+                Text("Calculated from ${catalog!!.sourceName} ${catalog.sourceRelease}.", color = Plum, style = MaterialTheme.typography.bodySmall)
+                if (catalogTotals.caloriesDerivedFromMacros) Text("Calories are calculated from available protein, carbohydrates, and fat because one selected food has no USDA energy value.", color = Color(0xFF655D6E), style = MaterialTheme.typography.bodySmall)
+            }
             if (referenceThumbnailBase64 != null) PrivateReferenceOption(keepReference) { keepReference = it }
             OutlinedTextField(date, { date = it }, label = { Text("Date - YYYY-MM-DD") }, modifier = Modifier.fillMaxWidth())
             error?.let { Text(it, color = Color(0xFFB3261E)) }
             Button(onClick = {
                 val recordedAt = runCatching { LocalDate.parse(date).atStartOfDay(ZoneId.systemDefault()).toInstant() }.getOrNull()
-                val savedItems = items.map { item -> MealEntryItem(item.name.trim(), item.grams.replace(',', '.').toIntOrNull(), item.preparation.trim().takeIf(String::isNotEmpty)) }
-                val rawNutrition = listOf(calories, protein, carbs, fat)
-                val nutritionValues = rawNutrition.map { it.replace(',', '.').toDoubleOrNull() }
-                val containsInvalidNutrition = rawNutrition.zip(nutritionValues).any { (raw, value) -> raw.isNotBlank() && value == null }
-                val nutrition = if (rawNutrition.all(String::isBlank)) null else MealNutrition(nutritionValues[0], nutritionValues[1], nutritionValues[2], nutritionValues[3])
-                val meal = if (recordedAt == null) null else MealEntry(recordedAt = recordedAt, items = savedItems, assumptions = proposal.assumptions, confidence = proposal.overallConfidence, source = "ai_estimate", nutrition = nutrition, referenceThumbnailBase64 = referenceThumbnailBase64.takeIf { keepReference })
-                if (containsInvalidNutrition || meal == null || !MealEntryValidation.valid(meal)) error = "Review the food names, portions (1-2,000 g), nutrition values, and date." else onSave(meal)
+                val savedItems = items.mapIndexed { index, item -> MealEntryItem(
+                    item.name.trim(), parsedGrams[index], item.preparation.trim().takeIf(String::isNotEmpty),
+                    catalogMatches.getOrNull(index)?.fdcId.takeIf { catalogTotals != null },
+                    catalog?.sourceRelease?.takeIf { catalogTotals != null },
+                ) }
+                val nutrition = catalogTotals?.let { totals -> MealNutrition(
+                    totals.caloriesKcal, totals.proteinGrams, totals.carbohydrateGrams, totals.fatGrams,
+                    "member_confirmed_catalog", catalogRelease = catalog?.sourceRelease,
+                ) }
+                val meal = if (recordedAt == null) null else MealEntry(
+                    recordedAt = recordedAt, items = savedItems, assumptions = proposal.assumptions,
+                    confidence = proposal.overallConfidence,
+                    source = if (nutrition == null) "ai_estimate" else "member_confirmed_catalog",
+                    nutrition = nutrition, referenceThumbnailBase64 = referenceThumbnailBase64.takeIf { keepReference },
+                )
+                if (meal == null || !MealEntryValidation.valid(meal)) error = "Review the food names, portions (1-2,000 g), and date." else onSave(meal)
             }, modifier = Modifier.fillMaxWidth()) { Text("Save confirmed meal locally") }
         }
     }
+    catalogSearchIndex?.let { index -> OfflineCatalogSearchSheet(
+        catalog = catalog,
+        initialQuery = items.getOrNull(index)?.name.orEmpty(),
+        onDismiss = { catalogSearchIndex = null },
+        onSelect = { food ->
+            catalogMatches = catalogMatches.toMutableList().also { it[index] = food }
+            catalogSearchIndex = null
+        },
+    ) }
 }
 
 private fun nutritionSummary(nutrition: MealNutrition): String = listOfNotNull(
@@ -737,7 +820,7 @@ private fun nutritionSummary(nutrition: MealNutrition): String = listOfNotNull(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun MealEditSheet(meal: MealEntry, onDismiss: () -> Unit, onSave: (MealEntry) -> Unit, onRemoveReference: () -> Unit, onDelete: () -> Unit) {
+private fun MealEditSheet(meal: MealEntry, catalog: OfflineFoodCatalog?, onDismiss: () -> Unit, onSave: (MealEntry) -> Unit, onRemoveReference: () -> Unit, onDelete: () -> Unit) {
     var items by remember(meal) { mutableStateOf(meal.items.map { EditableMealItem(it.name, it.grams?.toString().orEmpty(), it.preparation.orEmpty()) }) }
     var date by remember(meal) { mutableStateOf(meal.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate().toString()) }
     var calories by remember(meal) { mutableStateOf(meal.nutrition?.caloriesKcal?.toString().orEmpty()) }
@@ -748,6 +831,25 @@ private fun MealEditSheet(meal: MealEntry, onDismiss: () -> Unit, onSave: (MealE
     var confirmReferenceRemoval by remember { mutableStateOf(false) }
     var confirmMealDeletion by remember { mutableStateOf(false) }
     var referenceThumbnail by remember(meal) { mutableStateOf(meal.referenceThumbnailBase64) }
+    val isCatalogMeal = meal.nutrition?.source == "member_confirmed_catalog"
+    var catalogMatches by remember(meal, catalog) { mutableStateOf(meal.items.map { item ->
+        val foodId = item.catalogFoodId ?: meal.nutrition?.catalogFoodId.takeIf { meal.items.size == 1 }
+        foodId?.let { id -> catalog?.foods?.firstOrNull { it.fdcId == id } }
+    }) }
+    var catalogSearchIndex by remember { mutableStateOf<Int?>(null) }
+    val parsedCatalogGrams = items.map { it.grams.replace(',', '.').toIntOrNull()?.takeIf { grams -> grams in 1..2_000 } }
+    val catalogValues = items.indices.map { index ->
+        catalogMatches.getOrNull(index)?.let { food -> parsedCatalogGrams[index]?.let { FoodCatalog.calculate(food, it) } }
+    }
+    val catalogTotals = catalogValues.takeIf { isCatalogMeal && catalog != null && catalogMatches.all { it != null } &&
+        parsedCatalogGrams.all { it != null } && it.all { nutrition ->
+            nutrition?.caloriesKcal != null && nutrition.proteinGrams != null &&
+                nutrition.carbohydrateGrams != null && nutrition.fatGrams != null
+        } }?.let { values -> CatalogNutrition(
+        values.sumOf { it!!.caloriesKcal!! }, values.sumOf { it!!.proteinGrams!! },
+        values.sumOf { it!!.carbohydrateGrams!! }, values.sumOf { it!!.fatGrams!! },
+        values.any { it!!.caloriesDerivedFromMacros },
+    ) }
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.padding(24.dp).padding(bottom = 72.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Edit meal", style = MaterialTheme.typography.headlineMedium)
@@ -768,29 +870,86 @@ private fun MealEditSheet(meal: MealEntry, onDismiss: () -> Unit, onSave: (MealE
                 }
             }
             items.forEachIndexed { index, item ->
-                OutlinedTextField(item.name, { value -> items = items.toMutableList().also { it[index] = item.copy(name = value) } }, label = { Text("Food") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(item.name, { value ->
+                    items = items.toMutableList().also { it[index] = item.copy(name = value) }
+                    if (isCatalogMeal) catalogMatches = catalogMatches.toMutableList().also { it[index] = null }
+                }, label = { Text("Food") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(item.grams, { value -> items = items.toMutableList().also { it[index] = item.copy(grams = value) } }, label = { Text("Portion in grams") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(item.preparation, { value -> items = items.toMutableList().also { it[index] = item.copy(preparation = value) } }, label = { Text("Preparation (optional)") }, modifier = Modifier.fillMaxWidth())
+                if (isCatalogMeal) {
+                    val match = catalogMatches.getOrNull(index)
+                    Text(
+                        if (match == null) "No catalog match selected; choose one before saving."
+                        else "Catalog match: ${match.description}",
+                        color = if (match == null) Color(0xFFB3261E) else Plum,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Button(onClick = { catalogSearchIndex = index }, modifier = Modifier.fillMaxWidth()) {
+                        Text(if (match == null) "Choose offline match" else "Change offline match")
+                    }
+                }
             }
-            OutlinedTextField(calories, { calories = it }, label = { Text("Calories (kcal)") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(protein, { protein = it }, label = { Text("Protein (g)") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(carbs, { carbs = it }, label = { Text("Carbohydrates (g)") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(fat, { fat = it }, label = { Text("Fat (g)") }, modifier = Modifier.fillMaxWidth())
+            if (isCatalogMeal) {
+                Text("Member-confirmed catalog estimate", style = MaterialTheme.typography.titleMedium)
+                if (catalogTotals == null) {
+                    Text("Choose a valid whole-gram portion and a catalog match for every food to recalculate this meal.", color = Color(0xFFB3261E))
+                } else {
+                    Text(nutritionSummary(MealNutrition(
+                        catalogTotals.caloriesKcal, catalogTotals.proteinGrams,
+                        catalogTotals.carbohydrateGrams, catalogTotals.fatGrams,
+                        "member_confirmed_catalog", catalogRelease = catalog!!.sourceRelease,
+                    )), color = Plum)
+                    if (catalogTotals.caloriesDerivedFromMacros) Text("Calories are calculated from available macros for one selected food.", color = Color(0xFF655D6E), style = MaterialTheme.typography.bodySmall)
+                }
+            } else {
+                OutlinedTextField(calories, { calories = it }, label = { Text("Calories (kcal)") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(protein, { protein = it }, label = { Text("Protein (g)") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(carbs, { carbs = it }, label = { Text("Carbohydrates (g)") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(fat, { fat = it }, label = { Text("Fat (g)") }, modifier = Modifier.fillMaxWidth())
+            }
             OutlinedTextField(date, { date = it }, label = { Text("Date - YYYY-MM-DD") }, modifier = Modifier.fillMaxWidth())
             error?.let { Text(it, color = Color(0xFFB3261E)) }
             Button(onClick = {
                 val recordedAt = runCatching { LocalDate.parse(date).atStartOfDay(ZoneId.systemDefault()).toInstant() }.getOrNull()
-                val updatedItems = items.map { MealEntryItem(it.name.trim(), it.grams.replace(',', '.').toIntOrNull(), it.preparation.trim().takeIf(String::isNotEmpty)) }
+                val updatedItems = items.mapIndexed { index, item -> MealEntryItem(
+                    item.name.trim(),
+                    if (isCatalogMeal) parsedCatalogGrams[index] else item.grams.replace(',', '.').toIntOrNull(),
+                    item.preparation.trim().takeIf(String::isNotEmpty),
+                    catalogMatches.getOrNull(index)?.fdcId.takeIf { isCatalogMeal && catalogTotals != null },
+                    catalog?.sourceRelease?.takeIf { isCatalogMeal && catalogTotals != null },
+                ) }
                 val rawNutrition = listOf(calories, protein, carbs, fat)
                 val values = rawNutrition.map { it.replace(',', '.').toDoubleOrNull() }
                 val invalidNutrition = rawNutrition.zip(values).any { (raw, value) -> raw.isNotBlank() && value == null }
-                val nutrition = if (rawNutrition.all(String::isBlank)) null else MealNutrition(values[0], values[1], values[2], values[3], meal.nutrition?.source ?: "manual_entry")
-                val updated = if (recordedAt == null) null else meal.copy(recordedAt = recordedAt, items = updatedItems, nutrition = nutrition, referenceThumbnailBase64 = referenceThumbnail)
-                if (invalidNutrition || updated == null || !MealEntryValidation.valid(updated)) error = "Review the food names, portions (1-2,000 g), nutrition values, and date." else onSave(updated)
+                val nutrition = when {
+                    isCatalogMeal -> catalogTotals?.let { totals -> MealNutrition(
+                        totals.caloriesKcal, totals.proteinGrams, totals.carbohydrateGrams, totals.fatGrams,
+                        "member_confirmed_catalog", catalogRelease = catalog?.sourceRelease,
+                    ) }
+                    rawNutrition.all(String::isBlank) -> null
+                    else -> MealNutrition(values[0], values[1], values[2], values[3], "manual_entry")
+                }
+                val updated = if (recordedAt == null) null else meal.copy(
+                    recordedAt = recordedAt,
+                    items = updatedItems,
+                    source = if (isCatalogMeal) "member_confirmed_catalog" else meal.source,
+                    nutrition = nutrition,
+                    referenceThumbnailBase64 = referenceThumbnail,
+                )
+                if (invalidNutrition || updated == null || !MealEntryValidation.valid(updated)) error = "Choose a valid catalog match and portion for every food, then review the date." else onSave(updated)
             }, modifier = Modifier.fillMaxWidth()) { Text("Save meal changes") }
             Button(onClick = { confirmMealDeletion = true }, modifier = Modifier.fillMaxWidth()) { Text("Delete meal") }
         }
     }
+    catalogSearchIndex?.let { index -> OfflineCatalogSearchSheet(
+        catalog = catalog,
+        initialQuery = items.getOrNull(index)?.name.orEmpty(),
+        onDismiss = { catalogSearchIndex = null },
+        onSelect = { food ->
+            catalogMatches = catalogMatches.toMutableList().also { it[index] = food }
+            catalogSearchIndex = null
+        },
+    ) }
     if (confirmReferenceRemoval) {
         AlertDialog(
             onDismissRequest = { confirmReferenceRemoval = false },
@@ -808,6 +967,115 @@ private fun MealEditSheet(meal: MealEntry, onDismiss: () -> Unit, onSave: (MealE
             confirmButton = { Button(onClick = onDelete) { Text("Delete") } },
             dismissButton = { Button(onClick = { confirmMealDeletion = false }) { Text("Keep meal") } },
         )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun OfflineCatalogSearchSheet(
+    catalog: OfflineFoodCatalog?,
+    initialQuery: String = "",
+    onDismiss: () -> Unit,
+    onSelect: (CatalogFood) -> Unit,
+) {
+    var query by remember(initialQuery) { mutableStateOf(initialQuery) }
+    val results = remember(catalog, query) { catalog?.let { FoodCatalog.search(it, query) }.orEmpty() }
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.padding(24.dp).padding(bottom = 72.dp).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("Offline food catalog", style = MaterialTheme.typography.headlineMedium)
+            if (catalog == null) {
+                Text("The local catalog could not be opened. You can still describe a meal or enter a label manually.", color = Color(0xFFB3261E))
+                return@Column
+            }
+            Text("Search ${catalog.foods.size} foods stored in this app. This never contacts a server.", color = Color(0xFF655D6E))
+            OutlinedTextField(query, { query = it }, label = { Text("Food, for example rice or chicken") }, modifier = Modifier.fillMaxWidth())
+            if (query.isNotBlank() && results.isEmpty()) Text("No local match. You can still describe the meal manually.", color = Color(0xFF655D6E))
+            results.forEach { food ->
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    modifier = Modifier.fillMaxWidth().clickable { onSelect(food) },
+                ) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(food.description, style = MaterialTheme.typography.titleMedium)
+                        food.category?.let { Text(it, color = Color(0xFF655D6E), style = MaterialTheme.typography.bodySmall) }
+                        Text("USDA Foundation Foods · ${food.portions.firstOrNull()?.label ?: "100 g reference"}", color = Plum, style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CatalogMealConfirmationSheet(
+    food: CatalogFood,
+    catalog: OfflineFoodCatalog?,
+    onDismiss: () -> Unit,
+    onSave: (MealEntry) -> Unit,
+) {
+    if (catalog == null) return
+    var grams by remember(food) { mutableStateOf(FoodCatalog.suggestedGrams(food).toString()) }
+    var date by remember { mutableStateOf(LocalDate.now().toString()) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val parsedGrams = grams.replace(',', '.').toIntOrNull()
+    val calculated = parsedGrams?.takeIf { it in 1..2_000 }?.let { FoodCatalog.calculate(food, it) }
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.padding(24.dp).padding(bottom = 72.dp).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("Confirm catalog match", style = MaterialTheme.typography.headlineMedium)
+            Text(food.description, style = MaterialTheme.typography.titleLarge)
+            Text("Member-confirmed catalog match · ${catalog.sourceName} ${catalog.sourceRelease}", color = Plum)
+            Text("These are an estimate for the portion you choose. Review before saving.", color = Color(0xFF655D6E))
+            OutlinedTextField(grams, { grams = it }, label = { Text("Portion in grams") }, modifier = Modifier.fillMaxWidth())
+            calculated?.let { nutrition ->
+                Text(nutritionSummary(MealNutrition(
+                    nutrition.caloriesKcal,
+                    nutrition.proteinGrams,
+                    nutrition.carbohydrateGrams,
+                    nutrition.fatGrams,
+                    "member_confirmed_catalog",
+                    food.fdcId,
+                    catalog.sourceRelease,
+                )))
+                if (nutrition.caloriesDerivedFromMacros) Text("Calories are calculated from available macros for this food.", color = Color(0xFF655D6E), style = MaterialTheme.typography.bodySmall)
+            } ?: Text("Enter a whole portion from 1 to 2,000 g to calculate nutrition.", color = Color(0xFFB3261E))
+            OutlinedTextField(date, { date = it }, label = { Text("Date - YYYY-MM-DD") }, modifier = Modifier.fillMaxWidth())
+            error?.let { Text(it, color = Color(0xFFB3261E)) }
+            Button(onClick = {
+                val safeGrams = parsedGrams?.takeIf { it in 1..2_000 }
+                val nutrition = safeGrams?.let { FoodCatalog.calculate(food, it) }
+                val recordedAt = runCatching { LocalDate.parse(date).atStartOfDay(ZoneId.systemDefault()).toInstant() }.getOrNull()
+                val meal = if (safeGrams == null || nutrition == null || recordedAt == null) null else MealEntry(
+                    recordedAt = recordedAt,
+                    items = listOf(MealEntryItem(
+                        name = food.description,
+                        grams = safeGrams,
+                        preparation = null,
+                        catalogFoodId = food.fdcId,
+                        catalogRelease = catalog.sourceRelease,
+                    )),
+                    assumptions = listOf("Portion selected by member from the offline USDA Foundation Foods catalog."),
+                    confidence = "medium",
+                    source = "member_confirmed_catalog",
+                    nutrition = MealNutrition(
+                        caloriesKcal = nutrition.caloriesKcal,
+                        proteinGrams = nutrition.proteinGrams,
+                        carbohydrateGrams = nutrition.carbohydrateGrams,
+                        fatGrams = nutrition.fatGrams,
+                        source = "member_confirmed_catalog",
+                        catalogFoodId = food.fdcId,
+                        catalogRelease = catalog.sourceRelease,
+                    ),
+                )
+                if (meal == null || !MealEntryValidation.valid(meal)) error = "Enter a whole portion from 1 to 2,000 g and a valid date." else onSave(meal)
+            }, modifier = Modifier.fillMaxWidth()) { Text("Save confirmed catalog meal locally") }
+        }
     }
 }
 

@@ -91,14 +91,17 @@ silent records.
 - [ ] Define `propose_meal` action schema: ingredients, quantities, unit,
   preparation, assumptions, confidence, and source.
 - [ ] Build the confirmation sheet with editable portion chips and questions.
-- [ ] Integrate a nutrition data source behind an adapter.
+- [ ] Integrate the versioned offline USDA Foundation Foods catalog behind an
+  adapter. Keep its complete source releases available only as development
+  inputs; the member vault must never contain source files or diagnostics.
 - [ ] Calculate calories/macros deterministically from confirmed quantities.
 - [ ] Display value ranges for uncertain portions and list assumptions.
 - [ ] Save source/confidence with each meal; support edit/delete.
 - [ ] Add daily and weekly nutrition summaries labelled as estimates where
   appropriate.
 - [ ] Test ambiguous language, unsupported foods, unit conversion, zero/invalid
-  values, and never-save-without-confirmation behavior.
+  values, catalog version attribution, no-network lookup, and
+  never-save-without-confirmation behavior.
 
 **Acceptance:** "one chicken breast with half a plate of rice" creates an
 editable estimated proposal with clear assumptions and only saves after a tap.

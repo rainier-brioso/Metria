@@ -210,12 +210,16 @@ class EncryptedVault(context: Context) {
                     .put("items", JSONArray().apply {
                         meal.items.forEach { item -> put(JSONObject()
                             .put("name", item.name).put("grams", item.grams)
-                            .put("preparation", item.preparation)) }
+                            .put("preparation", item.preparation)
+                            .put("catalogFoodId", item.catalogFoodId)
+                            .put("catalogRelease", item.catalogRelease)) }
                     })
                     .put("nutrition", meal.nutrition?.let { nutrition -> JSONObject()
                         .put("caloriesKcal", nutrition.caloriesKcal).put("proteinGrams", nutrition.proteinGrams)
                         .put("carbohydrateGrams", nutrition.carbohydrateGrams).put("fatGrams", nutrition.fatGrams)
                         .put("source", nutrition.source)
+                        .put("catalogFoodId", nutrition.catalogFoodId)
+                        .put("catalogRelease", nutrition.catalogRelease)
                     }))
             }
         }).toString().toByteArray(Charsets.UTF_8)
@@ -257,6 +261,8 @@ class EncryptedVault(context: Context) {
                     carbohydrateGrams = values.optNullableDouble("carbohydrateGrams"),
                     fatGrams = values.optNullableDouble("fatGrams"),
                     source = values.optString("source", "manual_entry"),
+                    catalogFoodId = if (values.isNull("catalogFoodId")) null else values.optLong("catalogFoodId"),
+                    catalogRelease = values.optString("catalogRelease").takeIf(String::isNotEmpty),
                 )
                 }
                 val meal = MealEntry(
@@ -268,6 +274,8 @@ class EncryptedVault(context: Context) {
                             name = entry.getString("name"),
                             grams = entry.optNullableInt("grams"),
                             preparation = entry.optString("preparation").takeIf(String::isNotEmpty),
+                            catalogFoodId = if (entry.isNull("catalogFoodId")) null else entry.optLong("catalogFoodId"),
+                            catalogRelease = entry.optString("catalogRelease").takeIf(String::isNotEmpty),
                         ) }
                     } }, nutrition = nutrition,
                     referenceThumbnailBase64 = item.optString("referenceThumbnail").takeIf(String::isNotEmpty),

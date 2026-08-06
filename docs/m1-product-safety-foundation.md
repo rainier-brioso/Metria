@@ -81,9 +81,12 @@ estimates or ranges, never as exact intake.
   unit. Persist a canonical kilogram value in the vault to avoid rounding drift.
 - Dates and numerals follow the device locale; ISO-8601 timestamps are used in
   encrypted storage and exports.
-- Initial food-data source: none. Manual entry and local nutrition-label OCR
-  come first. A future public database must sit behind an adapter, show its
-  source, and require explicit member approval before any network lookup.
+- Initial food-data source: USDA FoodData Central Foundation Foods, packaged as
+  a versioned offline catalog. During development, retain the complete April
+  2026 source releases locally to evaluate fields and future needs. The member
+  application must never make a runtime food lookup, and the raw source must
+  never be stored in the encrypted vault. A selected catalog match must show
+  its source and still require member confirmation.
 
 ## Accessibility baseline
 

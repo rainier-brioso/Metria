@@ -9,3 +9,6 @@ coverage/
 .env.*
 android/
 ios/
+/data/usda/raw/
+/data/usda/generated/
+__pycache__/
