@@ -25,3 +25,11 @@ Current boundary: Metria intentionally has no food database. Nutrition fields
 in this checkpoint are optional member-entered values and do not represent a
 calculated intake. A vetted adapter and deterministic calculation are still
 required before nutrition summaries can be claimed complete.
+
+## 2026-08-06 - confirmed meal lifecycle
+
+- A confirmed meal can be opened from History, edited, and saved back to the
+  encrypted vault.
+- Full meal deletion is confirmed before it removes the record.
+- The optional reference thumbnail can be removed independently while keeping
+  the meal; removal remains removed after later meal edits and saves.

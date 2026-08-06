@@ -147,6 +147,10 @@ class MainActivity : FragmentActivity() {
         return modelLifecycle.prepareImage(contentResolver, uri)
     }
 
+    fun beginLocalImageFlow(): ModelStatus = modelLifecycle.beginImageFlow()
+
+    fun finishLocalImageCooldown(): ModelStatus = modelLifecycle.finishImageCooldown()
+
     fun beginExternalImageFlow() {
         externalImageFlowInProgress = true
     }

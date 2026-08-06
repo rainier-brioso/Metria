@@ -264,6 +264,36 @@ class ModelLifecycle(
         return statusLocked()
     }
 
+    /** Checks the thermal guard before camera or library selection so no photo waits in a queue. */
+    @Synchronized
+    fun beginImageFlow(): ModelStatus {
+        val now = SystemClock.elapsedRealtime()
+        if (nextImageAnalysisAt > now) {
+            imageState = "cooling_down"
+            return statusLocked()
+        }
+        if (consecutiveLongImageRuns >= 3) {
+            consecutiveLongImageRuns = 0
+            nextImageAnalysisAt = now + 60_000
+            imageState = "cooling_down"
+            imageReason = "Three demanding local image analyses completed. Cool the phone before selecting another image."
+            return statusLocked()
+        }
+        return statusLocked()
+    }
+
+    @Synchronized
+    fun finishImageCooldown(): ModelStatus {
+        if (imageState != "cooling_down" || nextImageAnalysisAt > SystemClock.elapsedRealtime()) return statusLocked()
+        preparedImage?.delete()
+        preparedImage = null
+        referenceThumbnailBase64 = null
+        nextImageAnalysisAt = 0L
+        imageState = "none"
+        imageReason = "Phone cooled. Choose a new image when ready."
+        return statusLocked()
+    }
+
     @Synchronized
     fun analyzePreparedImage(): ModelStatus {
         val loadedEngine = engine
@@ -276,18 +306,11 @@ class ModelLifecycle(
             imageReason = "Let your phone cool for about $remainingSeconds seconds before another local analysis. You can enter details manually."
             return statusLocked()
         }
-        if (consecutiveLongImageRuns >= 3) {
-            consecutiveLongImageRuns = 0
-            nextImageAnalysisAt = now + 60_000
-            imageState = "cooling_down"
-            imageReason = "Three demanding local image analyses completed. Giving your phone about one minute to cool down before continuing."
-            return statusLocked()
-        }
         if (state != "loaded" || loadedEngine == null || !loadedEngine.isInitialized()) {
             imageReason = "Initialize LiteRT before analyzing an image."
             return statusLocked()
         }
-        if (imageState != "ready" || image == null || !image.isFile) {
+        if (imageState !in setOf("ready", "cooling_down") || image == null || !image.isFile) {
             imageReason = "Select and prepare an image before analysis."
             return statusLocked()
         }
@@ -856,7 +879,7 @@ class ModelLifecycle(
         ocrText,
         labelDraft,
         referenceThumbnailBase64,
-        nextImageAnalysisAt.takeIf { it > SystemClock.elapsedRealtime() },
+        nextImageAnalysisAt.takeIf { imageState == "cooling_down" && it > 0L },
         debugLatestModelResponse,
         assistantProposal,
         assistantDiagnostic,

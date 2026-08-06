@@ -164,6 +164,8 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                                 prepareCapturedImage = { uri -> modelStatus = activity.prepareLocalCapturedMealImage(uri) },
                                 discardPendingCapture = { activity.discardPendingCameraCapture() },
                                 beginExternalImageFlow = { activity.beginExternalImageFlow() },
+                                beginImageFlow = { activity.beginLocalImageFlow() },
+                                finishCooldown = { modelStatus = activity.finishLocalImageCooldown() },
                             )
                             else -> PrivacyScreen(vaultStatus.displayUnit, { status = vault.setDisplayUnit(if (vaultStatus.displayUnit == "kg") "lb" else "kg") }) { activity.lockVault() }
                         }
@@ -300,6 +302,40 @@ private fun AppleByteLoading(title: String, detail: String) {
 }
 
 @Composable
+private fun CoolingDownLoading(secondsLeft: Int) {
+    val transition = rememberInfiniteTransition(label = "metria-cooldown")
+    val pulse by transition.animateFloat(
+        initialValue = 0.86f,
+        targetValue = 1.06f,
+        animationSpec = infiniteRepeatable(tween(1100, easing = LinearEasing), androidx.compose.animation.core.RepeatMode.Reverse),
+        label = "cooling-pulse",
+    )
+    val minutes = secondsLeft / 60
+    val seconds = secondsLeft % 60
+    Column(
+        Modifier.fillMaxWidth().height(520.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Canvas(Modifier.size(180.dp)) {
+            val center = Offset(size.width / 2, size.height / 2)
+            val radius = 42.dp.toPx() * pulse
+            drawCircle(Color(0xFFE0F2F1), radius = radius, center = center)
+            repeat(8) { index ->
+                val angle = index * (Math.PI / 4.0)
+                val dx = kotlin.math.cos(angle).toFloat()
+                val dy = kotlin.math.sin(angle).toFloat()
+                drawLine(Sage.copy(alpha = 0.8f), Offset(center.x + dx * radius * .35f, center.y + dy * radius * .35f), Offset(center.x + dx * radius * 1.45f, center.y + dy * radius * 1.45f), 5.dp.toPx())
+            }
+            drawCircle(Color.White, radius = radius * .38f, center = center)
+        }
+        Text("Cooling your phone", style = MaterialTheme.typography.titleLarge)
+        Text("${minutes}:${seconds.toString().padStart(2, '0')} remaining", style = MaterialTheme.typography.headlineMedium, color = Plum, modifier = Modifier.padding(top = 8.dp))
+        Text("Analysis will start automatically and stays on this phone.", color = Color(0xFF655D6E), modifier = Modifier.padding(top = 8.dp))
+    }
+}
+
+@Composable
 @OptIn(ExperimentalMaterial3Api::class)
 private fun AssistantScreen(
     modelStatus: ModelStatus,
@@ -315,12 +351,15 @@ private fun AssistantScreen(
     prepareCapturedImage: (android.net.Uri) -> Unit,
     discardPendingCapture: () -> Unit,
     beginExternalImageFlow: () -> Unit,
+    beginImageFlow: () -> ModelStatus,
+    finishCooldown: () -> Unit,
 ) {
     var sourceChoice by remember { mutableStateOf<String?>(null) }
     var pendingImagePurpose by remember { mutableStateOf<String?>(null) }
     var capturedUri by remember { mutableStateOf<android.net.Uri?>(null) }
     var showOcrText by remember { mutableStateOf(false) }
     var showDeveloperResponse by remember { mutableStateOf(false) }
+    var coolingSecondsLeft by remember { mutableStateOf(0) }
     val photoPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
     ) { uri ->
@@ -350,9 +389,16 @@ private fun AssistantScreen(
     }
     LaunchedEffect(modelStatus.imageState, modelStatus.imageRetryAtElapsedRealtime) {
         if (modelStatus.imageState == "cooling_down") {
-            val retryAt = modelStatus.imageRetryAtElapsedRealtime ?: return@LaunchedEffect
-            delay((retryAt - SystemClock.elapsedRealtime()).coerceAtLeast(250L))
-            analyzeImage()
+            val retryAt = requireNotNull(modelStatus.imageRetryAtElapsedRealtime)
+            while (true) {
+                val remaining = (retryAt - SystemClock.elapsedRealtime()).coerceAtLeast(0L)
+                coolingSecondsLeft = ((remaining + 999L) / 1_000L).toInt()
+                if (remaining == 0L) {
+                    finishCooldown()
+                    break
+                }
+                delay(250)
+            }
         }
     }
     val loading = when {
@@ -361,13 +407,16 @@ private fun AssistantScreen(
         modelStatus.state == "thinking" -> "Metria is reading your meal." to "Creating an editable estimate locally."
         modelStatus.imageState == "preparing" -> "Metria is preparing your image." to "A temporary local copy is being made."
         modelStatus.imageState == "ready" && pendingImagePurpose != null -> "Metria is getting your result ready." to "Nothing is saved automatically."
-        modelStatus.imageState == "cooling_down" -> "Giving your phone a moment." to "Metria will continue locally when it has cooled down."
         modelStatus.imageState == "analyzing" -> "Metria is reading your meal photo." to "This can take a little while on your phone."
         modelStatus.imageState == "reading_label" -> "Metria is reading your label." to "Text is read locally and must be reviewed."
         else -> null
     }
     if (loading != null) {
         AppleByteLoading(loading.first, loading.second)
+        return
+    }
+    if (modelStatus.imageState == "cooling_down") {
+        CoolingDownLoading(coolingSecondsLeft)
         return
     }
     Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
@@ -378,8 +427,8 @@ private fun AssistantScreen(
             }
             if (modelStatus.state == "loaded") {
                 Button(onClick = openManualText, modifier = Modifier.fillMaxWidth()) { Text("Describe a meal") }
-                Button(onClick = { sourceChoice = "label" }, modifier = Modifier.fillMaxWidth()) { Text("Scan nutrition label") }
-                Button(onClick = { sourceChoice = "meal" }, modifier = Modifier.fillMaxWidth()) { Text("Analyze meal photo") }
+                Button(onClick = { if (beginImageFlow().imageState != "cooling_down") sourceChoice = "label" }, modifier = Modifier.fillMaxWidth()) { Text("Scan nutrition label") }
+                Button(onClick = { if (beginImageFlow().imageState != "cooling_down") sourceChoice = "meal" }, modifier = Modifier.fillMaxWidth()) { Text("Analyze meal photo") }
             }
             if (modelStatus.imageState == "failed") Text(modelStatus.imageReason, color = Color(0xFFB3261E))
         }
