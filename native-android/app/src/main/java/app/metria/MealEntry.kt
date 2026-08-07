@@ -38,6 +38,8 @@ data class MealNutrition(
     val source: String = "manual_entry",
     val catalogFoodId: Long? = null,
     val catalogRelease: String? = null,
+    /** "partial" means known ingredients only; it must not enter full-day totals. */
+    val estimateCoverage: String = "full",
 )
 
 object MealEntryValidation {
@@ -58,6 +60,7 @@ object MealEntryValidation {
 
     private fun validNutrition(nutrition: MealNutrition): Boolean =
         nutrition.source in setOf("manual_entry", "verified_label", "member_confirmed_catalog") &&
+            nutrition.estimateCoverage in setOf("full", "partial") &&
             (nutrition.source != "member_confirmed_catalog" || !nutrition.catalogRelease.isNullOrBlank()) && listOf(
             nutrition.caloriesKcal,
             nutrition.proteinGrams,

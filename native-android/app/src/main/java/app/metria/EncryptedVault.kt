@@ -220,6 +220,7 @@ class EncryptedVault(context: Context) {
                         .put("source", nutrition.source)
                         .put("catalogFoodId", nutrition.catalogFoodId)
                         .put("catalogRelease", nutrition.catalogRelease)
+                        .put("estimateCoverage", nutrition.estimateCoverage)
                     }))
             }
         }).toString().toByteArray(Charsets.UTF_8)
@@ -263,6 +264,7 @@ class EncryptedVault(context: Context) {
                     source = values.optString("source", "manual_entry"),
                     catalogFoodId = if (values.isNull("catalogFoodId")) null else values.optLong("catalogFoodId"),
                     catalogRelease = values.optString("catalogRelease").takeIf(String::isNotEmpty),
+                    estimateCoverage = values.optString("estimateCoverage", "full"),
                 )
                 }
                 val meal = MealEntry(

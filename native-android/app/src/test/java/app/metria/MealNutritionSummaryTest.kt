@@ -38,4 +38,17 @@ class MealNutritionSummaryTest {
         assertEquals(0, summary.completeNutritionMeals)
         assertNull(summary.caloriesKcal)
     }
+
+    @Test fun `partial ingredient estimates never enter full nutrition totals`() {
+        val summary = MealNutritionSummaries.between(
+            listOf(
+                meal(6, MealNutrition(200.0, 10.0, 30.0, 4.0, estimateCoverage = "partial")),
+                meal(6, MealNutrition(100.0, 5.0, 10.0, 2.0)),
+            ),
+            java.time.LocalDate.of(2026, 8, 6), java.time.LocalDate.of(2026, 8, 6),
+        )
+        assertEquals(2, summary.recordedMeals)
+        assertEquals(1, summary.completeNutritionMeals)
+        assertEquals(100.0, summary.caloriesKcal!!, 0.001)
+    }
 }

@@ -21,7 +21,7 @@ object MealNutritionSummaries {
             !date.isBefore(start) && !date.isAfter(end)
         }
         val complete = inRange.mapNotNull { it.nutrition }.filter { nutrition ->
-            nutrition.caloriesKcal != null && nutrition.proteinGrams != null &&
+            nutrition.estimateCoverage == "full" && nutrition.caloriesKcal != null && nutrition.proteinGrams != null &&
                 nutrition.carbohydrateGrams != null && nutrition.fatGrams != null
         }
         return MealNutritionSummary(
