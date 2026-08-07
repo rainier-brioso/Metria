@@ -31,6 +31,22 @@ confirmed calculation. A production build may later use a reduced catalog, but
 only after a size and UX decision is documented; it must retain the source ID,
 release, and attribution.
 
+Metria maintains a small, versioned Spanish-to-English search-alias list for
+common foods. An alias only finds a candidate in the offline USDA catalog; it
+does not rename, translate, or silently select a food. The member still sees
+and confirms the USDA description and portion.
+
+For a curated subset of common foods, Metria also has a Spanish display name
+for Spanish-device users. The USDA English description remains visible beneath
+it during search and confirmation, while the saved record retains its USDA ID
+and release.
+
+To avoid mixed-language result lists, recognized USDA food descriptions also
+receive deterministic local phrase translation for Spanish-device users. This
+is only a display fallback: exact reviewed names take precedence, unknown words
+remain in the USDA English line, and neither source ID nor nutrient data is
+changed.
+
 ## Privacy and integrity constraints
 
 - No runtime network lookup, API key, account, prompt, photo, or food query is

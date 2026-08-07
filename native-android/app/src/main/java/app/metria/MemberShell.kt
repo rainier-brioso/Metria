@@ -89,6 +89,7 @@ private val MetriaCanvas = Color(0xFFFBF8FC)
 fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
     var status by remember { mutableStateOf(vault.status()) }
     var destination by remember { mutableStateOf("Today") }
+    var todayTab by remember { mutableStateOf(0) }
     var addSheet by remember { mutableStateOf(false) }
     var editEntry by remember { mutableStateOf<WeightEntry?>(null) }
     var deleteEntry by remember { mutableStateOf<WeightEntry?>(null) }
@@ -147,11 +148,20 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                 Scaffold(
                     containerColor = MetriaCanvas,
                     bottomBar = { MemberNavigation(destination) { destination = it } },
-                    floatingActionButton = { if (destination in setOf("Today", "History")) FloatingActionButton(onClick = { addSheet = true }, containerColor = Plum) { Text("+") } },
+                    floatingActionButton = {
+                        if (destination == "Today") FloatingActionButton(
+                            onClick = { if (todayTab == 0) addSheet = true else destination = "Assistant" },
+                            containerColor = Plum,
+                        ) { Text("+") }
+                        else if (destination == "History") FloatingActionButton(onClick = { addSheet = true }, containerColor = Plum) { Text("+") }
+                    },
                 ) { padding ->
                     Column(Modifier.padding(padding).verticalScroll(rememberScrollState()).padding(20.dp).padding(bottom = 104.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
                         when (destination) {
-                            "Today" -> TodayScreen(vaultStatus.entries, vaultStatus.meals, vaultStatus.displayUnit, onAdd = { addSheet = true })
+                            "Today" -> TodayScreen(
+                                vaultStatus.entries, vaultStatus.meals, vaultStatus.displayUnit,
+                                selectedTab = todayTab, onSelectTab = { todayTab = it }, onEditMeal = { editMeal = it },
+                            )
                             "History" -> HistoryScreen(vaultStatus.entries, vaultStatus.meals, vaultStatus.displayUnit, onEdit = { editEntry = it }, onDelete = { deleteEntry = it }, onEditMeal = { editMeal = it })
                             "Assistant" -> AssistantScreen(
                                 modelStatus = modelStatus,
@@ -548,11 +558,19 @@ private fun AssistantScreen(
 }
 
 @Composable
-private fun TodayScreen(entries: List<WeightEntry>, meals: List<MealEntry>, unit: String, onAdd: () -> Unit) {
+private fun TodayScreen(entries: List<WeightEntry>, meals: List<MealEntry>, unit: String, selectedTab: Int, onSelectTab: (Int) -> Unit, onEditMeal: (MealEntry) -> Unit) {
     val latest = entries.maxByOrNull(WeightEntry::recordedAt)
     val month = WeightTrend.filter(entries, LocalDate.now().minusDays(29), LocalDate.now())
+    val todayNutrition = MealNutritionSummaries.between(meals, LocalDate.now(), LocalDate.now())
+    val weekNutrition = MealNutritionSummaries.between(meals, LocalDate.now().minusDays(6), LocalDate.now())
     Text("Today", style = MaterialTheme.typography.displaySmall)
     Text("A calm view of your own progress.", color = Color(0xFF655D6E))
+    TabRow(selectedTabIndex = selectedTab, containerColor = Color.Transparent) {
+        listOf("Weight", "Meals").forEachIndexed { index, label ->
+            Tab(selected = selectedTab == index, onClick = { onSelectTab(index) }, text = { Text(label) })
+        }
+    }
+    if (selectedTab == 0) {
     Card(colors = CardDefaults.cardColors(containerColor = Plum), modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("LATEST WEIGHT", color = Color(0xFFEADFF1), style = MaterialTheme.typography.labelMedium)
@@ -567,15 +585,42 @@ private fun TodayScreen(entries: List<WeightEntry>, meals: List<MealEntry>, unit
             if (month.size >= 2) MiniTrend(month)
         }
     }
-    Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Meals", style = MaterialTheme.typography.titleMedium)
-            val latestMeal = meals.maxByOrNull(MealEntry::recordedAt)
-            Text(if (latestMeal == null) "No meals recorded yet." else latestMeal.items.joinToString { it.name }, color = Color(0xFF655D6E))
-            Text(if (meals.isEmpty()) "Use Assistant to create an editable private meal draft." else "${meals.size} private meal ${if (meals.size == 1) "record" else "records"} on this phone.", color = Color(0xFF655D6E))
+    }
+    if (selectedTab == 1) {
+        NutritionOverviewCard(todayNutrition, weekNutrition)
+        val todayMeals = meals.filter { it.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate() == LocalDate.now() }
+            .sortedByDescending(MealEntry::recordedAt)
+        Text("Today’s meals", style = MaterialTheme.typography.titleMedium)
+        if (todayMeals.isEmpty()) {
+            Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Text("No meals recorded today. Use the plus button to open your private assistant.", color = Color(0xFF655D6E), modifier = Modifier.padding(20.dp))
+            }
+        } else {
+            todayMeals.forEach { meal -> MealRecordCard(meal, onEditMeal) }
         }
     }
-    Button(onClick = onAdd, modifier = Modifier.fillMaxWidth()) { Text("Record today’s weight") }
+}
+
+@Composable
+private fun NutritionOverviewCard(today: MealNutritionSummary, week: MealNutritionSummary) {
+    Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Estimated nutrition", style = MaterialTheme.typography.titleMedium)
+            if (today.completeNutritionMeals == 0) {
+                Text("No meals with complete nutrition have been recorded today.", color = Color(0xFF655D6E))
+            } else {
+                Text(nutritionSummary(MealNutrition(today.caloriesKcal, today.proteinGrams, today.carbohydrateGrams, today.fatGrams)), color = Plum)
+                Text("Today: ${today.completeNutritionMeals} of ${today.recordedMeals} recorded meals included.", color = Color(0xFF655D6E))
+            }
+            if (week.completeNutritionMeals > 0) {
+                Text("Last 7 days", style = MaterialTheme.typography.titleSmall)
+                Text(nutritionSummary(MealNutrition(week.caloriesKcal, week.proteinGrams, week.carbohydrateGrams, week.fatGrams)), color = Plum)
+                Text("Based on ${week.completeNutritionMeals} of ${week.recordedMeals} recorded meals. These are estimates, not daily targets.", color = Color(0xFF655D6E), style = MaterialTheme.typography.bodySmall)
+            } else {
+                Text("Add and confirm meals with complete nutrition to see a 7-day estimate.", color = Color(0xFF655D6E), style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
 }
 
 @Composable
@@ -621,16 +666,21 @@ private fun HistoryScreen(entries: List<WeightEntry>, meals: List<MealEntry>, un
     if (selectedTab == 1 && meals.isNotEmpty()) {
         Text("Meals", style = MaterialTheme.typography.titleLarge)
         meals.sortedByDescending(MealEntry::recordedAt).forEach { meal ->
-            Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
-                val photo = meal.referenceThumbnailBase64
-                Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).clickable { onEditMeal(meal) }) {
-                    photo?.let { HistoryReferenceThumbnail(it) }
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(meal.items.joinToString { it.name }, style = MaterialTheme.typography.titleMedium)
-                        Text("${meal.source.replace('_', ' ')} - ${meal.confidence} confidence - ${meal.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate()}", color = Color(0xFF655D6E))
-                        meal.nutrition?.let { nutrition -> Text(nutritionSummary(nutrition), color = Color(0xFF655D6E)) }
-                    }
-                }
+            MealRecordCard(meal, onEditMeal)
+        }
+    }
+}
+
+@Composable
+private fun MealRecordCard(meal: MealEntry, onEdit: (MealEntry) -> Unit) {
+    Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
+        val photo = meal.referenceThumbnailBase64
+        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).clickable { onEdit(meal) }) {
+            photo?.let { HistoryReferenceThumbnail(it) }
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(meal.items.joinToString { it.name }, style = MaterialTheme.typography.titleMedium)
+                Text("${meal.source.replace('_', ' ')} - ${meal.confidence} confidence - ${meal.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate()}", color = Color(0xFF655D6E))
+                meal.nutrition?.let { nutrition -> Text(nutritionSummary(nutrition), color = Color(0xFF655D6E)) }
             }
         }
     }
@@ -718,7 +768,7 @@ private fun MealConfirmationSheet(proposal: MealProposal, catalog: OfflineFoodCa
     // Approved M3 direction: every assistant item has an independently
     // reviewable catalog match. A total is shown only when all items match.
     var catalogMatches by remember(proposal, catalog) {
-        mutableStateOf(proposal.items.map { item -> catalog?.let { FoodCatalog.search(it, item.name, 1).firstOrNull() } })
+        mutableStateOf(proposal.items.map { item -> catalog?.let { FoodCatalog.suggest(it, item.name) } })
     }
     var catalogSearchIndex by remember { mutableStateOf<Int?>(null) }
     val parsedGrams = items.map { it.grams.replace(',', '.').toIntOrNull()?.takeIf { grams -> grams in 1..2_000 } }
@@ -757,7 +807,7 @@ private fun MealConfirmationSheet(proposal: MealProposal, catalog: OfflineFoodCa
                 if (match == null) {
                     Text("No catalog match selected; this item is not included in a nutrition total.", color = Color(0xFF655D6E), style = MaterialTheme.typography.bodySmall)
                 } else {
-                    Text("Suggested match: ${match.description}", color = Plum, style = MaterialTheme.typography.bodySmall)
+                    Text("Suggested match: ${FoodCatalog.memberDisplayName(match)}", color = Plum, style = MaterialTheme.typography.bodySmall)
                 }
                 Button(onClick = { catalogSearchIndex = index }, modifier = Modifier.fillMaxWidth()) {
                     Text(if (match == null) "Choose offline match" else "Change offline match")
@@ -797,7 +847,9 @@ private fun MealConfirmationSheet(proposal: MealProposal, catalog: OfflineFoodCa
                     nutrition = nutrition, referenceThumbnailBase64 = referenceThumbnailBase64.takeIf { keepReference },
                 )
                 if (meal == null || !MealEntryValidation.valid(meal)) error = "Review the food names, portions (1-2,000 g), and date." else onSave(meal)
-            }, modifier = Modifier.fillMaxWidth()) { Text("Save confirmed meal locally") }
+            }, modifier = Modifier.fillMaxWidth()) {
+                Text(if (catalogTotals == null) "Save meal without nutrition" else "Save estimated nutrition locally")
+            }
         }
     }
     catalogSearchIndex?.let { index -> OfflineCatalogSearchSheet(
@@ -831,10 +883,11 @@ private fun MealEditSheet(meal: MealEntry, catalog: OfflineFoodCatalog?, onDismi
     var confirmReferenceRemoval by remember { mutableStateOf(false) }
     var confirmMealDeletion by remember { mutableStateOf(false) }
     var referenceThumbnail by remember(meal) { mutableStateOf(meal.referenceThumbnailBase64) }
-    val isCatalogMeal = meal.nutrition?.source == "member_confirmed_catalog"
+    var calculateWithCatalog by remember(meal) { mutableStateOf(meal.nutrition?.source == "member_confirmed_catalog") }
+    val isCatalogMeal = calculateWithCatalog
     var catalogMatches by remember(meal, catalog) { mutableStateOf(meal.items.map { item ->
         val foodId = item.catalogFoodId ?: meal.nutrition?.catalogFoodId.takeIf { meal.items.size == 1 }
-        foodId?.let { id -> catalog?.foods?.firstOrNull { it.fdcId == id } }
+        foodId?.let { id -> catalog?.foods?.firstOrNull { it.fdcId == id } } ?: catalog?.let { FoodCatalog.suggest(it, item.name) }
     }) }
     var catalogSearchIndex by remember { mutableStateOf<Int?>(null) }
     val parsedCatalogGrams = items.map { it.grams.replace(',', '.').toIntOrNull()?.takeIf { grams -> grams in 1..2_000 } }
@@ -880,7 +933,7 @@ private fun MealEditSheet(meal: MealEntry, catalog: OfflineFoodCatalog?, onDismi
                     val match = catalogMatches.getOrNull(index)
                     Text(
                         if (match == null) "No catalog match selected; choose one before saving."
-                        else "Catalog match: ${match.description}",
+                        else "Catalog match: ${FoodCatalog.memberDisplayName(match)}",
                         color = if (match == null) Color(0xFFB3261E) else Plum,
                         style = MaterialTheme.typography.bodySmall,
                     )
@@ -902,6 +955,10 @@ private fun MealEditSheet(meal: MealEntry, catalog: OfflineFoodCatalog?, onDismi
                     if (catalogTotals.caloriesDerivedFromMacros) Text("Calories are calculated from available macros for one selected food.", color = Color(0xFF655D6E), style = MaterialTheme.typography.bodySmall)
                 }
             } else {
+                Button(onClick = { calculateWithCatalog = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Calculate from offline catalog")
+                }
+                Text("Metria will suggest local matches for the foods and portions above. Review them before saving.", color = Color(0xFF655D6E), style = MaterialTheme.typography.bodySmall)
                 OutlinedTextField(calories, { calories = it }, label = { Text("Calories (kcal)") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(protein, { protein = it }, label = { Text("Protein (g)") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(carbs, { carbs = it }, label = { Text("Carbohydrates (g)") }, modifier = Modifier.fillMaxWidth())
@@ -999,7 +1056,10 @@ private fun OfflineCatalogSearchSheet(
                     modifier = Modifier.fillMaxWidth().clickable { onSelect(food) },
                 ) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(food.description, style = MaterialTheme.typography.titleMedium)
+                        Text(FoodCatalog.memberDisplayName(food), style = MaterialTheme.typography.titleMedium)
+                        if (FoodCatalog.memberDisplayName(food) != food.description) {
+                            Text("USDA: ${food.description}", color = Color(0xFF655D6E), style = MaterialTheme.typography.bodySmall)
+                        }
                         food.category?.let { Text(it, color = Color(0xFF655D6E), style = MaterialTheme.typography.bodySmall) }
                         Text("USDA Foundation Foods · ${food.portions.firstOrNull()?.label ?: "100 g reference"}", color = Plum, style = MaterialTheme.typography.labelSmall)
                     }
@@ -1029,7 +1089,8 @@ private fun CatalogMealConfirmationSheet(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text("Confirm catalog match", style = MaterialTheme.typography.headlineMedium)
-            Text(food.description, style = MaterialTheme.typography.titleLarge)
+            Text(FoodCatalog.memberDisplayName(food), style = MaterialTheme.typography.titleLarge)
+            if (FoodCatalog.memberDisplayName(food) != food.description) Text("USDA: ${food.description}", color = Color(0xFF655D6E))
             Text("Member-confirmed catalog match · ${catalog.sourceName} ${catalog.sourceRelease}", color = Plum)
             Text("These are an estimate for the portion you choose. Review before saving.", color = Color(0xFF655D6E))
             OutlinedTextField(grams, { grams = it }, label = { Text("Portion in grams") }, modifier = Modifier.fillMaxWidth())
@@ -1054,7 +1115,7 @@ private fun CatalogMealConfirmationSheet(
                 val meal = if (safeGrams == null || nutrition == null || recordedAt == null) null else MealEntry(
                     recordedAt = recordedAt,
                     items = listOf(MealEntryItem(
-                        name = food.description,
+                        name = FoodCatalog.memberDisplayName(food),
                         grams = safeGrams,
                         preparation = null,
                         catalogFoodId = food.fdcId,
