@@ -680,7 +680,13 @@ private fun MealRecordCard(meal: MealEntry, onEdit: (MealEntry) -> Unit) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(meal.items.joinToString { it.name }, style = MaterialTheme.typography.titleMedium)
                 Text("${meal.source.replace('_', ' ')} - ${meal.confidence} confidence - ${meal.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate()}", color = Color(0xFF655D6E))
-                meal.nutrition?.let { nutrition -> Text(nutritionSummary(nutrition), color = Color(0xFF655D6E)) }
+                meal.nutrition?.let { nutrition ->
+                    Text(nutritionSummary(nutrition), color = Color(0xFF655D6E))
+                } ?: Text(
+                    "No nutrition estimate - one or more foods were not matched locally.",
+                    color = Color(0xFF655D6E),
+                    style = MaterialTheme.typography.bodySmall,
+                )
             }
         }
     }
@@ -766,7 +772,8 @@ private fun MealConfirmationSheet(proposal: MealProposal, catalog: OfflineFoodCa
     var keepReference by remember(referenceThumbnailBase64) { mutableStateOf(referenceThumbnailBase64 != null) }
     var error by remember { mutableStateOf<String?>(null) }
     // Approved M3 direction: every assistant item has an independently
-    // reviewable catalog match. A total is shown only when all items match.
+    // reviewable catalog match. A total is shown only when all items match;
+    // otherwise the saved record explicitly has no nutrition estimate.
     var catalogMatches by remember(proposal, catalog) {
         mutableStateOf(proposal.items.map { item -> catalog?.let { FoodCatalog.suggest(it, item.name) } })
     }
@@ -789,13 +796,19 @@ private fun MealConfirmationSheet(proposal: MealProposal, catalog: OfflineFoodCa
             values.any { it!!.caloriesDerivedFromMacros },
         )
     }
+    val itemsNeedingReview = items.indices.filter { index ->
+        val nutrition = perItemNutrition.getOrNull(index)
+        catalogMatches.getOrNull(index) == null || parsedGrams.getOrNull(index) == null ||
+            nutrition?.caloriesKcal == null || nutrition.proteinGrams == null ||
+            nutrition.carbohydrateGrams == null || nutrition.fatGrams == null
+    }
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             Modifier.padding(24.dp).padding(bottom = 72.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text("Confirm meal", style = MaterialTheme.typography.headlineMedium)
-            Text("AI estimate - correct each portion and preparation before saving. This is a private meal record, not medical advice.", color = Plum)
+            Text("The assistant identified these foods, then Metria searched its offline catalog. Review every local match and portion before saving.", color = Plum)
             items.forEachIndexed { index, item ->
                 OutlinedTextField(item.name, { value ->
                     items = items.toMutableList().also { it[index] = item.copy(name = value) }
@@ -804,18 +817,29 @@ private fun MealConfirmationSheet(proposal: MealProposal, catalog: OfflineFoodCa
                 OutlinedTextField(item.grams, { value -> items = items.toMutableList().also { it[index] = item.copy(grams = value) } }, label = { Text("Portion in grams") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(item.preparation, { value -> items = items.toMutableList().also { it[index] = item.copy(preparation = value) } }, label = { Text("Preparation (optional)") }, modifier = Modifier.fillMaxWidth())
                 val match = catalogMatches.getOrNull(index)
+                val localCandidates = remember(catalog, item.name) {
+                    catalog?.let { FoodCatalog.candidatesForAssistantItem(it, item.name) }.orEmpty()
+                }
                 if (match == null) {
-                    Text("No catalog match selected; this item is not included in a nutrition total.", color = Color(0xFF655D6E), style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        if (localCandidates.isEmpty()) "No local catalog candidates found"
+                        else "${localCandidates.size} local candidate${if (localCandidates.size == 1) "" else "s"} found - choose one",
+                        color = Color(0xFFB3261E),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                } else if (parsedGrams[index] == null) {
+                    Text("Needs a whole portion from 1 to 2,000 g", color = Color(0xFFB3261E), style = MaterialTheme.typography.bodySmall)
                 } else {
-                    Text("Suggested match: ${FoodCatalog.memberDisplayName(match)}", color = Plum, style = MaterialTheme.typography.bodySmall)
+                    Text("Local candidate selected${if (localCandidates.size > 1) " from ${localCandidates.size}" else ""}: ${FoodCatalog.memberDisplayName(match)}", color = Plum, style = MaterialTheme.typography.bodySmall)
                 }
                 Button(onClick = { catalogSearchIndex = index }, modifier = Modifier.fillMaxWidth()) {
                     Text(if (match == null) "Choose offline match" else "Change offline match")
                 }
             }
             if (catalogTotals == null) {
-                Text("Nutrition total unavailable", style = MaterialTheme.typography.titleMedium)
-                Text("Choose a match and a valid gram portion for every item to calculate the total. You can still save this reviewed meal without nutrition values.", color = Color(0xFF655D6E))
+                Text("No nutrition estimate", style = MaterialTheme.typography.titleMedium)
+                Text("Needs review: ${itemsNeedingReview.joinToString { items[it].name.ifBlank { "Unnamed food" } }}.", color = Color(0xFFB3261E))
+                Text("Match ingredients separately. Include sauces or oils as their own food when known. You can still save this reviewed meal, but it will intentionally have no nutrition values.", color = Color(0xFF655D6E))
             } else {
                 Text("Member-confirmed catalog estimate", style = MaterialTheme.typography.titleMedium)
                 Text(nutritionSummary(MealNutrition(
@@ -955,6 +979,12 @@ private fun MealEditSheet(meal: MealEntry, catalog: OfflineFoodCatalog?, onDismi
                     if (catalogTotals.caloriesDerivedFromMacros) Text("Calories are calculated from available macros for one selected food.", color = Color(0xFF655D6E), style = MaterialTheme.typography.bodySmall)
                 }
             } else {
+                Text("No nutrition estimate", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "This meal was saved without complete nutrition values. It is not included in nutrition summaries.",
+                    color = Color(0xFF655D6E),
+                    style = MaterialTheme.typography.bodySmall,
+                )
                 Button(onClick = { calculateWithCatalog = true }, modifier = Modifier.fillMaxWidth()) {
                     Text("Calculate from offline catalog")
                 }

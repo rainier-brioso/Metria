@@ -122,7 +122,8 @@ object FoodCatalog {
     ).sortedByDescending { it.first.length }
     private val preparationTerms = setOf(
         "baked", "boiled", "steamed", "grilled", "fried", "roasted", "braised",
-        "raw", "cooked", "with", "without", "and", "or", "con", "sin", "y", "o",
+        "raw", "cooked", "piece", "pieces", "trozo", "trozos", "with", "without",
+        "and", "or", "con", "sin", "y", "o",
     )
     private val spanishDisplayNames = mapOf(
         321358L to "Hummus comercial",
@@ -211,23 +212,31 @@ object FoodCatalog {
     }
 
     /**
-     * A conservative automatic suggestion for an assistant item. Preparation
-     * words do not block a known ingredient match, but every remaining food
-     * term must occur in the candidate. The member still sees and confirms it.
+     * M3 local tool result: after the model identifies food words, this host-side
+     * lookup supplies only relevant offline candidates. The model never calculates
+     * macros and the member must still confirm one candidate per ingredient.
      */
-    fun suggest(catalog: OfflineFoodCatalog, assistantFoodName: String): CatalogFood? {
+    fun candidatesForAssistantItem(
+        catalog: OfflineFoodCatalog,
+        assistantFoodName: String,
+        limit: Int = 3,
+    ): List<CatalogFood> {
         val alternatives = searchTermAlternatives(assistantFoodName)
-        return alternatives.asSequence().mapNotNull { terms ->
+        return alternatives.asSequence().flatMap { terms ->
             val foodTerms = terms.filterNot(preparationTerms::contains)
-            if (foodTerms.isEmpty()) return@mapNotNull null
+            if (foodTerms.isEmpty()) return@flatMap emptySequence()
             catalog.foods.asSequence()
                 .filter { food ->
                     val candidate = searchKey("${food.description} ${food.category.orEmpty()}")
                     foodTerms.all(candidate::contains)
                 }
-                .minWithOrNull(compareBy<CatalogFood> { it.description.length }.thenBy { it.description })
-        }.firstOrNull()
+                .sortedWith(compareBy<CatalogFood> { it.description.length }.thenBy { it.description })
+        }.distinctBy(CatalogFood::fdcId).take(limit).toList()
     }
+
+    /** A conservative first candidate for the review form. */
+    fun suggest(catalog: OfflineFoodCatalog, assistantFoodName: String): CatalogFood? =
+        candidatesForAssistantItem(catalog, assistantFoodName, limit = 1).firstOrNull()
 
     fun calculate(food: CatalogFood, grams: Int): CatalogNutrition {
         require(grams in 1..2_000) { "Portion must be between 1 and 2,000 g." }

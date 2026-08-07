@@ -35,8 +35,10 @@ class FoodCatalogTest {
         assertTrue(FoodCatalog.search(catalog, "p").isEmpty())
     }
 
-    @Test fun `automatic suggestion ignores preparation but not food identity`() {
+    @Test fun `local assistant candidates ignore preparation but not food identity`() {
         assertEquals("Chicken breast, roasted", FoodCatalog.suggest(catalog, "baked chicken breast")?.description)
+        assertEquals("Chicken breast, roasted", FoodCatalog.suggest(catalog, "fried chicken pieces")?.description)
+        assertEquals(1, FoodCatalog.candidatesForAssistantItem(catalog, "fried chicken pieces").size)
         assertEquals("Rice, cooked", FoodCatalog.suggest(catalog, "arroz")?.description)
     }
 
