@@ -148,6 +148,12 @@ class MainActivity : FragmentActivity() {
 
     fun askLocalMealAssistant(description: String): ModelStatus = modelLifecycle.proposeMealFromText(description)
 
+    fun askPrivateCoach(question: String, snapshot: PrivateCoachSnapshot): ModelStatus = modelLifecycle.proposeCoachInsight(question, snapshot)
+
+    fun understandPrivateCoach(question: String): ModelStatus = modelLifecycle.understandCoachRequest(question)
+
+    fun cancelPrivateAssistant(): ModelStatus = modelLifecycle.cancelAssistantRequest()
+
     fun clearLocalMealDraft(): ModelStatus = modelLifecycle.clearMealDraft()
 
     fun prepareLocalMealImage(uri: Uri): ModelStatus {

@@ -32,6 +32,7 @@ class EncryptedVault(context: Context) {
             val meals: List<MealEntry> = emptyList(),
             val foodCorrections: List<FoodCorrection> = emptyList(),
             val analysisAudits: List<LocalAnalysisAudit> = emptyList(),
+            val nutritionTargets: NutritionTargets? = null,
         ) : Status
         data class RecoveryRequired(val message: String) : Status
         data class Failed(val message: String) : Status
@@ -45,6 +46,7 @@ class EncryptedVault(context: Context) {
     private var meals: MutableList<MealEntry> = mutableListOf()
     private var foodCorrections: MutableList<FoodCorrection> = mutableListOf()
     private var analysisAudits: MutableList<LocalAnalysisAudit> = mutableListOf()
+    private var nutritionTargets: NutritionTargets? = null
     private var displayUnit = "kg"
 
     fun status(): Status = when {
@@ -76,6 +78,7 @@ class EncryptedVault(context: Context) {
             meals = mutableListOf()
             foodCorrections = mutableListOf()
             analysisAudits = mutableListOf()
+            nutritionTargets = null
             persist()
             unlockedStatus()
         } catch (error: Exception) {
@@ -105,6 +108,7 @@ class EncryptedVault(context: Context) {
             meals = loaded.meals.toMutableList()
             foodCorrections = loaded.foodCorrections.toMutableList()
             analysisAudits = loaded.analysisAudits.toMutableList()
+            nutritionTargets = loaded.nutritionTargets
             unlockedStatus()
         } catch (_: KeyPermanentlyInvalidatedException) {
             lock()
@@ -128,6 +132,12 @@ class EncryptedVault(context: Context) {
             recordedAt = recordedAt,
             note = note?.trim()?.takeIf(String::isNotEmpty),
         )
+        return addWeightEntry(entry)
+    }
+
+    fun addWeightEntry(entry: WeightEntry): Status {
+        if (!WeightUnits.isValidKilograms(entry.kilograms)) return Status.Failed("Enter a weight between 15 and 500 kg.")
+        if (sessionKey == null) return Status.Locked
         return try {
             entries.add(entry)
             persist()
@@ -195,6 +205,7 @@ class EncryptedVault(context: Context) {
         meals = mutableListOf()
         foodCorrections = mutableListOf()
         analysisAudits = mutableListOf()
+        nutritionTargets = null
         displayUnit = "kg"
     }
 
@@ -204,6 +215,7 @@ class EncryptedVault(context: Context) {
         meals = meals.toList(),
         foodCorrections = foodCorrections.toList(),
         analysisAudits = analysisAudits.toList(),
+        nutritionTargets = nutritionTargets,
     )
 
     private fun persist() {
@@ -261,6 +273,11 @@ class EncryptedVault(context: Context) {
                 .put("operation", audit.operation)
                 .put("outcome", audit.outcome)
                 .put("failureCategory", audit.failureCategory)) }
+        }).put("nutritionTargets", nutritionTargets?.let { targets -> JSONObject()
+            .put("caloriesKcal", targets.caloriesKcal)
+            .put("proteinGrams", targets.proteinGrams)
+            .put("carbohydrateGrams", targets.carbohydrateGrams)
+            .put("fatGrams", targets.fatGrams)
         }).toString().toByteArray(Charsets.UTF_8)
         val encrypted = cipher(Cipher.ENCRYPT_MODE, rawKey(key))
         val envelope = JSONObject()
@@ -275,6 +292,7 @@ class EncryptedVault(context: Context) {
         val meals: List<MealEntry>,
         val foodCorrections: List<FoodCorrection>,
         val analysisAudits: List<LocalAnalysisAudit>,
+        val nutritionTargets: NutritionTargets?,
     )
 
     private fun decryptPayload(key: ByteArray): LoadedPayload {
@@ -349,7 +367,14 @@ class EncryptedVault(context: Context) {
                 failureCategory = item.optString("failureCategory").takeIf(String::isNotEmpty),
             ).also { require(LocalAnalysisAuditValidation.valid(it)) { "Invalid analysis audit." } }
         } } } ?: emptyList()
-        return LoadedPayload(loadedEntries, loadedMeals, loadedCorrections, loadedAudits)
+        val loadedTargets = root.optJSONObject("nutritionTargets")?.let { values -> NutritionTargets(
+            caloriesKcal = values.optNullableDouble("caloriesKcal"),
+            proteinGrams = values.optNullableDouble("proteinGrams"),
+            carbohydrateGrams = values.optNullableDouble("carbohydrateGrams"),
+            fatGrams = values.optNullableDouble("fatGrams"),
+        ).also { require(NutritionTargetValidation.valid(it)) { "Invalid nutrition targets." } }
+        } ?: null
+        return LoadedPayload(loadedEntries, loadedMeals, loadedCorrections, loadedAudits, loadedTargets)
     }
 
     fun recordFoodCorrections(corrections: List<FoodCorrection>): Status {
@@ -376,6 +401,23 @@ class EncryptedVault(context: Context) {
         } catch (_: Exception) {
             analysisAudits = previous.toMutableList()
             Status.Failed("The local analysis audit could not be saved.")
+        }
+    }
+
+    fun setNutritionTargets(targets: NutritionTargets?): Status {
+        if (sessionKey == null) return Status.Locked
+        val normalized = targets?.takeUnless(NutritionTargetValidation::empty)
+        if (normalized != null && !NutritionTargetValidation.valid(normalized)) {
+            return Status.Failed("Enter positive daily targets within the supported range.")
+        }
+        val previous = nutritionTargets
+        nutritionTargets = normalized
+        return try {
+            persist()
+            unlockedStatus()
+        } catch (_: Exception) {
+            nutritionTargets = previous
+            Status.Failed("Daily nutrition targets could not be saved locally.")
         }
     }
 

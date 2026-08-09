@@ -39,7 +39,7 @@ class MealNutritionSummaryTest {
         assertNull(summary.caloriesKcal)
     }
 
-    @Test fun `partial ingredient estimates never enter full nutrition totals`() {
+    @Test fun `partial ingredient estimates remain separate from complete totals`() {
         val summary = MealNutritionSummaries.between(
             listOf(
                 meal(6, MealNutrition(200.0, 10.0, 30.0, 4.0, estimateCoverage = "partial")),
@@ -50,5 +50,7 @@ class MealNutritionSummaryTest {
         assertEquals(2, summary.recordedMeals)
         assertEquals(1, summary.completeNutritionMeals)
         assertEquals(100.0, summary.caloriesKcal!!, 0.001)
+        assertEquals(1, summary.partialNutritionMeals)
+        assertEquals(200.0, summary.partialCaloriesKcal!!, 0.001)
     }
 }

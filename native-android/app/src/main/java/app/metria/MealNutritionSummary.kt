@@ -7,10 +7,15 @@ import java.time.ZoneId
 data class MealNutritionSummary(
     val recordedMeals: Int,
     val completeNutritionMeals: Int,
+    val partialNutritionMeals: Int = 0,
     val caloriesKcal: Double?,
     val proteinGrams: Double?,
     val carbohydrateGrams: Double?,
     val fatGrams: Double?,
+    val partialCaloriesKcal: Double? = null,
+    val partialProteinGrams: Double? = null,
+    val partialCarbohydrateGrams: Double? = null,
+    val partialFatGrams: Double? = null,
 )
 
 object MealNutritionSummaries {
@@ -24,13 +29,22 @@ object MealNutritionSummaries {
             nutrition.estimateCoverage == "full" && nutrition.caloriesKcal != null && nutrition.proteinGrams != null &&
                 nutrition.carbohydrateGrams != null && nutrition.fatGrams != null
         }
+        val partial = inRange.mapNotNull { it.nutrition }.filter { nutrition ->
+            nutrition.estimateCoverage == "partial" && nutrition.caloriesKcal != null && nutrition.proteinGrams != null &&
+                nutrition.carbohydrateGrams != null && nutrition.fatGrams != null
+        }
         return MealNutritionSummary(
             recordedMeals = inRange.size,
             completeNutritionMeals = complete.size,
+            partialNutritionMeals = partial.size,
             caloriesKcal = complete.takeIf { it.isNotEmpty() }?.sumOf { it.caloriesKcal!! },
             proteinGrams = complete.takeIf { it.isNotEmpty() }?.sumOf { it.proteinGrams!! },
             carbohydrateGrams = complete.takeIf { it.isNotEmpty() }?.sumOf { it.carbohydrateGrams!! },
             fatGrams = complete.takeIf { it.isNotEmpty() }?.sumOf { it.fatGrams!! },
+            partialCaloriesKcal = partial.takeIf { it.isNotEmpty() }?.sumOf { it.caloriesKcal!! },
+            partialProteinGrams = partial.takeIf { it.isNotEmpty() }?.sumOf { it.proteinGrams!! },
+            partialCarbohydrateGrams = partial.takeIf { it.isNotEmpty() }?.sumOf { it.carbohydrateGrams!! },
+            partialFatGrams = partial.takeIf { it.isNotEmpty() }?.sumOf { it.fatGrams!! },
         )
     }
 }

@@ -98,10 +98,10 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
     var modelStatus by remember { mutableStateOf(activity.modelStatus()) }
     var mealProposalForConfirmation by remember { mutableStateOf<MealProposal?>(null) }
     var labelDraftForConfirmation by remember { mutableStateOf<LabelNutritionDraft?>(null) }
-    var manualMealText by remember { mutableStateOf(false) }
     var browseFoodCatalog by remember { mutableStateOf(false) }
     var catalogFoodForConfirmation by remember { mutableStateOf<CatalogFood?>(null) }
     var showAssistantLoadingPreview by remember { mutableStateOf(false) }
+    var editNutritionTargets by remember { mutableStateOf(false) }
     val foodCatalog = remember { runCatching { FoodCatalog.load(activity.applicationContext) }.getOrNull() }
     DisposableEffect(activity) {
         activity.setVaultCallback { status = it }
@@ -160,13 +160,28 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                         when (destination) {
                             "Today" -> TodayScreen(
                                 vaultStatus.entries, vaultStatus.meals, vaultStatus.displayUnit,
+                                nutritionTargets = vaultStatus.nutritionTargets,
                                 selectedTab = todayTab, onSelectTab = { todayTab = it }, onEditMeal = { editMeal = it },
+                                onEditNutritionTargets = { editNutritionTargets = true },
                             )
                             "History" -> HistoryScreen(vaultStatus.entries, vaultStatus.meals, vaultStatus.displayUnit, onEdit = { editEntry = it }, onDelete = { deleteEntry = it }, onEditMeal = { editMeal = it })
                             "Assistant" -> AssistantScreen(
                                 modelStatus = modelStatus,
                                 showLoadingPreview = showAssistantLoadingPreview,
-                                openManualText = { manualMealText = true },
+                                entries = vaultStatus.entries,
+                                meals = vaultStatus.meals,
+                                nutritionTargets = vaultStatus.nutritionTargets,
+                                openWeightDraft = { draft -> voiceDraft = draft; addSheet = true },
+                                askMeal = { text -> modelStatus = activity.askLocalMealAssistant(text) },
+                                askCoach = { question, snapshot -> modelStatus = activity.askPrivateCoach(question, snapshot) },
+                                understandCoach = { question -> modelStatus = activity.understandPrivateCoach(question) },
+                                cancelAssistant = { modelStatus = activity.cancelPrivateAssistant() },
+                                saveWeightDirect = { kilograms, date ->
+                                    val entry = WeightEntry(kilograms = kilograms, recordedAt = date)
+                                    status = vault.addWeightEntry(entry)
+                                    if (status is EncryptedVault.Status.Unlocked) entry else null
+                                },
+                                editSavedWeight = { editEntry = it },
                                 openFoodCatalog = { browseFoodCatalog = true },
                                 review = { mealProposalForConfirmation = it },
                                 prepareImage = { uri -> modelStatus = activity.prepareLocalMealImage(uri) },
@@ -229,10 +244,6 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                         modelStatus = activity.clearLocalMealDraft()
                     },
                 ) }
-                if (manualMealText) ManualMealTextSheet(
-                    onDismiss = { manualMealText = false },
-                    onSubmit = { text -> modelStatus = activity.askLocalMealAssistant(text); manualMealText = false },
-                )
                 if (browseFoodCatalog) OfflineCatalogSearchSheet(
                     catalog = foodCatalog,
                     onDismiss = { browseFoodCatalog = false },
@@ -247,6 +258,11 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                         catalogFoodForConfirmation = null
                     },
                 ) }
+                if (editNutritionTargets) NutritionTargetsSheet(
+                    targets = vaultStatus.nutritionTargets,
+                    onDismiss = { editNutritionTargets = false },
+                    onSave = { targets -> status = vault.setNutritionTargets(targets); editNutritionTargets = false },
+                )
             }
         }
     }
@@ -378,7 +394,16 @@ private fun CoolingDownLoading(secondsLeft: Int) {
 private fun AssistantScreen(
     modelStatus: ModelStatus,
     showLoadingPreview: Boolean,
-    openManualText: () -> Unit,
+    entries: List<WeightEntry>,
+    meals: List<MealEntry>,
+    nutritionTargets: NutritionTargets?,
+    openWeightDraft: (VoiceWeightDraft) -> Unit,
+    askMeal: (String) -> Unit,
+    askCoach: (String, PrivateCoachSnapshot) -> Unit,
+    understandCoach: (String) -> Unit,
+    cancelAssistant: () -> Unit,
+    saveWeightDirect: (Double, Instant) -> WeightEntry?,
+    editSavedWeight: (WeightEntry) -> Unit,
     openFoodCatalog: () -> Unit,
     review: (MealProposal) -> Unit,
     prepareImage: (android.net.Uri) -> Unit,
@@ -394,6 +419,7 @@ private fun AssistantScreen(
     finishCooldown: () -> Unit,
 ) {
     var sourceChoice by remember { mutableStateOf<String?>(null) }
+    var chatOpen by remember { mutableStateOf(false) }
     var pendingImagePurpose by remember { mutableStateOf<String?>(null) }
     var capturedUri by remember { mutableStateOf<android.net.Uri?>(null) }
     var showOcrText by remember { mutableStateOf(false) }
@@ -450,12 +476,39 @@ private fun AssistantScreen(
         modelStatus.imageState == "reading_label" -> "Metria is reading your label." to "Text is read locally and must be reviewed."
         else -> null
     }
+    if (chatOpen) {
+        PrivateAssistantChat(
+            modelStatus = modelStatus, entries = entries, meals = meals, nutritionTargets = nutritionTargets,
+            onBack = { chatOpen = false }, onWeightDraft = openWeightDraft, askMeal = askMeal,
+            askCoach = askCoach, understandCoach = understandCoach, cancelAssistant = cancelAssistant, reviewMeal = review,
+            saveWeightDirect = saveWeightDirect, editSavedWeight = editSavedWeight,
+        )
+        return
+    }
     if (loading != null) {
         AppleByteLoading(loading.first, loading.second)
         return
     }
     if (modelStatus.imageState == "cooling_down") {
         CoolingDownLoading(coolingSecondsLeft)
+        return
+    }
+    if (chatOpen) {
+        PrivateAssistantChat(
+            modelStatus = modelStatus,
+            entries = entries,
+            meals = meals,
+            nutritionTargets = nutritionTargets,
+            onBack = { chatOpen = false },
+            onWeightDraft = openWeightDraft,
+            askMeal = askMeal,
+            askCoach = askCoach,
+            understandCoach = understandCoach,
+            cancelAssistant = cancelAssistant,
+            saveWeightDirect = saveWeightDirect,
+            editSavedWeight = editSavedWeight,
+            reviewMeal = review,
+        )
         return
     }
     Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
@@ -465,7 +518,7 @@ private fun AssistantScreen(
                 else -> Text("The optional local model is ${modelStatus.state}. This developer build needs a downloaded model before chat can run.")
             }
             if (modelStatus.state == "loaded") {
-                Button(onClick = openManualText, modifier = Modifier.fillMaxWidth()) { Text("Describe a meal") }
+                Button(onClick = { chatOpen = true }, modifier = Modifier.fillMaxWidth()) { Text("Chat with Metria") }
                 Button(onClick = openFoodCatalog, modifier = Modifier.fillMaxWidth()) { Text("Search offline food catalog") }
                 Button(onClick = { if (beginImageFlow().imageState != "cooling_down") sourceChoice = "label" }, modifier = Modifier.fillMaxWidth()) { Text("Scan nutrition label") }
                 Button(onClick = { if (beginImageFlow().imageState != "cooling_down") sourceChoice = "meal" }, modifier = Modifier.fillMaxWidth()) { Text("Analyze meal photo") }
@@ -569,8 +622,189 @@ private fun AssistantScreen(
     }
 }
 
+private data class PrivateChatMessage(val text: String, val fromMember: Boolean)
+
 @Composable
-private fun TodayScreen(entries: List<WeightEntry>, meals: List<MealEntry>, unit: String, selectedTab: Int, onSelectTab: (Int) -> Unit, onEditMeal: (MealEntry) -> Unit) {
+private fun PrivateAssistantChat(
+    modelStatus: ModelStatus,
+    entries: List<WeightEntry>,
+    meals: List<MealEntry>,
+    nutritionTargets: NutritionTargets?,
+    onBack: () -> Unit,
+    onWeightDraft: (VoiceWeightDraft) -> Unit,
+    askMeal: (String) -> Unit,
+    askCoach: (String, PrivateCoachSnapshot) -> Unit,
+    understandCoach: (String) -> Unit,
+    cancelAssistant: () -> Unit,
+    saveWeightDirect: (Double, Instant) -> WeightEntry?,
+    editSavedWeight: (WeightEntry) -> Unit,
+    reviewMeal: (MealProposal) -> Unit,
+) {
+    var input by remember { mutableStateOf("") }
+    var submittedQuestion by remember { mutableStateOf("") }
+    var handledTool by remember { mutableStateOf<PrivateCoachToolCall?>(null) }
+    var handledCoachReply by remember { mutableStateOf<String?>(null) }
+    var savedWeight by remember { mutableStateOf<WeightEntry?>(null) }
+    var messages by remember { mutableStateOf(listOf(PrivateChatMessage("Ask about a meal, add a weight, or ask what you logged today. Nothing is saved without your review.", false))) }
+    val today = LocalDate.now()
+    val todayMeals = remember(meals, today) { meals.filter { it.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate() == today } }
+    val todaySummary = remember(meals, today) { MealNutritionSummaries.between(meals, today, today) }
+    val snapshot = remember(entries, meals, nutritionTargets, today) { PrivateCoachSnapshot.from(entries, meals, nutritionTargets, today) }
+    LaunchedEffect(modelStatus.coachToolCall, submittedQuestion) {
+        val call = modelStatus.coachToolCall ?: return@LaunchedEffect
+        if (call == handledTool) return@LaunchedEffect
+        handledTool = call
+        when (call.intent) {
+            "read_goal_progress" -> {
+                val scopedSnapshot = if (call.start != null && call.end != null) PrivateCoachSnapshot.from(entries, meals, nutritionTargets, today, call.start, call.end) else snapshot
+                val label = if (call.start != null && call.end != null) "${call.start} to ${call.end}" else if (call.period == "week") "Last 7 days" else "Today"
+                messages = messages + PrivateChatMessage("$label. ${scopedSnapshot.goalProgressFacts(call.period)}", false)
+                val language = coachReplyLanguage(submittedQuestion)
+                askCoach("""MEMBER_LANGUAGE: $language
+                    REQUESTED_PERIOD: $label
+                    Respond in MEMBER_LANGUAGE. Use only the selected-period week fields and their week goals.
+                    Never mention today or daily goals. Write recognition, factual comparison, and a gentle next focus.""".trimIndent(), scopedSnapshot)
+            }
+            "read_weight" -> {
+                val entry = if (call.period == "latest") entries.maxByOrNull(WeightEntry::recordedAt) else entries.filter { it.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate() == today.minusDays(1) }.maxByOrNull(WeightEntry::recordedAt)
+                messages = messages + PrivateChatMessage(entry?.let { "Weight entry: ${"%.1f".format(it.kilograms)} kg." } ?: "There is no matching weight entry yet.", false)
+            }
+            "read_weight_trend" -> {
+                val ordered = entries.sortedBy(WeightEntry::recordedAt)
+                val first = ordered.firstOrNull()
+                val latest = ordered.lastOrNull()
+                val trend = if (first == null || latest == null || first.id == latest.id) "There are not enough weight entries to describe a trend yet." else {
+                    val days = java.time.Duration.between(first.recordedAt, latest.recordedAt).toDays().coerceAtLeast(1)
+                    val change = latest.kilograms - first.kilograms
+                    "${ordered.size} weight entries from ${first.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate()} to ${latest.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate()}: ${"%.1f".format(first.kilograms)} kg to ${"%.1f".format(latest.kilograms)} kg (${"%+.1f".format(change)} kg over $days days)."
+                }
+                messages = messages + PrivateChatMessage(trend, false)
+                askCoach("MEMBER_LANGUAGE: ${coachReplyLanguage(submittedQuestion)}. WEIGHT_TREND_FACTS: $trend. Explain only these facts in three short supportive sentences; do not mention nutrition goals or give medical advice.", snapshot)
+            }
+            "read_meals" -> {
+                val date = when (call.period) { "day_before_yesterday" -> today.minusDays(2); "yesterday" -> today.minusDays(1); else -> today }
+                val saved = meals.filter { it.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate() == date }
+                messages = messages + PrivateChatMessage(if (saved.isEmpty()) "No meals were saved for $date." else "Meals on $date: ${saved.joinToString { MealIdentity.displayTitle(it) }}.", false)
+            }
+            "draft_weight" -> call.kilograms?.let { kilograms ->
+                savedWeight = saveWeightDirect(kilograms, Instant.now())
+                messages = messages + PrivateChatMessage(if (savedWeight != null) "${"%.1f".format(kilograms)} kg saved locally." else "Weight could not be saved. Try again.", false)
+            }
+            "draft_meal" -> askMeal(submittedQuestion)
+            else -> messages = messages + PrivateChatMessage("I can help with meals, weights, and your progress. Try asking in another way.", false)
+        }
+    }
+    LaunchedEffect(modelStatus.coachReply) {
+        val reply = modelStatus.coachReply ?: return@LaunchedEffect
+        if (reply != handledCoachReply) {
+            handledCoachReply = reply
+            messages = messages + PrivateChatMessage(reply, false)
+        }
+    }
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text("Private assistant", style = MaterialTheme.typography.headlineMedium)
+            Button(onClick = onBack) { Text("Back") }
+        }
+        Text("This conversation stays only while Metria is open and unlocked.", color = Color(0xFF655D6E), style = MaterialTheme.typography.bodySmall)
+        messages.forEach { message ->
+            Card(colors = CardDefaults.cardColors(containerColor = if (message.fromMember) PlumSoft else Color.White)) {
+                if (message.fromMember) Text(message.text, modifier = Modifier.padding(14.dp), color = Ink)
+                else androidx.compose.foundation.layout.Box(Modifier.padding(14.dp)) { SafeMarkdownText(message.text, Color(0xFF4E4655)) }
+            }
+        }
+        savedWeight?.let { entry ->
+            Button(onClick = { editSavedWeight(entry) }, modifier = Modifier.fillMaxWidth()) { Text("Edit saved weight") }
+        }
+        if (modelStatus.state == "thinking" && modelStatus.assistantOperation?.startsWith("coach") == true) {
+            Card(colors = CardDefaults.cardColors(containerColor = PlumSoft)) {
+                Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    Text("Reading your private progress...", color = Plum, modifier = Modifier.weight(1f))
+                    Button(onClick = cancelAssistant) { Text("Cancel") }
+                }
+            }
+        } else if (modelStatus.state == "thinking") {
+            Card(colors = CardDefaults.cardColors(containerColor = PlumSoft)) {
+                Text("Metria is preparing an editable meal draft locally…", modifier = Modifier.padding(14.dp), color = Plum)
+            }
+        }
+        modelStatus.assistantDiagnostic?.let { Text(it, color = Color(0xFFB3261E)) }
+        modelStatus.coachDiagnostic?.let { Text(it, color = Color(0xFFB3261E)) }
+        modelStatus.assistantProposal?.let { proposal ->
+            Card(colors = CardDefaults.cardColors(containerColor = PlumSoft)) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Meal draft ready", style = MaterialTheme.typography.titleMedium)
+                    Text(proposal.items.joinToString { it.name }, color = Color(0xFF655D6E))
+                    Text("Nothing has been saved.", color = Plum, style = MaterialTheme.typography.bodySmall)
+                    Button(onClick = { reviewMeal(proposal) }, modifier = Modifier.fillMaxWidth()) { Text("Review meal draft") }
+                }
+            }
+        }
+        OutlinedTextField(input, { input = it }, label = { Text("Message") }, modifier = Modifier.fillMaxWidth())
+        Button(onClick = {
+            val text = input.trim()
+            if (text.isBlank()) return@Button
+            messages = messages + PrivateChatMessage(text, true)
+            input = ""
+            submittedQuestion = text
+            understandCoach(text)
+            return@Button
+            val kilograms = parseChatWeight(text)
+            when {
+                kilograms != null -> {
+                messages = messages + PrivateChatMessage("Weight draft: ${"%.1f".format(kilograms)} kg. Review it before saving.", false)
+                onWeightDraft(VoiceWeightDraft(kilograms, Instant.now()))
+            }
+                PrivateCoachQuestions.asksYesterdayWeight(text) -> {
+                val entry = entries.filter { it.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate() == today.minusDays(1) }.maxByOrNull(WeightEntry::recordedAt)
+                messages = messages + PrivateChatMessage(entry?.let { "Yesterday you recorded ${"%.1f".format(it.kilograms)} kg. Read locally from your encrypted vault." } ?: "You did not record a weight yesterday.", false)
+            }
+                PrivateCoachQuestions.asksTodaySummary(text) -> {
+                val calories = (todaySummary.caloriesKcal ?: 0.0) + (todaySummary.partialCaloriesKcal ?: 0.0)
+                val protein = (todaySummary.proteinGrams ?: 0.0) + (todaySummary.partialProteinGrams ?: 0.0)
+                messages = messages + PrivateChatMessage(
+                    if (todayMeals.isEmpty()) "You have not recorded a meal today."
+                    else "Today: ${todayMeals.size} meals · ${"%.0f".format(calories)} kcal · ${"%.0f".format(protein)} g protein.",
+                    false,
+                )
+            }
+                PrivateCoachQuestions.asksProgress(text) -> {
+                messages = messages + PrivateChatMessage("Metria is using the on-device model with a minimal private progress summary.", false)
+                askCoach(text, snapshot)
+            }
+                else -> {
+                messages = messages + PrivateChatMessage("I’m preparing an editable meal draft locally.", false)
+                askMeal(text)
+            }
+            }
+        }, modifier = Modifier.fillMaxWidth(), enabled = input.trim().isNotBlank() && modelStatus.state == "loaded") { Text("Send") }
+    }
+}
+
+private fun parseChatWeight(text: String): Double? {
+    val match = Regex("(?i)(?:weigh|weight|peso|pes[oó])?\\s*(\\d{2,3}(?:[.,]\\d+)?)\\s*(?:kg|kilos?|kilograms?|kilogramos?)").find(text) ?: return null
+    return match.groupValues[1].replace(',', '.').toDoubleOrNull()?.takeIf(WeightUnits::isValidKilograms)
+}
+
+private fun coachReplyLanguage(text: String): String {
+    val normalized = text.lowercase()
+    return if (listOf("qué", "como", "cómo", "comí", "peso", "semana", "meta", "progreso").any { it in normalized }) "Spanish" else "the member's language"
+}
+
+private fun isDirectChatRequest(text: String) = parseChatWeight(text) != null || PrivateCoachQuestions.asksYesterdayWeight(text) || PrivateCoachQuestions.asksTodaySummary(text)
+
+@Composable
+private fun TodayScreen(
+    entries: List<WeightEntry>,
+    meals: List<MealEntry>,
+    unit: String,
+    nutritionTargets: NutritionTargets?,
+    selectedTab: Int,
+    onSelectTab: (Int) -> Unit,
+    onEditMeal: (MealEntry) -> Unit,
+    onEditNutritionTargets: () -> Unit,
+) {
     val latest = entries.maxByOrNull(WeightEntry::recordedAt)
     val month = WeightTrend.filter(entries, LocalDate.now().minusDays(29), LocalDate.now())
     val todayNutrition = MealNutritionSummaries.between(meals, LocalDate.now(), LocalDate.now())
@@ -599,7 +833,7 @@ private fun TodayScreen(entries: List<WeightEntry>, meals: List<MealEntry>, unit
     }
     }
     if (selectedTab == 1) {
-        NutritionOverviewCard(todayNutrition, weekNutrition)
+        NutritionOverviewCard(todayNutrition, weekNutrition, meals, nutritionTargets, onEditNutritionTargets, onEditMeal)
         val todayMeals = meals.filter { it.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate() == LocalDate.now() }
             .sortedByDescending(MealEntry::recordedAt)
         Text("Today’s meals", style = MaterialTheme.typography.titleMedium)
@@ -614,23 +848,205 @@ private fun TodayScreen(entries: List<WeightEntry>, meals: List<MealEntry>, unit
 }
 
 @Composable
-private fun NutritionOverviewCard(today: MealNutritionSummary, week: MealNutritionSummary) {
+private fun NutritionOverviewCard(
+    today: MealNutritionSummary,
+    week: MealNutritionSummary,
+    meals: List<MealEntry>,
+    targets: NutritionTargets?,
+    editTargets: () -> Unit,
+    onEditMeal: (MealEntry) -> Unit,
+) {
     Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Estimated nutrition", style = MaterialTheme.typography.titleMedium)
-            if (today.completeNutritionMeals == 0) {
-                Text("No meals with complete nutrition have been recorded today.", color = Color(0xFF655D6E))
-            } else {
-                Text(nutritionSummary(MealNutrition(today.caloriesKcal, today.proteinGrams, today.carbohydrateGrams, today.fatGrams)), color = Plum)
-                Text("Today: ${today.completeNutritionMeals} of ${today.recordedMeals} recorded meals included.", color = Color(0xFF655D6E))
+            Button(onClick = editTargets, modifier = Modifier.fillMaxWidth()) {
+                Text(if (targets == null) "Set goals" else "Edit goals")
             }
-            if (week.completeNutritionMeals > 0) {
-                Text("Last 7 days", style = MaterialTheme.typography.titleSmall)
-                Text(nutritionSummary(MealNutrition(week.caloriesKcal, week.proteinGrams, week.carbohydrateGrams, week.fatGrams)), color = Plum)
-                Text("Based on ${week.completeNutritionMeals} of ${week.recordedMeals} recorded meals. These are estimates, not daily targets.", color = Color(0xFF655D6E), style = MaterialTheme.typography.bodySmall)
+            if (targets == null) {
+                Text("Optional private daily targets for your own progress view.", color = Color(0xFF655D6E))
+            } else {
+                NutritionProgressCard("Calories", today.caloriesKcal, today.partialCaloriesKcal, targets.caloriesKcal, "kcal", emphasis = true)
+                listOfNotNull(
+                    targets.proteinGrams?.let { NutritionProgress("Protein", today.proteinGrams, today.partialProteinGrams, it, "g") },
+                    targets.carbohydrateGrams?.let { NutritionProgress("Carbohydrates", today.carbohydrateGrams, today.partialCarbohydrateGrams, it, "g") },
+                    targets.fatGrams?.let { NutritionProgress("Fat", today.fatGrams, today.partialFatGrams, it, "g") },
+                ).forEach { progress -> NutritionProgressCard(progress.label, progress.confirmed, progress.partial, progress.target, progress.unit) }
+                NutritionEstimateLegend(today.completeNutritionMeals, today.partialNutritionMeals)
+            }
+            if (today.completeNutritionMeals == 0 && today.partialNutritionMeals == 0) {
+                Text("No meals with nutrition values have been recorded today.", color = Color(0xFF655D6E))
+            }
+            if (week.completeNutritionMeals > 0 || week.partialNutritionMeals > 0) {
+                WeeklyNutritionChart(meals, targets, onEditMeal)
             } else {
                 Text("Add and confirm meals with complete nutrition to see a 7-day estimate.", color = Color(0xFF655D6E), style = MaterialTheme.typography.bodySmall)
             }
+        }
+    }
+}
+
+@Composable
+private fun WeeklyNutritionChart(meals: List<MealEntry>, targets: NutritionTargets?, onEditMeal: (MealEntry) -> Unit) {
+    val days = (6 downTo 0).map { LocalDate.now().minusDays(it.toLong()) }
+    val daily = days.map { day -> MealNutritionSummaries.between(meals, day, day) }
+    var selectedDay by remember { mutableStateOf<LocalDate?>(null) }
+    val calorieValues = daily.map { (it.caloriesKcal ?: 0.0) + (it.partialCaloriesKcal ?: 0.0) }
+    val scale = maxOf(targets?.caloriesKcal ?: 0.0, calorieValues.maxOrNull() ?: 0.0, 1.0)
+    val averageCalories = calorieValues.average()
+    val averageProtein = daily.map { (it.proteinGrams ?: 0.0) + (it.partialProteinGrams ?: 0.0) }.average()
+    Text("Last 7 days", style = MaterialTheme.typography.titleSmall)
+    Row(Modifier.fillMaxWidth().height(130.dp), horizontalArrangement = Arrangement.spacedBy(7.dp), verticalAlignment = Alignment.Bottom) {
+        daily.zip(days).forEach { (summary, day) ->
+            Column(Modifier.weight(1f).clickable { selectedDay = day }, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                WeeklyNutritionBar(
+                    complete = summary.caloriesKcal ?: 0.0,
+                    partial = summary.partialCaloriesKcal ?: 0.0,
+                    scale = scale,
+                )
+                Text(day.dayOfWeek.name.take(1), color = Color(0xFF655D6E), style = MaterialTheme.typography.labelSmall)
+            }
+        }
+    }
+    Text("Average ${"%.0f".format(averageCalories)} kcal · ${"%.0f".format(averageProtein)} g protein per day", color = Plum, style = MaterialTheme.typography.bodyMedium)
+    selectedDay?.let { day -> WeeklyDaySheet(
+        day = day,
+        summary = MealNutritionSummaries.between(meals, day, day),
+        meals = meals.filter { it.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate() == day }.sortedByDescending(MealEntry::recordedAt),
+        onDismiss = { selectedDay = null },
+        onEditMeal = { meal -> selectedDay = null; onEditMeal(meal) },
+    ) }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun WeeklyDaySheet(
+    day: LocalDate,
+    summary: MealNutritionSummary,
+    meals: List<MealEntry>,
+    onDismiss: () -> Unit,
+    onEditMeal: (MealEntry) -> Unit,
+) {
+    val calories = (summary.caloriesKcal ?: 0.0) + (summary.partialCaloriesKcal ?: 0.0)
+    val protein = (summary.proteinGrams ?: 0.0) + (summary.partialProteinGrams ?: 0.0)
+    val carbohydrates = (summary.carbohydrateGrams ?: 0.0) + (summary.partialCarbohydrateGrams ?: 0.0)
+    val fat = (summary.fatGrams ?: 0.0) + (summary.partialFatGrams ?: 0.0)
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.padding(24.dp).padding(bottom = 72.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(day.toString(), style = MaterialTheme.typography.headlineMedium)
+            if (summary.completeNutritionMeals > 0 || summary.partialNutritionMeals > 0) {
+                Text("${"%.0f".format(calories)} kcal · ${"%.0f".format(protein)} g protein", color = Plum, style = MaterialTheme.typography.titleMedium)
+                Text("${"%.0f".format(carbohydrates)} g carbs · ${"%.0f".format(fat)} g fat", color = Plum)
+                NutritionEstimateLegend(summary.completeNutritionMeals, summary.partialNutritionMeals)
+            } else {
+                Text("No nutrition values saved for this date.", color = Color(0xFF655D6E))
+            }
+            Text("Meals", style = MaterialTheme.typography.titleMedium)
+            if (meals.isEmpty()) Text("No meals recorded for this date.", color = Color(0xFF655D6E))
+            meals.forEach { meal -> MealRecordCard(meal, onEditMeal) }
+        }
+    }
+}
+
+@Composable
+private fun WeeklyNutritionBar(complete: Double, partial: Double, scale: Double) {
+    Canvas(Modifier.fillMaxWidth().height(96.dp)) {
+        val completeHeight = (size.height * (complete / scale).toFloat().coerceIn(0f, 1f))
+        val totalHeight = (size.height * ((complete + partial) / scale).toFloat().coerceIn(0f, 1f))
+        drawRoundRect(Color(0xFFE5DDE9), cornerRadius = CornerRadius(8f, 8f))
+        if (totalHeight > 0f) {
+            drawRect(Plum.copy(alpha = 0.38f), topLeft = Offset(0f, size.height - totalHeight), size = Size(size.width, totalHeight))
+            var lineX = -size.height
+            while (lineX < size.width + size.height) {
+                drawLine(Color.White.copy(alpha = 0.82f), Offset(lineX, size.height), Offset(lineX + size.height, 0f), strokeWidth = 2f)
+                lineX += size.height
+            }
+        }
+        if (completeHeight > 0f) drawRect(Plum, topLeft = Offset(0f, size.height - completeHeight), size = Size(size.width, completeHeight))
+    }
+}
+
+private data class NutritionProgress(val label: String, val confirmed: Double?, val partial: Double?, val target: Double, val unit: String)
+
+@Composable
+private fun NutritionProgressCard(label: String, confirmed: Double?, partial: Double?, target: Double?, unit: String, emphasis: Boolean = false) {
+    if (target == null) return
+    val confirmedValue = confirmed ?: 0.0
+    val partialValue = partial ?: 0.0
+    val total = confirmedValue + partialValue
+    val progress = (total / target).toFloat().coerceIn(0f, 1f)
+    val remaining = (target - total).coerceAtLeast(0.0)
+    Card(colors = CardDefaults.cardColors(containerColor = if (emphasis) PlumSoft else Color(0xFFF6F1F8))) {
+        Column(Modifier.padding(if (emphasis) 16.dp else 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(label, style = if (emphasis) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleSmall)
+                Text("${"%.0f".format(total)} / ${"%.0f".format(target)} $unit", color = Plum)
+            }
+            SegmentedNutritionProgressBar(confirmedValue, partialValue, target)
+            Text(
+                if (total <= target) "${"%.0f".format(remaining)} $unit remaining" else "${"%.0f".format(total - target)} $unit over target",
+                color = Color(0xFF655D6E),
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SegmentedNutritionProgressBar(confirmed: Double, partial: Double, target: Double) {
+    Canvas(Modifier.fillMaxWidth().height(12.dp)) {
+        val confirmedWidth = (size.width * (confirmed / target).toFloat().coerceIn(0f, 1f))
+        val totalWidth = (size.width * ((confirmed + partial) / target).toFloat().coerceIn(0f, 1f))
+        drawRoundRect(Color(0xFFE5DDE9), cornerRadius = CornerRadius(size.height / 2, size.height / 2))
+        if (confirmedWidth > 0f) drawRoundRect(Plum, size = Size(confirmedWidth, size.height), cornerRadius = CornerRadius(size.height / 2, size.height / 2))
+        if (totalWidth > confirmedWidth) {
+            drawRect(Plum.copy(alpha = 0.38f), topLeft = Offset(confirmedWidth, 0f), size = Size(totalWidth - confirmedWidth, size.height))
+            var lineX = confirmedWidth - size.height
+            while (lineX < totalWidth) {
+                drawLine(Color.White.copy(alpha = 0.82f), Offset(lineX, size.height), Offset(lineX + size.height, 0f), strokeWidth = 2f)
+                lineX += size.height
+            }
+        }
+    }
+}
+
+@Composable
+private fun NutritionEstimateLegend(completeMeals: Int, partialMeals: Int) {
+    if (partialMeals == 0) return
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("● $completeMeals complete", color = Plum, style = MaterialTheme.typography.bodySmall)
+        Text("▧ $partialMeals partial", color = Plum.copy(alpha = 0.72f), style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NutritionTargetsSheet(targets: NutritionTargets?, onDismiss: () -> Unit, onSave: (NutritionTargets?) -> Unit) {
+    var calories by remember(targets) { mutableStateOf(targets?.caloriesKcal?.toString().orEmpty()) }
+    var protein by remember(targets) { mutableStateOf(targets?.proteinGrams?.toString().orEmpty()) }
+    var carbohydrates by remember(targets) { mutableStateOf(targets?.carbohydrateGrams?.toString().orEmpty()) }
+    var fat by remember(targets) { mutableStateOf(targets?.fatGrams?.toString().orEmpty()) }
+    var error by remember { mutableStateOf<String?>(null) }
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.padding(24.dp).padding(bottom = 72.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Daily nutrition targets", style = MaterialTheme.typography.headlineMedium)
+            Text("Optional values you choose for your own progress view. Metria does not recommend targets or give medical advice.", color = Color(0xFF655D6E))
+            OutlinedTextField(calories, { calories = it }, label = { Text("Calories (kcal)") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(protein, { protein = it }, label = { Text("Protein (g)") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(carbohydrates, { carbohydrates = it }, label = { Text("Carbohydrates (g)") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(fat, { fat = it }, label = { Text("Fat (g)") }, modifier = Modifier.fillMaxWidth())
+            Text("Leave every field empty to remove targets.", color = Color(0xFF655D6E), style = MaterialTheme.typography.bodySmall)
+            error?.let { Text(it, color = Color(0xFFB3261E)) }
+            Button(onClick = {
+                fun number(value: String) = value.trim().takeIf(String::isNotEmpty)?.replace(',', '.')?.toDoubleOrNull()
+                val raw = listOf(calories, protein, carbohydrates, fat)
+                val parsed = raw.map(::number)
+                val invalid = raw.zip(parsed).any { (value, parsedValue) -> value.isNotBlank() && parsedValue == null }
+                val newTargets = NutritionTargets(parsed[0], parsed[1], parsed[2], parsed[3])
+                if (invalid || !NutritionTargetValidation.valid(newTargets)) {
+                    error = "Enter positive targets within the supported range, or leave all fields empty."
+                } else {
+                    onSave(newTargets.takeUnless(NutritionTargetValidation::empty))
+                }
+            }, modifier = Modifier.fillMaxWidth()) { Text("Save daily targets") }
         }
     }
 }
