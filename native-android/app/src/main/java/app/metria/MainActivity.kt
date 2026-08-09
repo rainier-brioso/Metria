@@ -62,6 +62,14 @@ class MainActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         modelLifecycle = ModelLifecycle(applicationContext, filesDir, cacheDir)
         vault = EncryptedVault(applicationContext)
+        modelLifecycle.setAnalysisAuditSink { audit ->
+            runOnUiThread {
+                // Audit metadata is retained only in the already-unlocked local vault.
+                // A locked/backgrounded app intentionally cannot write health metadata.
+                val saved = vault.recordAnalysisAudit(audit)
+                if (saved is EncryptedVault.Status.Unlocked) vaultCallback?.invoke(saved)
+            }
+        }
         handleVoiceIntent(intent)
         biometricPrompt = BiometricPrompt(this, ContextCompat.getMainExecutor(this),
             object : BiometricPrompt.AuthenticationCallback() {

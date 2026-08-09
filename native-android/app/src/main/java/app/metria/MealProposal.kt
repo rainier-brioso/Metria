@@ -7,10 +7,14 @@ data class GramRange(val min: Int, val max: Int)
 
 data class MealProposalItem(
     val name: String,
+    val description: String,
     val visiblePortion: String,
     val estimatedGramsRange: GramRange,
     val preparation: String,
     val confidence: String,
+    /** Optional dish/drink label supplied by the nested proposal normalizer. */
+    val groupLabel: String? = null,
+    val role: String = "main_food",
 )
 
 data class MealProposal(
@@ -25,7 +29,35 @@ object MealProposalParser {
     private val confidences = setOf("low", "medium", "high")
     private val proposalKeys = setOf("kind", "items", "assumptions", "questions", "overall_confidence")
     private val itemKeys = setOf(
-        "name", "visible_portion", "estimated_grams_range", "preparation", "confidence"
+        "name", "description", "visible_portion", "estimated_grams_range", "preparation", "confidence", "role"
+    )
+    private val itemKeysWithGroup = itemKeys + "group_label"
+    private val groupedItemKeys = setOf("name", "kind", "ingredients")
+    private val groupedItemKeysWithConfidence = groupedItemKeys + "confidence"
+    private val groupKinds = setOf("dish", "drink", "other")
+    private val ingredientRoles = setOf("main_food", "side", "drink", "sauce_oil", "dry_seasoning")
+    // Vision models often use ordinary nutrition labels rather than the compact
+    // app vocabulary. These are safe semantic aliases, not extra user-visible
+    // roles: the review still presents the normalized role for confirmation.
+    private val roleAliases = mapOf(
+        "main_dish_component" to "main_food",
+        "main_dish" to "main_food",
+        "base" to "main_food",
+        "protein" to "main_food",
+        "carbohydrate" to "main_food",
+        "starch" to "main_food",
+        "side_dish" to "side",
+        "vegetable" to "side",
+        "vegetables" to "side",
+        "fruit" to "side",
+        "sauce" to "sauce_oil",
+        "dressing" to "sauce_oil",
+        "oil" to "sauce_oil",
+        "fat" to "sauce_oil",
+        "fat/moisture" to "sauce_oil",
+        "seasoning" to "dry_seasoning",
+        "herbs" to "dry_seasoning",
+        "spices" to "dry_seasoning",
     )
     private val rangeKeys = setOf("min", "max")
 
@@ -50,7 +82,9 @@ object MealProposalParser {
     private fun normalizeProposal(source: JSONObject): JSONObject {
         val root = canonicalObject(source, mapOf("overallConfidence" to "overall_confidence"))
         val items = root.get("items").asArray("items").let { sourceItems -> JSONArray().apply {
-            for (index in 0 until sourceItems.length()) put(normalizeItem(sourceItems.getJSONObject(index)))
+            for (index in 0 until sourceItems.length()) {
+                normalizeItems(sourceItems.getJSONObject(index)).forEach(::put)
+            }
         } }
         root.put("items", items)
         root.put("assumptions", root.get("assumptions").asStringArray("assumptions"))
@@ -59,7 +93,19 @@ object MealProposalParser {
         return root
     }
 
-    private fun normalizeItem(source: JSONObject): JSONObject {
+    private fun normalizeItems(source: JSONObject): List<JSONObject> {
+        if (!source.has("ingredients")) return listOf(normalizeIngredient(source))
+        val grouped = canonicalObject(source, emptyMap())
+        require(keys(grouped) == groupedItemKeys || keys(grouped) == groupedItemKeysWithConfidence)
+        val groupLabel = grouped.getString("name").boundedText(120)
+        require(grouped.getString("kind").trim().lowercase() in groupKinds)
+        val ingredients = grouped.get("ingredients").asArray("ingredients")
+        return List(ingredients.length()) { index ->
+            normalizeIngredient(ingredients.getJSONObject(index)).put("group_label", groupLabel)
+        }
+    }
+
+    private fun normalizeIngredient(source: JSONObject): JSONObject {
         val item = canonicalObject(source, mapOf(
             "visiblePortion" to "visible_portion",
             "estimatedGramsRange" to "estimated_grams_range",
@@ -68,6 +114,9 @@ object MealProposalParser {
         range.put("min", wholeNumber(range.get("min")))
         range.put("max", wholeNumber(range.get("max")))
         item.put("estimated_grams_range", range)
+        if (!item.has("description")) item.put("description", "")
+        if (!item.has("role")) item.put("role", "main_food")
+        item.put("role", roleAliases[item.getString("role").trim().lowercase()] ?: item.getString("role").trim().lowercase())
         item.put("confidence", normalizedConfidence(item.getString("confidence")))
         return item
     }
@@ -131,17 +180,20 @@ object MealProposalParser {
         require(length() <= 12)
         for (index in 0 until length()) {
             val item = getJSONObject(index)
-            require(keys(item) == itemKeys)
+            require(keys(item) == itemKeys || keys(item) == itemKeysWithGroup)
             val name = item.getString("name").boundedText(120)
+            val description = item.getString("description").trim().also { require(it.length <= 280) }
             val visiblePortion = item.getString("visible_portion").boundedText(120)
-            val preparation = item.getString("preparation").boundedText(120)
+            val preparation = item.getString("preparation").trim().also { require(it.length <= 120) }
             val confidence = normalizedConfidence(item.getString("confidence"))
+            val role = item.getString("role").trim().lowercase().also { require(it in ingredientRoles) }
             val range = item.getJSONObject("estimated_grams_range")
             require(keys(range) == rangeKeys)
             val min = range.getInt("min")
             val max = range.getInt("max")
             require(min in 1..2_000 && max in min..2_000)
-            add(MealProposalItem(name, visiblePortion, GramRange(min, max), preparation, confidence))
+            val groupLabel = item.optString("group_label").takeIf(String::isNotEmpty)?.boundedText(120)
+            add(MealProposalItem(name, description, visiblePortion, GramRange(min, max), preparation, confidence, groupLabel, role))
         }
     }
 

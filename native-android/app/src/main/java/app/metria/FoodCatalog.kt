@@ -125,6 +125,11 @@ object FoodCatalog {
         "raw", "cooked", "piece", "pieces", "trozo", "trozos", "with", "without",
         "and", "or", "con", "sin", "y", "o",
     )
+    private val chickenCutTerms = setOf("breast", "wing", "thigh", "drumstick")
+    private val nonMeasuredSeasoningTerms = setOf(
+        "herb", "herbs", "seasoning", "seasonings", "spice", "spices", "salt", "pepper",
+    )
+    private val ambiguousModelTerms = setOf("food item", "breaded item", "quiche filling", "yellow liquid")
     private val spanishDisplayNames = mapOf(
         321358L to "Hummus comercial",
         323604L to "Huevo entero crudo pasteurizado",
@@ -219,9 +224,17 @@ object FoodCatalog {
     fun candidatesForAssistantItem(
         catalog: OfflineFoodCatalog,
         assistantFoodName: String,
+        description: String = "",
+        corrections: List<FoodCorrection> = emptyList(),
         limit: Int = 3,
     ): List<CatalogFood> {
-        val alternatives = searchTermAlternatives(assistantFoodName)
+        // Model labels often include a helpful parenthetical description such as
+        // "Potatoes (French fries)". Search the precise label first, then the
+        // core food; preparation remains visible for the member to review.
+        val alternatives = listOf(
+            assistantFoodName,
+            assistantFoodName.substringBefore('(').trim(),
+        ).distinct().flatMap(::searchTermAlternatives)
         return alternatives.asSequence().flatMap { terms ->
             val foodTerms = terms.filterNot(preparationTerms::contains)
             if (foodTerms.isEmpty()) return@flatMap emptySequence()
@@ -230,13 +243,48 @@ object FoodCatalog {
                     val candidate = searchKey("${food.description} ${food.category.orEmpty()}")
                     foodTerms.all(candidate::contains)
                 }
-                .sortedWith(compareBy<CatalogFood> { it.description.length }.thenBy { it.description })
-        }.distinctBy(CatalogFood::fdcId).take(limit).toList()
+        }.distinctBy(CatalogFood::fdcId)
+            // Approved M3 semantic layer: visible cut evidence ranks candidates,
+            // but the member still confirms the final food and portion.
+            .sortedWith(
+                compareByDescending<CatalogFood> { personalCorrectionScore(it, assistantFoodName, corrections) * 1_000 + contextualCutScore(it, assistantFoodName, description) }
+                    .thenBy { it.description.length }
+                    .thenBy { it.description },
+            )
+            .take(limit)
+            .toList()
     }
 
     /** A conservative first candidate for the review form. */
-    fun suggest(catalog: OfflineFoodCatalog, assistantFoodName: String): CatalogFood? =
-        candidatesForAssistantItem(catalog, assistantFoodName, limit = 1).firstOrNull()
+    fun suggest(catalog: OfflineFoodCatalog, assistantFoodName: String, description: String = "", corrections: List<FoodCorrection> = emptyList()): CatalogFood? =
+        candidatesForAssistantItem(catalog, assistantFoodName, description, corrections, limit = 1).firstOrNull()
+
+    /** Dry herbs/spices are retained in the meal but are not a failed catalog lookup. */
+    fun isNonMeasuredSeasoning(assistantFoodName: String): Boolean {
+        val words = searchKey(assistantFoodName).split(Regex("[^a-z]+"))
+        return words.any(nonMeasuredSeasoningTerms::contains) && words.none { it in setOf("sauce", "dressing", "oil", "butter") }
+    }
+
+    /** M3 guard: visual placeholders must never be converted into nutrition. */
+    fun isAmbiguousModelFood(assistantFoodName: String): Boolean =
+        ambiguousModelTerms.any { searchKey(assistantFoodName).contains(it) }
+
+    /**
+     * Recover only a simple joined ingredient phrase which the model failed to
+     * separate. The full phrase must have no local candidate, while every part
+     * must have one, so a known composed food is never split speculatively.
+     */
+    fun splitUnmatchedJoinedFood(catalog: OfflineFoodCatalog, foodName: String): List<String> {
+        if (candidatesForAssistantItem(catalog, foodName, limit = 1).isNotEmpty()) return listOf(foodName)
+        val parts = foodName.split(Regex("\\s+(?:and|y)\\s+|\\s*&\\s*"), limit = 4)
+            .map(String::trim)
+            .filter(String::isNotEmpty)
+        return if (parts.size in 2..3 && parts.all { candidatesForAssistantItem(catalog, it, limit = 1).isNotEmpty() }) {
+            parts
+        } else {
+            listOf(foodName)
+        }
+    }
 
     fun calculate(food: CatalogFood, grams: Int): CatalogNutrition {
         require(grams in 1..2_000) { "Portion must be between 1 and 2,000 g." }
@@ -313,6 +361,27 @@ object FoodCatalog {
         .lowercase()
         .replace("[^a-z0-9]+".toRegex(), " ")
         .trim()
+
+    private fun contextualCutScore(food: CatalogFood, assistantFoodName: String, description: String): Int {
+        val context = searchKey(description)
+        val foodName = searchKey(assistantFoodName)
+        val candidate = searchKey(food.description)
+        val explicitEvidence = chickenCutTerms.count { cut -> context.contains(cut) && candidate.contains(cut) }
+        if (explicitEvidence > 0) return 100 + explicitEvidence
+        // For an unspecific "chicken" entry, a breast is a safer default than a wing;
+        // it remains only a ranked suggestion that the member must confirm.
+        if (foodName.contains("chicken")) return when {
+            candidate.contains("breast") -> 4
+            candidate.contains("thigh") -> 3
+            candidate.contains("drumstick") -> 2
+            candidate.contains("wing") -> 1
+            else -> 0
+        }
+        return 0
+    }
+
+    private fun personalCorrectionScore(food: CatalogFood, assistantFoodName: String, corrections: List<FoodCorrection>): Int =
+        corrections.filter { searchKey(it.observedName) == searchKey(assistantFoodName) && it.confirmedFoodId == food.fdcId }.sumOf(FoodCorrection::count)
 
     private fun expandAliases(query: String): String {
         var normalized = " ${searchKey(query)} "

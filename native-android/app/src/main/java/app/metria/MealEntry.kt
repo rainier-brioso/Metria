@@ -14,12 +14,15 @@ import java.util.UUID
 data class MealEntry(
     val id: String = UUID.randomUUID().toString(),
     val recordedAt: Instant = Instant.now(),
+    val title: String? = null,
     val items: List<MealEntryItem>,
     val assumptions: List<String>,
     val confidence: String,
     val source: String,
     val nutrition: MealNutrition? = null,
     val referenceThumbnailBase64: String? = null,
+    /** Foreign key to the encrypted local audit record, when an image created this meal. */
+    val analysisAuditId: String? = null,
 )
 
 data class MealEntryItem(
@@ -28,7 +31,13 @@ data class MealEntryItem(
     val preparation: String?,
     val catalogFoodId: Long? = null,
     val catalogRelease: String? = null,
+    val groupLabel: String? = null,
+    val description: String? = null,
+    val role: String = "main_food",
 )
+
+/** Encrypted, member-confirmed ranking hint; never a model training example. */
+data class FoodCorrection(val observedName: String, val confirmedFoodId: Long, val count: Int = 1)
 
 data class MealNutrition(
     val caloriesKcal: Double?,
@@ -44,11 +53,15 @@ data class MealNutrition(
 
 object MealEntryValidation {
     fun valid(entry: MealEntry): Boolean =
-        entry.items.isNotEmpty() && entry.items.size <= 12 &&
+        (entry.title == null || entry.title.trim().length in 1..120) &&
+            entry.items.isNotEmpty() && entry.items.size <= 12 &&
             entry.items.all { item ->
                 item.name.trim().length in 1..120 &&
                     (item.grams == null || item.grams in 1..2_000) &&
                     (item.preparation == null || item.preparation.length <= 120) &&
+                    (item.groupLabel == null || item.groupLabel.length in 1..120) &&
+                    (item.description == null || item.description.length <= 280) &&
+                    item.role in setOf("main_food", "side", "drink", "sauce_oil", "dry_seasoning") &&
                     ((item.catalogFoodId == null && item.catalogRelease == null) ||
                         (item.catalogFoodId != null && !item.catalogRelease.isNullOrBlank()))
             } &&
@@ -56,6 +69,7 @@ object MealEntryValidation {
             entry.confidence in setOf("low", "medium", "high") &&
             entry.source in setOf("ai_estimate", "manual_entry", "member_confirmed_catalog") &&
             (entry.referenceThumbnailBase64 == null || entry.referenceThumbnailBase64.length in 1..180_000) &&
+            (entry.analysisAuditId == null || runCatching { UUID.fromString(entry.analysisAuditId) }.isSuccess) &&
             entry.nutrition?.let(::validNutrition) != false
 
     private fun validNutrition(nutrition: MealNutrition): Boolean =

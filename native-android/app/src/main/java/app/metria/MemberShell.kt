@@ -181,7 +181,11 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                                 beginImageFlow = { activity.beginLocalImageFlow() },
                                 finishCooldown = { modelStatus = activity.finishLocalImageCooldown() },
                             )
-                            else -> PrivacyScreen(vaultStatus.displayUnit, { status = vault.setDisplayUnit(if (vaultStatus.displayUnit == "kg") "lb" else "kg") }) { activity.lockVault() }
+                            else -> PrivacyScreen(
+                                vaultStatus.displayUnit,
+                                vaultStatus.analysisAudits,
+                                { status = vault.setDisplayUnit(if (vaultStatus.displayUnit == "kg") "lb" else "kg") },
+                            ) { activity.lockVault() }
                         }
                     }
                 }
@@ -203,10 +207,14 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                 mealProposalForConfirmation?.let { proposal -> MealConfirmationSheet(
                     proposal = proposal,
                     catalog = foodCatalog,
+                    corrections = vaultStatus.foodCorrections,
                     referenceThumbnailBase64 = modelStatus.referenceThumbnailBase64,
+                    analysisAuditId = modelStatus.latestImageAudit?.id,
+                    savedMeals = vaultStatus.meals,
                     onDismiss = { mealProposalForConfirmation = null },
-                    onSave = { meal ->
+                    onSave = { meal, corrections ->
                         status = vault.addMeal(meal)
+                        if (status is EncryptedVault.Status.Unlocked && corrections.isNotEmpty()) status = vault.recordFoodCorrections(corrections)
                         mealProposalForConfirmation = null
                         modelStatus = activity.clearLocalMealDraft()
                     },
@@ -495,7 +503,9 @@ private fun AssistantScreen(
                 proposal.items.forEach { item ->
                     Text(item.name, style = MaterialTheme.typography.titleMedium)
                     Text("${item.visiblePortion} · ${item.estimatedGramsRange.min}–${item.estimatedGramsRange.max} g · ${item.confidence} confidence")
-                    Text(item.preparation, color = Color(0xFF655D6E))
+                    listOf(item.description, item.preparation).filter(String::isNotBlank).takeIf { it.isNotEmpty() }?.let {
+                        Text(it.joinToString(" · "), color = Color(0xFF655D6E))
+                    }
                 }
                 proposal.assumptions.forEach { Text("Assumption: $it") }
                 proposal.questions.forEach { Text("Question: $it") }
@@ -546,7 +556,9 @@ private fun AssistantScreen(
                 proposal.items.forEach { item ->
                     Text(item.name, style = MaterialTheme.typography.titleMedium)
                     Text("${item.visiblePortion} - ${item.estimatedGramsRange.min}-${item.estimatedGramsRange.max} g - ${item.confidence} confidence")
-                    Text(item.preparation, color = Color(0xFF655D6E))
+                    listOf(item.description, item.preparation).filter(String::isNotBlank).takeIf { it.isNotEmpty() }?.let {
+                        Text(it.joinToString(" · "), color = Color(0xFF655D6E))
+                    }
                 }
                 proposal.assumptions.forEach { Text("Assumption: $it") }
                 proposal.questions.forEach { Text("Question: $it") }
@@ -678,7 +690,10 @@ private fun MealRecordCard(meal: MealEntry, onEdit: (MealEntry) -> Unit) {
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).clickable { onEdit(meal) }) {
             photo?.let { HistoryReferenceThumbnail(it) }
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(meal.items.joinToString { it.name }, style = MaterialTheme.typography.titleMedium)
+                Text(
+                    MealIdentity.displayTitle(meal),
+                    style = MaterialTheme.typography.titleMedium,
+                )
                 Text("${meal.source.replace('_', ' ')} - ${meal.confidence} confidence - ${meal.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate()}", color = Color(0xFF655D6E))
                 meal.nutrition?.let { nutrition ->
                     Text(nutritionSummary(nutrition), color = Color(0xFF655D6E))
@@ -698,20 +713,43 @@ private fun MealRecordCard(meal: MealEntry, onEdit: (MealEntry) -> Unit) {
 }
 
 @Composable
-private fun PrivacyScreen(unit: String, changeUnit: () -> Unit, lock: () -> Unit) {
+private fun PrivacyScreen(unit: String, analysisAudits: List<LocalAnalysisAudit>, changeUnit: () -> Unit, lock: () -> Unit) {
     Text("Private by default", style = MaterialTheme.typography.displaySmall)
     Card(colors = CardDefaults.cardColors(containerColor = Color.White)) { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Your data stays with you", style = MaterialTheme.typography.titleLarge)
         Text("Weight entries are encrypted on this phone. Metria has no account, advertising, analytics, or default sync.")
         Text("Optional photo assistance is processed locally and temporary copies are deleted after use. A reduced reference thumbnail is kept only when you confirm an entry and leave that option enabled.")
     } }
+    if (BuildConfig.DEBUG) {
+        Card(colors = CardDefaults.cardColors(containerColor = PlumSoft)) {
+            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Development-only local analysis audit", style = MaterialTheme.typography.titleMedium)
+                Text("Encrypted audit metadata only. It contains no photo or model response.", color = Color(0xFF655D6E), style = MaterialTheme.typography.bodySmall)
+                if (analysisAudits.isEmpty()) {
+                    Text("No local image analyses recorded yet.", color = Color(0xFF655D6E))
+                } else {
+                    analysisAudits.sortedByDescending(LocalAnalysisAudit::completedAt).take(10).forEach { audit ->
+                        Text(
+                            "${audit.operation.replace('_', ' ')} · ${"%.1f".format(audit.durationMillis / 1_000.0)} s · ${audit.outcome.replace('_', ' ')}",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Text(
+                            "${audit.modelId}${audit.failureCategory?.let { " · $it" }.orEmpty()}",
+                            color = Color(0xFF655D6E),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+            }
+        }
+    }
     Button(onClick = changeUnit, modifier = Modifier.fillMaxWidth()) { Text(if (unit == "kg") "Use pounds" else "Use kilograms") }
     Button(onClick = lock, modifier = Modifier.fillMaxWidth()) { Text("Lock vault") }
 }
 
 private fun formatWeight(kilograms: Double, unit: String): String = if (unit == "lb") "${"%.1f".format(WeightUnits.kilogramsToPounds(kilograms))} lb" else "${"%.1f".format(kilograms)} kg"
 
-private data class EditableMealItem(val name: String, val grams: String, val preparation: String)
+private data class EditableMealItem(val name: String, val description: String, val grams: String, val preparation: String, val groupLabel: String? = null, val role: String = "main_food")
 
 @Composable
 private fun PrivateReferenceOption(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
@@ -765,11 +803,39 @@ private fun HistoryReferenceThumbnail(encoded: String) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun MealConfirmationSheet(proposal: MealProposal, catalog: OfflineFoodCatalog?, referenceThumbnailBase64: String?, onDismiss: () -> Unit, onSave: (MealEntry) -> Unit) {
-    var items by remember(proposal) { mutableStateOf(proposal.items.map { item ->
-        EditableMealItem(item.name, ((item.estimatedGramsRange.min + item.estimatedGramsRange.max) / 2).toString(), item.preparation)
+private fun MealConfirmationSheet(
+    proposal: MealProposal,
+    catalog: OfflineFoodCatalog?,
+    corrections: List<FoodCorrection>,
+    referenceThumbnailBase64: String?,
+    analysisAuditId: String?,
+    savedMeals: List<MealEntry>,
+    onDismiss: () -> Unit,
+    onSave: (MealEntry, List<FoodCorrection>) -> Unit,
+) {
+    // M3 recovery: if a model joins independently searchable foods, split only
+    // after the local catalog disproves the joined phrase; divide its draft portion.
+    val reviewItems = remember(proposal, catalog) {
+        proposal.items.flatMap { item ->
+            val names = catalog?.let { FoodCatalog.splitUnmatchedJoinedFood(it, item.name) } ?: listOf(item.name)
+            if (names.size == 1) listOf(item) else names.map { name ->
+                item.copy(
+                    name = name,
+                    visiblePortion = "part of ${item.visiblePortion}",
+                    estimatedGramsRange = GramRange(
+                        (item.estimatedGramsRange.min / names.size).coerceAtLeast(1),
+                        (item.estimatedGramsRange.max / names.size).coerceAtLeast(1),
+                    ),
+                    preparation = "",
+                )
+            }
+        }.take(12)
+    }
+    var items by remember(reviewItems) { mutableStateOf(reviewItems.map { item ->
+        EditableMealItem(item.name, item.description, ((item.estimatedGramsRange.min + item.estimatedGramsRange.max) / 2).toString(), item.preparation, item.groupLabel, item.role)
     }) }
     var date by remember(proposal) { mutableStateOf(LocalDate.now().toString()) }
+    var title by remember(proposal) { mutableStateOf(MealIdentity.titleFor(reviewItems.map { MealEntryItem(it.name, null, null) })) }
     var calories by remember { mutableStateOf("") }
     var protein by remember { mutableStateOf("") }
     var carbs by remember { mutableStateOf("") }
@@ -779,9 +845,10 @@ private fun MealConfirmationSheet(proposal: MealProposal, catalog: OfflineFoodCa
     // Approved M3 direction: every assistant item has an independently
     // reviewable catalog match. A total is shown only when all items match;
     // otherwise the saved record explicitly has no nutrition estimate.
-    var catalogMatches by remember(proposal, catalog) {
-        mutableStateOf(proposal.items.map { item -> catalog?.let { FoodCatalog.suggest(it, item.name) } })
+    var catalogMatches by remember(reviewItems, catalog) {
+        mutableStateOf(reviewItems.map { item -> if (FoodCatalog.isAmbiguousModelFood(item.name)) null else catalog?.let { FoodCatalog.suggest(it, item.name, item.description, corrections) } })
     }
+    val initialMatchIds = remember(reviewItems, catalog, corrections) { reviewItems.map { item -> catalog?.let { FoodCatalog.suggest(it, item.name, item.description, corrections)?.fdcId } } }
     var catalogSearchIndex by remember { mutableStateOf<Int?>(null) }
     val parsedGrams = items.map { it.grams.replace(',', '.').toIntOrNull()?.takeIf { grams -> grams in 1..2_000 } }
     val perItemNutrition = items.indices.map { index ->
@@ -802,11 +869,19 @@ private fun MealConfirmationSheet(proposal: MealProposal, catalog: OfflineFoodCa
         )
     }
     val isPartialEstimate = catalogTotals != null && includedIndexes.size != items.size
+    val draftComparableItems = items.mapIndexed { index, item -> MealEntryItem(
+        name = item.name.trim(),
+        grams = parsedGrams.getOrNull(index),
+        preparation = item.preparation.trim().takeIf(String::isNotEmpty),
+        catalogFoodId = catalogMatches.getOrNull(index)?.fdcId.takeIf { index in includedIndexes },
+    ) }
+    val similarMeal = MealIdentity.similarSavedMeal(draftComparableItems, savedMeals)
+    val nonMeasuredIndexes = items.indices.filter { index -> FoodCatalog.isNonMeasuredSeasoning(items[index].name) }
     val itemsNeedingReview = items.indices.filter { index ->
         val nutrition = perItemNutrition.getOrNull(index)
-        catalogMatches.getOrNull(index) == null || parsedGrams.getOrNull(index) == null ||
+        index !in nonMeasuredIndexes && (catalogMatches.getOrNull(index) == null || parsedGrams.getOrNull(index) == null ||
             nutrition?.caloriesKcal == null || nutrition.proteinGrams == null ||
-            nutrition.carbohydrateGrams == null || nutrition.fatGrams == null
+            nutrition.carbohydrateGrams == null || nutrition.fatGrams == null)
     }
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
@@ -815,22 +890,48 @@ private fun MealConfirmationSheet(proposal: MealProposal, catalog: OfflineFoodCa
         ) {
             Text("Confirm meal", style = MaterialTheme.typography.headlineMedium)
             Text("The assistant identified these foods, then Metria searched its offline catalog. Review every local match and portion before saving.", color = Plum)
+            OutlinedTextField(title, { title = it }, label = { Text("Meal name (optional)") }, modifier = Modifier.fillMaxWidth())
+            similarMeal?.let { previous ->
+                Card(colors = CardDefaults.cardColors(containerColor = PlumSoft)) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Similar to ${MealIdentity.displayTitle(previous)}", style = MaterialTheme.typography.titleSmall)
+                        Text("Saved ${previous.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate()}. Review this meal’s foods and portions before saving.", color = Color(0xFF655D6E), style = MaterialTheme.typography.bodySmall)
+                        Button(onClick = { title = MealIdentity.displayTitle(previous) }) { Text("Use this name") }
+                    }
+                }
+            }
             items.forEachIndexed { index, item ->
+                if (item.groupLabel != null && (index == 0 || items[index - 1].groupLabel != item.groupLabel)) {
+                    Text(item.groupLabel, style = MaterialTheme.typography.titleMedium, color = Plum)
+                }
                 OutlinedTextField(item.name, { value ->
                     items = items.toMutableList().also { it[index] = item.copy(name = value) }
                     catalogMatches = catalogMatches.toMutableList().also { it[index] = null }
                 }, label = { Text("Food") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(
+                    item.description,
+                    { value -> items = items.toMutableList().also { it[index] = item.copy(description = value) } },
+                    label = { Text("What Metria saw (optional)") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Button(onClick = {
+                    val roles = listOf("main_food", "side", "drink", "sauce_oil", "dry_seasoning")
+                    items = items.toMutableList().also { it[index] = item.copy(role = roles[(roles.indexOf(item.role) + 1) % roles.size]) }
+                }, modifier = Modifier.fillMaxWidth()) { Text("Role: ${item.role.replace('_', ' ')}") }
                 OutlinedTextField(item.grams, { value -> items = items.toMutableList().also { it[index] = item.copy(grams = value) } }, label = { Text("Portion in grams") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(item.preparation, { value -> items = items.toMutableList().also { it[index] = item.copy(preparation = value) } }, label = { Text("Preparation (optional)") }, modifier = Modifier.fillMaxWidth())
                 val match = catalogMatches.getOrNull(index)
+                val ambiguousName = FoodCatalog.isAmbiguousModelFood(item.name)
                 val localCandidates = remember(catalog, item.name) {
-                    catalog?.let { FoodCatalog.candidatesForAssistantItem(it, item.name) }.orEmpty()
+                    catalog?.let { FoodCatalog.candidatesForAssistantItem(it, item.name, item.description, corrections) }.orEmpty()
                 }
                 if (match == null) {
                     Text(
-                        if (localCandidates.isEmpty()) "We couldn't find this food in Metria's food list."
+                        if (ambiguousName) "Needs identification - Metria could not tell exactly what this food is."
+                        else if (index in nonMeasuredIndexes) "Not included in the estimate - dry herbs and seasoning are not measurable from a photo."
+                        else if (localCandidates.isEmpty()) "We couldn't find this food in Metria's food list."
                         else "${localCandidates.size} possible food${if (localCandidates.size == 1) "" else "s"} found - choose one.",
-                        color = Color(0xFFB3261E),
+                        color = if (index in nonMeasuredIndexes) Color(0xFF655D6E) else Color(0xFFB3261E),
                         style = MaterialTheme.typography.bodySmall,
                     )
                 } else if (parsedGrams[index] == null) {
@@ -839,12 +940,28 @@ private fun MealConfirmationSheet(proposal: MealProposal, catalog: OfflineFoodCa
                     Text("Local candidate selected${if (localCandidates.size > 1) " from ${localCandidates.size}" else ""}: ${FoodCatalog.memberDisplayName(match)}", color = Plum, style = MaterialTheme.typography.bodySmall)
                 }
                 Button(onClick = { catalogSearchIndex = index }, modifier = Modifier.fillMaxWidth()) {
-                    Text(if (match == null) "Find this food" else "Change food")
+                    Text(if (match == null && index in nonMeasuredIndexes) "Find a food anyway" else if (match == null) "Find this food" else "Change food")
+                }
+                if (items.size > 1) {
+                    Button(
+                        onClick = {
+                            items = items.filterIndexed { position, _ -> position != index }
+                            catalogMatches = catalogMatches.filterIndexed { position, _ -> position != index }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Remove this food") }
                 }
             }
+            if (items.size < 12) Button(
+                onClick = {
+                    items = items + EditableMealItem("", "", "", "")
+                    catalogMatches = catalogMatches + null
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Add another food") }
             if (catalogTotals == null) {
                 Text("No nutrition estimate", style = MaterialTheme.typography.titleMedium)
-                Text("Needs review: ${itemsNeedingReview.joinToString { items[it].name.ifBlank { "Unnamed food" } }}.", color = Color(0xFFB3261E))
+                if (itemsNeedingReview.isNotEmpty()) Text("Needs review: ${itemsNeedingReview.joinToString { items[it].name.ifBlank { "Unnamed food" } }}.", color = Color(0xFFB3261E))
                 Text("Match ingredients separately. Include sauces or oils as their own food when known. You can still save this reviewed meal, but it will intentionally have no nutrition values.", color = Color(0xFF655D6E))
             } else {
                 Text(if (isPartialEstimate) "Partial local estimate" else "Member-confirmed catalog estimate", style = MaterialTheme.typography.titleMedium)
@@ -870,6 +987,8 @@ private fun MealConfirmationSheet(proposal: MealProposal, catalog: OfflineFoodCa
                     item.name.trim(), parsedGrams[index], item.preparation.trim().takeIf(String::isNotEmpty),
                     catalogMatches.getOrNull(index)?.fdcId.takeIf { index in includedIndexes },
                     catalog?.sourceRelease?.takeIf { index in includedIndexes },
+                    item.groupLabel,
+                    item.description.trim().takeIf(String::isNotEmpty), item.role,
                 ) }
                 val nutrition = catalogTotals?.let { totals -> MealNutrition(
                     totals.caloriesKcal, totals.proteinGrams, totals.carbohydrateGrams, totals.fatGrams,
@@ -877,12 +996,16 @@ private fun MealConfirmationSheet(proposal: MealProposal, catalog: OfflineFoodCa
                     estimateCoverage = if (isPartialEstimate) "partial" else "full",
                 ) }
                 val meal = if (recordedAt == null) null else MealEntry(
-                    recordedAt = recordedAt, items = savedItems, assumptions = proposal.assumptions,
+                    recordedAt = recordedAt, title = title.trim().takeIf(String::isNotEmpty), items = savedItems, assumptions = proposal.assumptions,
                     confidence = proposal.overallConfidence,
                     source = if (nutrition == null) "ai_estimate" else "member_confirmed_catalog",
                     nutrition = nutrition, referenceThumbnailBase64 = referenceThumbnailBase64.takeIf { keepReference },
+                    analysisAuditId = analysisAuditId,
                 )
-                if (meal == null || !MealEntryValidation.valid(meal)) error = "Review the food names, portions (1-2,000 g), and date." else onSave(meal)
+                val learnedCorrections = catalogMatches.mapIndexedNotNull { index, selected ->
+                    selected?.takeIf { it.fdcId != initialMatchIds[index] }?.let { FoodCorrection(items[index].name.trim(), it.fdcId) }
+                }
+                if (meal == null || !MealEntryValidation.valid(meal)) error = "Review the food names, portions (1-2,000 g), and date." else onSave(meal, learnedCorrections)
             }, modifier = Modifier.fillMaxWidth()) {
                 Text(when {
                     catalogTotals == null -> "Save meal without nutrition"
@@ -913,7 +1036,8 @@ private fun nutritionSummary(nutrition: MealNutrition): String = listOfNotNull(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MealEditSheet(meal: MealEntry, catalog: OfflineFoodCatalog?, onDismiss: () -> Unit, onSave: (MealEntry) -> Unit, onRemoveReference: () -> Unit, onDelete: () -> Unit) {
-    var items by remember(meal) { mutableStateOf(meal.items.map { EditableMealItem(it.name, it.grams?.toString().orEmpty(), it.preparation.orEmpty()) }) }
+    var items by remember(meal) { mutableStateOf(meal.items.map { EditableMealItem(it.name, it.description.orEmpty(), it.grams?.toString().orEmpty(), it.preparation.orEmpty(), it.groupLabel, it.role) }) }
+    var title by remember(meal) { mutableStateOf(meal.title ?: MealIdentity.titleFor(meal.items)) }
     var date by remember(meal) { mutableStateOf(meal.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate().toString()) }
     var calories by remember(meal) { mutableStateOf(meal.nutrition?.caloriesKcal?.toString().orEmpty()) }
     var protein by remember(meal) { mutableStateOf(meal.nutrition?.proteinGrams?.toString().orEmpty()) }
@@ -927,7 +1051,7 @@ private fun MealEditSheet(meal: MealEntry, catalog: OfflineFoodCatalog?, onDismi
     val isCatalogMeal = calculateWithCatalog
     var catalogMatches by remember(meal, catalog) { mutableStateOf(meal.items.map { item ->
         val foodId = item.catalogFoodId ?: meal.nutrition?.catalogFoodId.takeIf { meal.items.size == 1 }
-        foodId?.let { id -> catalog?.foods?.firstOrNull { it.fdcId == id } } ?: catalog?.let { FoodCatalog.suggest(it, item.name) }
+        foodId?.let { id -> catalog?.foods?.firstOrNull { it.fdcId == id } } ?: catalog?.let { FoodCatalog.suggest(it, item.name, item.description.orEmpty()) }
     }) }
     var catalogSearchIndex by remember { mutableStateOf<Int?>(null) }
     val parsedCatalogGrams = items.map { it.grams.replace(',', '.').toIntOrNull()?.takeIf { grams -> grams in 1..2_000 } }
@@ -948,6 +1072,7 @@ private fun MealEditSheet(meal: MealEntry, catalog: OfflineFoodCatalog?, onDismi
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.padding(24.dp).padding(bottom = 72.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Edit meal", style = MaterialTheme.typography.headlineMedium)
+            OutlinedTextField(title, { title = it }, label = { Text("Meal name (optional)") }, modifier = Modifier.fillMaxWidth())
             referenceThumbnail?.let { reference ->
                 Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                     Box(Modifier.size(152.dp)) {
@@ -969,6 +1094,12 @@ private fun MealEditSheet(meal: MealEntry, catalog: OfflineFoodCatalog?, onDismi
                     items = items.toMutableList().also { it[index] = item.copy(name = value) }
                     if (isCatalogMeal) catalogMatches = catalogMatches.toMutableList().also { it[index] = null }
                 }, label = { Text("Food") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(
+                    item.description,
+                    { value -> items = items.toMutableList().also { it[index] = item.copy(description = value) } },
+                    label = { Text("What Metria saw (optional)") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
                 OutlinedTextField(item.grams, { value -> items = items.toMutableList().also { it[index] = item.copy(grams = value) } }, label = { Text("Portion in grams") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(item.preparation, { value -> items = items.toMutableList().also { it[index] = item.copy(preparation = value) } }, label = { Text("Preparation (optional)") }, modifier = Modifier.fillMaxWidth())
                 if (isCatalogMeal) {
@@ -1026,6 +1157,8 @@ private fun MealEditSheet(meal: MealEntry, catalog: OfflineFoodCatalog?, onDismi
                     item.preparation.trim().takeIf(String::isNotEmpty),
                     catalogMatches.getOrNull(index)?.fdcId.takeIf { index in includedCatalogIndexes },
                     catalog?.sourceRelease?.takeIf { index in includedCatalogIndexes },
+                    item.groupLabel,
+                    item.description.trim().takeIf(String::isNotEmpty), item.role,
                 ) }
                 val rawNutrition = listOf(calories, protein, carbs, fat)
                 val values = rawNutrition.map { it.replace(',', '.').toDoubleOrNull() }
@@ -1041,6 +1174,7 @@ private fun MealEditSheet(meal: MealEntry, catalog: OfflineFoodCatalog?, onDismi
                 }
                 val updated = if (recordedAt == null) null else meal.copy(
                     recordedAt = recordedAt,
+                    title = title.trim().takeIf(String::isNotEmpty),
                     items = updatedItems,
                     source = if (isCatalogMeal) "member_confirmed_catalog" else meal.source,
                     nutrition = nutrition,

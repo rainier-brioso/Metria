@@ -15,7 +15,11 @@ class FoodCatalogTest {
             {"number":"204","amount_per_100g":3.6}],
             "portions":[{"gram_weight":85.0,"amount":1,"measure":"piece"}]},
           {"fdc_id":2,"description":"Rice, cooked","category":"Cereal","nutrients":[
-            {"number":"208","amount_per_100g":130.0}],"portions":[]}
+            {"number":"208","amount_per_100g":130.0}],"portions":[]},
+          {"fdc_id":3,"description":"Potatoes, baked","category":"Vegetables","nutrients":[
+            {"number":"208","amount_per_100g":93.0}],"portions":[]},
+          {"fdc_id":4,"description":"Chicken wing, roasted","category":"Poultry","nutrients":[
+            {"number":"208","amount_per_100g":203.0}],"portions":[]}
         ]}
         """.trimIndent()
     )
@@ -31,15 +35,33 @@ class FoodCatalogTest {
     }
 
     @Test fun `Spanish aliases support two-character local type-ahead`() {
-        assertEquals("Chicken breast, roasted", FoodCatalog.search(catalog, "po").single().description)
+        assertTrue(FoodCatalog.search(catalog, "po").any { it.description == "Chicken breast, roasted" })
         assertTrue(FoodCatalog.search(catalog, "p").isEmpty())
     }
 
     @Test fun `local assistant candidates ignore preparation but not food identity`() {
         assertEquals("Chicken breast, roasted", FoodCatalog.suggest(catalog, "baked chicken breast")?.description)
         assertEquals("Chicken breast, roasted", FoodCatalog.suggest(catalog, "fried chicken pieces")?.description)
-        assertEquals(1, FoodCatalog.candidatesForAssistantItem(catalog, "fried chicken pieces").size)
+        assertTrue(FoodCatalog.candidatesForAssistantItem(catalog, "fried chicken pieces").any { it.description == "Chicken breast, roasted" })
         assertEquals("Rice, cooked", FoodCatalog.suggest(catalog, "arroz")?.description)
+    }
+
+    @Test fun `unmatched joined foods split only when every part has a local candidate`() {
+        assertEquals(listOf("chicken", "potatoes"), FoodCatalog.splitUnmatchedJoinedFood(catalog, "chicken and potatoes"))
+        assertEquals(listOf("chicken and unknown sauce"), FoodCatalog.splitUnmatchedJoinedFood(catalog, "chicken and unknown sauce"))
+    }
+
+    @Test fun `assistant lookup falls back to a parenthetical label's core food`() {
+        assertEquals("Potatoes, baked", FoodCatalog.suggest(catalog, "Potatoes (French fries)")?.description)
+    }
+
+    @Test fun `visible chicken cut evidence ranks catalog candidates`() {
+        assertEquals("Chicken breast, roasted", FoodCatalog.suggest(catalog, "chicken pieces", "cuts of breast meat")?.description)
+    }
+
+    @Test fun `dry herbs are not treated as a failed food lookup`() {
+        assertTrue(FoodCatalog.isNonMeasuredSeasoning("Herbs/Seasoning"))
+        assertTrue(!FoodCatalog.isNonMeasuredSeasoning("Cream sauce"))
     }
 
     @Test fun `known food ids retain a curated Spanish display name`() {

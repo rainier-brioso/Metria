@@ -30,6 +30,8 @@ class EncryptedVault(context: Context) {
             val entries: List<WeightEntry>,
             val displayUnit: String = "kg",
             val meals: List<MealEntry> = emptyList(),
+            val foodCorrections: List<FoodCorrection> = emptyList(),
+            val analysisAudits: List<LocalAnalysisAudit> = emptyList(),
         ) : Status
         data class RecoveryRequired(val message: String) : Status
         data class Failed(val message: String) : Status
@@ -41,10 +43,12 @@ class EncryptedVault(context: Context) {
     private var sessionKey: ByteArray? = null
     private var entries: MutableList<WeightEntry> = mutableListOf()
     private var meals: MutableList<MealEntry> = mutableListOf()
+    private var foodCorrections: MutableList<FoodCorrection> = mutableListOf()
+    private var analysisAudits: MutableList<LocalAnalysisAudit> = mutableListOf()
     private var displayUnit = "kg"
 
     fun status(): Status = when {
-        sessionKey != null -> Status.Unlocked(entries.toList(), displayUnit, meals.toList())
+        sessionKey != null -> unlockedStatus()
         envelopeFile.isFile && dataFile.isFile -> Status.Locked
         envelopeFile.isFile || dataFile.isFile -> Status.RecoveryRequired(
             "This vault is incomplete and cannot be opened safely. Remove its local data to start again."
@@ -70,8 +74,10 @@ class EncryptedVault(context: Context) {
             sessionKey = dataKey
             entries = mutableListOf()
             meals = mutableListOf()
+            foodCorrections = mutableListOf()
+            analysisAudits = mutableListOf()
             persist()
-            Status.Unlocked(entries.toList(), meals = meals.toList())
+            unlockedStatus()
         } catch (error: Exception) {
             dataKey.fill(0)
             Status.Failed("Vault setup could not complete. No entries were saved.")
@@ -97,7 +103,9 @@ class EncryptedVault(context: Context) {
             sessionKey = dataKey
             entries = loaded.entries.toMutableList()
             meals = loaded.meals.toMutableList()
-            Status.Unlocked(entries.toList(), displayUnit, meals.toList())
+            foodCorrections = loaded.foodCorrections.toMutableList()
+            analysisAudits = loaded.analysisAudits.toMutableList()
+            unlockedStatus()
         } catch (_: KeyPermanentlyInvalidatedException) {
             lock()
             Status.RecoveryRequired(
@@ -123,7 +131,7 @@ class EncryptedVault(context: Context) {
         return try {
             entries.add(entry)
             persist()
-            Status.Unlocked(entries.toList(), displayUnit, meals.toList())
+            unlockedStatus()
         } catch (_: Exception) {
             entries.remove(entry)
             Status.Failed("Weight could not be saved locally. Try again before locking the vault.")
@@ -145,7 +153,7 @@ class EncryptedVault(context: Context) {
         )
         return try {
             persist()
-            Status.Unlocked(entries.toList(), displayUnit, meals.toList())
+            unlockedStatus()
         } catch (_: Exception) {
             entries[index] = previous
             Status.Failed("Weight changes could not be saved locally. Try again before locking the vault.")
@@ -159,7 +167,7 @@ class EncryptedVault(context: Context) {
         val removed = entries.removeAt(index)
         return try {
             persist()
-            Status.Unlocked(entries.toList(), displayUnit, meals.toList())
+            unlockedStatus()
         } catch (_: Exception) {
             entries.add(index, removed)
             Status.Failed("Weight deletion could not be saved locally. Try again before locking the vault.")
@@ -173,7 +181,7 @@ class EncryptedVault(context: Context) {
         displayUnit = unit
         return try {
             persist()
-            Status.Unlocked(entries.toList(), displayUnit, meals.toList())
+            unlockedStatus()
         } catch (_: Exception) {
             displayUnit = previous
             Status.Failed("Weight unit could not be saved locally.")
@@ -185,8 +193,18 @@ class EncryptedVault(context: Context) {
         sessionKey = null
         entries = mutableListOf()
         meals = mutableListOf()
+        foodCorrections = mutableListOf()
+        analysisAudits = mutableListOf()
         displayUnit = "kg"
     }
+
+    private fun unlockedStatus() = Status.Unlocked(
+        entries = entries.toList(),
+        displayUnit = displayUnit,
+        meals = meals.toList(),
+        foodCorrections = foodCorrections.toList(),
+        analysisAudits = analysisAudits.toList(),
+    )
 
     private fun persist() {
         val key = requireNotNull(sessionKey) { "Vault is locked." }
@@ -203,16 +221,21 @@ class EncryptedVault(context: Context) {
                 put(JSONObject()
                     .put("id", meal.id)
                     .put("recordedAt", meal.recordedAt.toString())
+                    .put("title", meal.title)
                     .put("confidence", meal.confidence)
                     .put("source", meal.source)
                     .put("referenceThumbnail", meal.referenceThumbnailBase64)
+                    .put("analysisAuditId", meal.analysisAuditId)
                     .put("assumptions", JSONArray(meal.assumptions))
                     .put("items", JSONArray().apply {
                         meal.items.forEach { item -> put(JSONObject()
                             .put("name", item.name).put("grams", item.grams)
                             .put("preparation", item.preparation)
                             .put("catalogFoodId", item.catalogFoodId)
-                            .put("catalogRelease", item.catalogRelease)) }
+                            .put("catalogRelease", item.catalogRelease)
+                            .put("groupLabel", item.groupLabel)
+                            .put("description", item.description)
+                            .put("role", item.role)) }
                     })
                     .put("nutrition", meal.nutrition?.let { nutrition -> JSONObject()
                         .put("caloriesKcal", nutrition.caloriesKcal).put("proteinGrams", nutrition.proteinGrams)
@@ -223,6 +246,21 @@ class EncryptedVault(context: Context) {
                         .put("estimateCoverage", nutrition.estimateCoverage)
                     }))
             }
+        }).put("foodCorrections", JSONArray().apply {
+            foodCorrections.forEach { correction -> put(JSONObject()
+                .put("observedName", correction.observedName)
+                .put("confirmedFoodId", correction.confirmedFoodId)
+                .put("count", correction.count)) }
+        }).put("analysisAudits", JSONArray().apply {
+            analysisAudits.forEach { audit -> put(JSONObject()
+                .put("id", audit.id)
+                .put("startedAt", audit.startedAt.toString())
+                .put("completedAt", audit.completedAt.toString())
+                .put("durationMillis", audit.durationMillis)
+                .put("modelId", audit.modelId)
+                .put("operation", audit.operation)
+                .put("outcome", audit.outcome)
+                .put("failureCategory", audit.failureCategory)) }
         }).toString().toByteArray(Charsets.UTF_8)
         val encrypted = cipher(Cipher.ENCRYPT_MODE, rawKey(key))
         val envelope = JSONObject()
@@ -232,7 +270,12 @@ class EncryptedVault(context: Context) {
         writeAtomic(dataFile, envelope.toString().toByteArray(Charsets.UTF_8))
     }
 
-    private data class LoadedPayload(val entries: List<WeightEntry>, val meals: List<MealEntry>)
+    private data class LoadedPayload(
+        val entries: List<WeightEntry>,
+        val meals: List<MealEntry>,
+        val foodCorrections: List<FoodCorrection>,
+        val analysisAudits: List<LocalAnalysisAudit>,
+    )
 
     private fun decryptPayload(key: ByteArray): LoadedPayload {
         val envelope = JSONObject(dataFile.readText(Charsets.UTF_8))
@@ -269,6 +312,7 @@ class EncryptedVault(context: Context) {
                 }
                 val meal = MealEntry(
                     id = item.getString("id"), recordedAt = Instant.parse(item.getString("recordedAt")),
+                    title = item.optString("title").takeIf(String::isNotEmpty),
                     confidence = item.getString("confidence"), source = item.getString("source"),
                     assumptions = item.getJSONArray("assumptions").let { assumptions -> List(assumptions.length()) { assumptions.getString(it) } },
                     items = item.getJSONArray("items").let { mealItems -> List(mealItems.length()) { position ->
@@ -278,15 +322,61 @@ class EncryptedVault(context: Context) {
                             preparation = entry.optString("preparation").takeIf(String::isNotEmpty),
                             catalogFoodId = if (entry.isNull("catalogFoodId")) null else entry.optLong("catalogFoodId"),
                             catalogRelease = entry.optString("catalogRelease").takeIf(String::isNotEmpty),
+                            groupLabel = entry.optString("groupLabel").takeIf(String::isNotEmpty),
+                            description = entry.optString("description").takeIf(String::isNotEmpty),
+                            role = entry.optString("role", "main_food"),
                         ) }
                     } }, nutrition = nutrition,
                     referenceThumbnailBase64 = item.optString("referenceThumbnail").takeIf(String::isNotEmpty),
+                    analysisAuditId = item.optString("analysisAuditId").takeIf(String::isNotEmpty),
                 )
                 require(MealEntryValidation.valid(meal)) { "Invalid meal record." }
                 add(meal)
             }
         } } ?: emptyList()
-        return LoadedPayload(loadedEntries, loadedMeals)
+        val loadedCorrections = root.optJSONArray("foodCorrections")?.let { values -> List(values.length()) { index ->
+            values.getJSONObject(index).let { FoodCorrection(it.getString("observedName"), it.getLong("confirmedFoodId"), it.optInt("count", 1)) }
+        } } ?: emptyList()
+        val loadedAudits = root.optJSONArray("analysisAudits")?.let { values -> List(values.length()) { index ->
+            values.getJSONObject(index).let { item -> LocalAnalysisAudit(
+                id = item.getString("id"),
+                startedAt = Instant.parse(item.getString("startedAt")),
+                completedAt = Instant.parse(item.getString("completedAt")),
+                durationMillis = item.getLong("durationMillis"),
+                modelId = item.getString("modelId"),
+                operation = item.getString("operation"),
+                outcome = item.getString("outcome"),
+                failureCategory = item.optString("failureCategory").takeIf(String::isNotEmpty),
+            ).also { require(LocalAnalysisAuditValidation.valid(it)) { "Invalid analysis audit." } }
+        } } } ?: emptyList()
+        return LoadedPayload(loadedEntries, loadedMeals, loadedCorrections, loadedAudits)
+    }
+
+    fun recordFoodCorrections(corrections: List<FoodCorrection>): Status {
+        if (sessionKey == null) return Status.Locked
+        corrections.forEach { correction ->
+            val index = foodCorrections.indexOfFirst { it.observedName == correction.observedName && it.confirmedFoodId == correction.confirmedFoodId }
+            if (index >= 0) foodCorrections[index] = foodCorrections[index].copy(count = foodCorrections[index].count + 1)
+            else if (correction.observedName.length in 1..120 && correction.confirmedFoodId > 0 && foodCorrections.size < 100) foodCorrections.add(correction)
+        }
+        return runCatching { persist(); status() }.getOrElse { Status.Failed("The private food memory could not be saved.") }
+    }
+
+    /** Stores bounded, non-content audit metadata only while the private vault is unlocked. */
+    fun recordAnalysisAudit(audit: LocalAnalysisAudit): Status {
+        if (sessionKey == null) return Status.Locked
+        if (!LocalAnalysisAuditValidation.valid(audit)) return Status.Failed("The local analysis audit was invalid.")
+        val previous = analysisAudits.toList()
+        analysisAudits.add(audit)
+        analysisAudits.sortBy(LocalAnalysisAudit::completedAt)
+        while (analysisAudits.size > 50) analysisAudits.removeAt(0)
+        return try {
+            persist()
+            unlockedStatus()
+        } catch (_: Exception) {
+            analysisAudits = previous.toMutableList()
+            Status.Failed("The local analysis audit could not be saved.")
+        }
     }
 
     fun addMeal(entry: MealEntry): Status {
@@ -295,7 +385,7 @@ class EncryptedVault(context: Context) {
         meals.add(entry)
         return try {
             persist()
-            Status.Unlocked(entries.toList(), displayUnit, meals.toList())
+            unlockedStatus()
         } catch (_: Exception) {
             meals.remove(entry)
             Status.Failed("Meal could not be saved locally. Try again before locking the vault.")
@@ -311,7 +401,7 @@ class EncryptedVault(context: Context) {
         meals[index] = entry
         return try {
             persist()
-            Status.Unlocked(entries.toList(), displayUnit, meals.toList())
+            unlockedStatus()
         } catch (_: Exception) {
             meals[index] = previous
             Status.Failed("Meal changes could not be saved locally. Try again before locking the vault.")
@@ -325,7 +415,7 @@ class EncryptedVault(context: Context) {
         val removed = meals.removeAt(index)
         return try {
             persist()
-            Status.Unlocked(entries.toList(), displayUnit, meals.toList())
+            unlockedStatus()
         } catch (_: Exception) {
             meals.add(index, removed)
             Status.Failed("Meal deletion could not be saved locally. Try again before locking the vault.")
