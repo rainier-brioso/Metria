@@ -12,6 +12,7 @@ import java.io.File
 import java.security.KeyStore
 import java.security.SecureRandom
 import java.time.Instant
+import java.time.LocalDate
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -33,6 +34,7 @@ class EncryptedVault(context: Context) {
             val foodCorrections: List<FoodCorrection> = emptyList(),
             val analysisAudits: List<LocalAnalysisAudit> = emptyList(),
             val nutritionTargets: NutritionTargets? = null,
+            val cycleContext: CycleContext = CycleContext(),
         ) : Status
         data class RecoveryRequired(val message: String) : Status
         data class Failed(val message: String) : Status
@@ -47,6 +49,7 @@ class EncryptedVault(context: Context) {
     private var foodCorrections: MutableList<FoodCorrection> = mutableListOf()
     private var analysisAudits: MutableList<LocalAnalysisAudit> = mutableListOf()
     private var nutritionTargets: NutritionTargets? = null
+    private var cycleContext = CycleContext()
     private var displayUnit = "kg"
 
     fun status(): Status = when {
@@ -79,6 +82,7 @@ class EncryptedVault(context: Context) {
             foodCorrections = mutableListOf()
             analysisAudits = mutableListOf()
             nutritionTargets = null
+            cycleContext = CycleContext()
             persist()
             unlockedStatus()
         } catch (error: Exception) {
@@ -109,6 +113,7 @@ class EncryptedVault(context: Context) {
             foodCorrections = loaded.foodCorrections.toMutableList()
             analysisAudits = loaded.analysisAudits.toMutableList()
             nutritionTargets = loaded.nutritionTargets
+            cycleContext = loaded.cycleContext
             unlockedStatus()
         } catch (_: KeyPermanentlyInvalidatedException) {
             lock()
@@ -198,6 +203,21 @@ class EncryptedVault(context: Context) {
         }
     }
 
+    fun setCycleContext(context: CycleContext): Status {
+        if (sessionKey == null) return Status.Locked
+        val normalized = CycleContextValidation.normalized(context)
+        if (!CycleContextValidation.valid(normalized)) return Status.Failed("Cycle context could not be saved safely.")
+        val previous = cycleContext
+        cycleContext = normalized
+        return try {
+            persist()
+            unlockedStatus()
+        } catch (_: Exception) {
+            cycleContext = previous
+            Status.Failed("Cycle context could not be saved locally.")
+        }
+    }
+
     fun lock() {
         sessionKey?.fill(0)
         sessionKey = null
@@ -206,6 +226,7 @@ class EncryptedVault(context: Context) {
         foodCorrections = mutableListOf()
         analysisAudits = mutableListOf()
         nutritionTargets = null
+        cycleContext = CycleContext()
         displayUnit = "kg"
     }
 
@@ -216,6 +237,7 @@ class EncryptedVault(context: Context) {
         foodCorrections = foodCorrections.toList(),
         analysisAudits = analysisAudits.toList(),
         nutritionTargets = nutritionTargets,
+        cycleContext = cycleContext,
     )
 
     private fun persist() {
@@ -278,7 +300,10 @@ class EncryptedVault(context: Context) {
             .put("proteinGrams", targets.proteinGrams)
             .put("carbohydrateGrams", targets.carbohydrateGrams)
             .put("fatGrams", targets.fatGrams)
-        }).toString().toByteArray(Charsets.UTF_8)
+        }).put("cycleContext", JSONObject()
+            .put("enabled", cycleContext.enabled)
+            .put("periodStarts", JSONArray(cycleContext.periodStarts.map(LocalDate::toString)))
+        ).toString().toByteArray(Charsets.UTF_8)
         val encrypted = cipher(Cipher.ENCRYPT_MODE, rawKey(key))
         val envelope = JSONObject()
             .put("version", 1)
@@ -293,6 +318,7 @@ class EncryptedVault(context: Context) {
         val foodCorrections: List<FoodCorrection>,
         val analysisAudits: List<LocalAnalysisAudit>,
         val nutritionTargets: NutritionTargets?,
+        val cycleContext: CycleContext,
     )
 
     private fun decryptPayload(key: ByteArray): LoadedPayload {
@@ -374,7 +400,16 @@ class EncryptedVault(context: Context) {
             fatGrams = values.optNullableDouble("fatGrams"),
         ).also { require(NutritionTargetValidation.valid(it)) { "Invalid nutrition targets." } }
         } ?: null
-        return LoadedPayload(loadedEntries, loadedMeals, loadedCorrections, loadedAudits, loadedTargets)
+        val loadedCycleContext = root.optJSONObject("cycleContext")?.let { values ->
+            CycleContext(
+                enabled = values.optBoolean("enabled", false),
+                periodStarts = values.optJSONArray("periodStarts")?.let { starts ->
+                    List(starts.length()) { index -> LocalDate.parse(starts.getString(index)) }
+                } ?: emptyList(),
+            ).let(CycleContextValidation::normalized)
+        } ?: CycleContext()
+        require(CycleContextValidation.valid(loadedCycleContext)) { "Invalid cycle context." }
+        return LoadedPayload(loadedEntries, loadedMeals, loadedCorrections, loadedAudits, loadedTargets, loadedCycleContext)
     }
 
     fun recordFoodCorrections(corrections: List<FoodCorrection>): Status {

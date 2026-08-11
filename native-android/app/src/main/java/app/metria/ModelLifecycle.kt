@@ -121,11 +121,13 @@ class ModelLifecycle(
     private var assistantOperation: String? = null
     private var coachToolCall: PrivateCoachToolCall? = null
     private var diagnostics = "No local performance measurement recorded yet."
+    private var backendSummary = "Text: CPU | Vision: CPU | Audio: CPU"
     // Debug builds expose only the latest response in-memory to diagnose strict-parser rejects.
     // It is cleared on the next operation, lock/background, and process death; never logged or saved.
     private var debugLatestModelResponse: String? = null
     private var latestImageAudit: LocalAnalysisAudit? = null
     private var activeImageAuditStart: Pair<Instant, Long>? = null
+    private var latestImagePreparationMillis: Long? = null
     private var analysisAuditSink: ((LocalAnalysisAudit) -> Unit)? = null
 
     /** The activity persists these records only while the biometric vault is open. */
@@ -586,24 +588,49 @@ class ModelLifecycle(
     private fun initializeRuntime(currentRuntimeGeneration: Long, startedAt: Long) {
         var candidate: Engine? = null
         try {
-            val config = EngineConfig(
-                modelFile().absolutePath,
-                Backend.CPU(),
-                Backend.CPU(),
-                Backend.CPU(),
-                4096,
-                1,
-                privateFilesDir.absolutePath,
+            val runtimeOptions = listOf(
+                "Text: GPU | Vision: GPU | Audio: CPU" to EngineConfig(
+                    modelFile().absolutePath,
+                    Backend.GPU(),
+                    Backend.GPU(),
+                    Backend.CPU(),
+                    4096,
+                    1,
+                    cacheDirectory.absolutePath,
+                ),
+                "Text: CPU | Vision: CPU | Audio: CPU (GPU fallback)" to EngineConfig(
+                    modelFile().absolutePath,
+                    Backend.CPU(),
+                    Backend.CPU(),
+                    Backend.CPU(),
+                    4096,
+                    1,
+                    cacheDirectory.absolutePath,
+                ),
             )
-            candidate = Engine(config)
-            synchronized(this) {
-                if (currentRuntimeGeneration != runtimeGeneration) {
-                    candidate.close()
-                    return
+            var selectedBackend: String? = null
+            var lastFailure: Exception? = null
+            for ((summary, config) in runtimeOptions) {
+                candidate = Engine(config)
+                synchronized(this) {
+                    if (currentRuntimeGeneration != runtimeGeneration) {
+                        candidate.close()
+                        return
+                    }
+                    engine = candidate
                 }
-                engine = candidate
+                try {
+                    candidate.initialize()
+                    selectedBackend = summary
+                    break
+                } catch (error: Exception) {
+                    lastFailure = error
+                    synchronized(this) { if (engine === candidate) engine = null }
+                    candidate.close()
+                    candidate = null
+                }
             }
-            candidate.initialize()
+            requireNotNull(candidate) { lastFailure?.message ?: "No LiteRT backend could initialize." }
             synchronized(this) {
                 if (currentRuntimeGeneration != runtimeGeneration) {
                     candidate.close()
@@ -611,8 +638,9 @@ class ModelLifecycle(
                     return
                 }
                 state = "loaded"
-                reason = "LiteRT is initialized locally. Text and image analysis are available locally."
-                diagnostics = measurement("LiteRT initialization", startedAt)
+                backendSummary = requireNotNull(selectedBackend)
+                reason = "LiteRT is initialized locally with ${if (selectedBackend.startsWith("Text: GPU")) "GPU acceleration" else "the CPU fallback"}."
+                diagnostics = measurement("LiteRT initialization · $selectedBackend", startedAt)
             }
         } catch (_: Exception) {
             synchronized(this) {
@@ -720,6 +748,7 @@ class ModelLifecycle(
         try {
             conversation = loadedEngine.createConversation()
             synchronized(this) { activeConversation = conversation }
+            val facts = if (memberText.contains("[LOCAL_FACTS]")) "Use only the [LOCAL_FACTS] block supplied in MEMBER_QUESTION." else snapshot.promptFacts()
             val response = conversation.sendMessage(
                 "$metriaSystemPrompt\n\n" + """Return only one JSON object with exactly one key: message.
                     Write exactly three short, warm, factual, non-judgmental sentences (maximum 480 characters) in the member's language:
@@ -732,7 +761,7 @@ class ModelLifecycle(
                     $memberText
                     MEMBER_QUESTION_END
                     PRIVATE_FACTS_START
-                    ${snapshot.promptFacts()}
+                    $facts
                     PRIVATE_FACTS_END""".trimIndent()
             )
             val output = response.contents.contents.filterIsInstance<Content.Text>().joinToString("") { it.text }.trim()
@@ -853,6 +882,7 @@ class ModelLifecycle(
                 preparedImage = prepared
                 imageState = "ready"
                 imageReason = "Image prepared locally with metadata removed."
+                latestImagePreparationMillis = SystemClock.elapsedRealtime() - startedAt
                 diagnostics = measurement("image preparation", startedAt)
             }
         } catch (_: Exception) {
@@ -876,22 +906,26 @@ class ModelLifecycle(
     ) {
         var conversation: Conversation? = null
         try {
+            val conversationStartedAt = SystemClock.elapsedRealtime()
             conversation = loadedEngine.createConversation()
+            val conversationSetupMillis = SystemClock.elapsedRealtime() - conversationStartedAt
             synchronized(this) { activeConversation = conversation }
+            val modelRequestStartedAt = SystemClock.elapsedRealtime()
             val response = conversation.sendMessage(
                 Contents.of(
                     Content.ImageFile(image.absolutePath),
                     Content.Text(
-                        "Return only one JSON object with exactly these keys: kind, items, assumptions, " +
-                            "questions, overall_confidence. kind must be meal_proposal. Each item is exactly one visible ingredient " +
-                            "with name, description, visible_portion, estimated_grams_range, preparation, confidence, role. " +
-                            "name is a short searchable core food name (for example potatoes or sauce), never a descriptive phrase; put visual detail in description. " +
-                            "estimated_grams_range must have integer min and max. Confidence values must be low, medium, or high. " +
-                            "Separate each visible ingredient; never combine chicken and potatoes into one ingredient. Describe visible food or readable nutrition-label facts only. " +
-                            "Use empty items if you cannot identify food. This is an editable draft, not advice."
+                        "Return only one compact JSON object with exactly these keys: kind, items, assumptions, questions, overall_confidence. " +
+                            "kind is meal_proposal. Return at most two strongest visible core ingredients; secondary food can be added by the member during review. " +
+                            "Each item has exactly name, description, visible_portion, estimated_grams_range, preparation, confidence, role. " +
+                            "Use one or two words for every string where possible. estimated_grams_range has integer min and max. Confidence is exactly low, medium, or high. " +
+                            "role is exactly one of main_food, side, drink, sauce_oil, dry_seasoning; never use synonyms. " +
+                            "Use at most one short assumption and one short question. Return JSON only."
                     ),
                 )
             )
+            val modelRequestMillis = SystemClock.elapsedRealtime() - modelRequestStartedAt
+            val validationStartedAt = SystemClock.elapsedRealtime()
             val output = response.contents.contents
                 .filterIsInstance<Content.Text>()
                 .joinToString("") { it.text }
@@ -909,7 +943,16 @@ class ModelLifecycle(
                         imageReason = "Local image analysis completed. Temporary image discarded."
                         recordImageAuditLocked(startedWallClock, startedAt, "draft_ready")
                     }
-                    diagnostics = measurement("local image analysis", startedAt)
+                    val totalMillis = SystemClock.elapsedRealtime() - startedAt
+                    val validationMillis = SystemClock.elapsedRealtime() - validationStartedAt
+                    diagnostics = """Meal proposal schema: compact (two visible candidates)
+                        Output: ${output.length} characters
+                        Image preparation: ${latestImagePreparationMillis?.let { "${it} ms" } ?: "not measured"}
+                        Conversation setup: ${conversationSetupMillis} ms
+                        Model request (vision + prefill + generation): ${modelRequestMillis} ms
+                        First token: unavailable with the current synchronous API
+                        Response validation: ${validationMillis} ms
+                        Total analysis: ${totalMillis} ms | process memory: ${Debug.getPss() / 1024} MB | battery: ${appContext.getSystemService(BatteryManager::class.java)?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)?.takeIf { it in 0..100 } ?: "unknown"}% | thermal: ${if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) appContext.getSystemService(PowerManager::class.java)?.currentThermalStatus ?: "unknown" else "unknown"}""".trimIndent()
                     if (SystemClock.elapsedRealtime() - startedAt >= 20_000) {
                         consecutiveLongImageRuns += 1
                     } else {
@@ -1076,7 +1119,7 @@ class ModelLifecycle(
         expectedBytes,
         reason,
         testOutput,
-        "Text: CPU | Vision: CPU | Audio: CPU",
+        backendSummary,
         imageState,
         imageReason,
         proposal,

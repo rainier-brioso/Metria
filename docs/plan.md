@@ -75,6 +75,9 @@ weight entries offline.
   unlock failure, and the current custom-intent locale limitations.
 - [ ] Add 7-day, 30-day, and custom-range charts with moving-average option.
 - [ ] Show trend descriptions without moralising language.
+- [ ] Offer opt-in, encrypted cycle-aware context: member-entered period-start
+  dates may qualify short-term weight variation, never infer identity, diagnose,
+  predict cycles, alter goals, or leave the device.
 - [ ] Add export/delete policy screens; do not implement export until its
   encrypted format is designed.
 - [ ] Test airplane mode, app restart, biometric cancellation, invalid values,
@@ -131,6 +134,9 @@ privacy.
 - [ ] Add explicit photo/screenshot consent and local processing disclosure.
 - [ ] Implement OCR for nutrition labels and editable field extraction.
 - [ ] Prototype a small on-device vision-language model for meal suggestions.
+- [x] Use a compact, bounded on-device meal-proposal schema (two strongest
+  visible candidates); strictly validate every model field and fail closed on
+  unsupported values. Members can add or edit secondary foods during review.
 - [ ] Require portion/preparation confirmation before nutrition calculation.
 - [ ] Measure model download size, latency, battery drain, heat, and failure
   behavior on low/mid/high-tier devices.

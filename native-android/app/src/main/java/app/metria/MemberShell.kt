@@ -102,6 +102,7 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
     var catalogFoodForConfirmation by remember { mutableStateOf<CatalogFood?>(null) }
     var showAssistantLoadingPreview by remember { mutableStateOf(false) }
     var editNutritionTargets by remember { mutableStateOf(false) }
+    var editCycleContext by remember { mutableStateOf(false) }
     val foodCatalog = remember { runCatching { FoodCatalog.load(activity.applicationContext) }.getOrNull() }
     DisposableEffect(activity) {
         activity.setVaultCallback { status = it }
@@ -161,6 +162,7 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                             "Today" -> TodayScreen(
                                 vaultStatus.entries, vaultStatus.meals, vaultStatus.displayUnit,
                                 nutritionTargets = vaultStatus.nutritionTargets,
+                                cycleContext = vaultStatus.cycleContext,
                                 selectedTab = todayTab, onSelectTab = { todayTab = it }, onEditMeal = { editMeal = it },
                                 onEditNutritionTargets = { editNutritionTargets = true },
                             )
@@ -171,6 +173,7 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                                 entries = vaultStatus.entries,
                                 meals = vaultStatus.meals,
                                 nutritionTargets = vaultStatus.nutritionTargets,
+                                cycleContext = vaultStatus.cycleContext,
                                 openWeightDraft = { draft -> voiceDraft = draft; addSheet = true },
                                 askMeal = { text -> modelStatus = activity.askLocalMealAssistant(text) },
                                 askCoach = { question, snapshot -> modelStatus = activity.askPrivateCoach(question, snapshot) },
@@ -182,6 +185,7 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                                     if (status is EncryptedVault.Status.Unlocked) entry else null
                                 },
                                 editSavedWeight = { editEntry = it },
+                                undoSavedWeight = { entry -> status = vault.deleteWeight(entry.id) },
                                 openFoodCatalog = { browseFoodCatalog = true },
                                 review = { mealProposalForConfirmation = it },
                                 prepareImage = { uri -> modelStatus = activity.prepareLocalMealImage(uri) },
@@ -199,7 +203,9 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                             else -> PrivacyScreen(
                                 vaultStatus.displayUnit,
                                 vaultStatus.analysisAudits,
+                                vaultStatus.cycleContext,
                                 { status = vault.setDisplayUnit(if (vaultStatus.displayUnit == "kg") "lb" else "kg") },
+                                { editCycleContext = true },
                             ) { activity.lockVault() }
                         }
                     }
@@ -262,6 +268,11 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                     targets = vaultStatus.nutritionTargets,
                     onDismiss = { editNutritionTargets = false },
                     onSave = { targets -> status = vault.setNutritionTargets(targets); editNutritionTargets = false },
+                )
+                if (editCycleContext) CycleContextSheet(
+                    context = vaultStatus.cycleContext,
+                    onDismiss = { editCycleContext = false },
+                    onSave = { context -> status = vault.setCycleContext(context); editCycleContext = false },
                 )
             }
         }
@@ -397,6 +408,7 @@ private fun AssistantScreen(
     entries: List<WeightEntry>,
     meals: List<MealEntry>,
     nutritionTargets: NutritionTargets?,
+    cycleContext: CycleContext,
     openWeightDraft: (VoiceWeightDraft) -> Unit,
     askMeal: (String) -> Unit,
     askCoach: (String, PrivateCoachSnapshot) -> Unit,
@@ -404,6 +416,7 @@ private fun AssistantScreen(
     cancelAssistant: () -> Unit,
     saveWeightDirect: (Double, Instant) -> WeightEntry?,
     editSavedWeight: (WeightEntry) -> Unit,
+    undoSavedWeight: (WeightEntry) -> Unit,
     openFoodCatalog: () -> Unit,
     review: (MealProposal) -> Unit,
     prepareImage: (android.net.Uri) -> Unit,
@@ -478,10 +491,11 @@ private fun AssistantScreen(
     }
     if (chatOpen) {
         PrivateAssistantChat(
-            modelStatus = modelStatus, entries = entries, meals = meals, nutritionTargets = nutritionTargets,
+            modelStatus = modelStatus, entries = entries, meals = meals, nutritionTargets = nutritionTargets, cycleContext = cycleContext,
             onBack = { chatOpen = false }, onWeightDraft = openWeightDraft, askMeal = askMeal,
             askCoach = askCoach, understandCoach = understandCoach, cancelAssistant = cancelAssistant, reviewMeal = review,
             saveWeightDirect = saveWeightDirect, editSavedWeight = editSavedWeight,
+            undoSavedWeight = undoSavedWeight,
         )
         return
     }
@@ -499,6 +513,7 @@ private fun AssistantScreen(
             entries = entries,
             meals = meals,
             nutritionTargets = nutritionTargets,
+            cycleContext = cycleContext,
             onBack = { chatOpen = false },
             onWeightDraft = openWeightDraft,
             askMeal = askMeal,
@@ -507,6 +522,7 @@ private fun AssistantScreen(
             cancelAssistant = cancelAssistant,
             saveWeightDirect = saveWeightDirect,
             editSavedWeight = editSavedWeight,
+            undoSavedWeight = undoSavedWeight,
             reviewMeal = review,
         )
         return
@@ -562,12 +578,22 @@ private fun AssistantScreen(
                 }
                 proposal.assumptions.forEach { Text("Assumption: $it") }
                 proposal.questions.forEach { Text("Question: $it") }
+                Text("This fast draft lists the strongest visible foods. Add or edit anything else before saving.", color = Color(0xFF655D6E), style = MaterialTheme.typography.bodySmall)
                 Text("Nothing has been saved. Review every portion before confirming.", color = Plum)
                 Button(onClick = { review(proposal) }, modifier = Modifier.fillMaxWidth()) { Text("Review and confirm meal") }
             }
         }
     }
     modelStatus.proposalDiagnostic?.let { Text(modelStatus.imageReason, color = Color(0xFFB3261E)) }
+    if (BuildConfig.DEBUG) {
+        Card(colors = CardDefaults.cardColors(containerColor = PlumSoft), modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Development runtime", style = MaterialTheme.typography.titleSmall, color = Plum)
+                Text(modelStatus.backendSummary, color = Ink)
+                Text(modelStatus.diagnostics, color = Color(0xFF655D6E), style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
     if (BuildConfig.DEBUG && modelStatus.debugLatestModelResponse != null) {
         Button(onClick = { showDeveloperResponse = !showDeveloperResponse }, modifier = Modifier.fillMaxWidth()) {
             Text(if (showDeveloperResponse) "Hide development response" else "Inspect latest local response")
@@ -630,6 +656,7 @@ private fun PrivateAssistantChat(
     entries: List<WeightEntry>,
     meals: List<MealEntry>,
     nutritionTargets: NutritionTargets?,
+    cycleContext: CycleContext,
     onBack: () -> Unit,
     onWeightDraft: (VoiceWeightDraft) -> Unit,
     askMeal: (String) -> Unit,
@@ -638,6 +665,7 @@ private fun PrivateAssistantChat(
     cancelAssistant: () -> Unit,
     saveWeightDirect: (Double, Instant) -> WeightEntry?,
     editSavedWeight: (WeightEntry) -> Unit,
+    undoSavedWeight: (WeightEntry) -> Unit,
     reviewMeal: (MealProposal) -> Unit,
 ) {
     var input by remember { mutableStateOf("") }
@@ -679,7 +707,12 @@ private fun PrivateAssistantChat(
                     "${ordered.size} weight entries from ${first.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate()} to ${latest.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate()}: ${"%.1f".format(first.kilograms)} kg to ${"%.1f".format(latest.kilograms)} kg (${"%+.1f".format(change)} kg over $days days)."
                 }
                 messages = messages + PrivateChatMessage(trend, false)
-                askCoach("MEMBER_LANGUAGE: ${coachReplyLanguage(submittedQuestion)}. WEIGHT_TREND_FACTS: $trend. Explain only these facts in three short supportive sentences; do not mention nutrition goals or give medical advice.", snapshot)
+                askCoach("""MEMBER_LANGUAGE: ${coachReplyLanguage(submittedQuestion)}
+                    MEMBER_QUESTION: $submittedQuestion
+                    [LOCAL_FACTS]
+                    $trend
+                    [/LOCAL_FACTS]
+                    Explain only these facts in three short supportive sentences. Do not mention nutrition goals or give medical advice.""".trimIndent(), snapshot)
             }
             "read_meals" -> {
                 val date = when (call.period) { "day_before_yesterday" -> today.minusDays(2); "yesterday" -> today.minusDays(1); else -> today }
@@ -714,7 +747,14 @@ private fun PrivateAssistantChat(
             }
         }
         savedWeight?.let { entry ->
-            Button(onClick = { editSavedWeight(entry) }, modifier = Modifier.fillMaxWidth()) { Text("Edit saved weight") }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Button(onClick = { editSavedWeight(entry) }, modifier = Modifier.weight(1f)) { Text("Edit saved weight") }
+                Button(onClick = {
+                    undoSavedWeight(entry)
+                    savedWeight = null
+                    messages = messages + PrivateChatMessage("${"%.1f".format(entry.kilograms)} kg entry removed.", false)
+                }, modifier = Modifier.weight(1f)) { Text("Undo") }
+            }
         }
         if (modelStatus.state == "thinking" && modelStatus.assistantOperation?.startsWith("coach") == true) {
             Card(colors = CardDefaults.cardColors(containerColor = PlumSoft)) {
@@ -748,6 +788,17 @@ private fun PrivateAssistantChat(
             messages = messages + PrivateChatMessage(text, true)
             input = ""
             submittedQuestion = text
+            if (isWeightTrendQuestion(text)) {
+                val trend = weightTrendFacts(entries, cycleContext)
+                messages = messages + PrivateChatMessage(trend, false)
+                askCoach("""MEMBER_LANGUAGE: ${coachReplyLanguage(text)}
+                    MEMBER_QUESTION: $text
+                    [LOCAL_FACTS]
+                    $trend
+                    [/LOCAL_FACTS]
+                    Explain only these facts in three short supportive sentences. Do not mention nutrition goals or give medical advice.""".trimIndent(), snapshot)
+                return@Button
+            }
             understandCoach(text)
             return@Button
             val kilograms = parseChatWeight(text)
@@ -792,6 +843,24 @@ private fun coachReplyLanguage(text: String): String {
     return if (listOf("qué", "como", "cómo", "comí", "peso", "semana", "meta", "progreso").any { it in normalized }) "Spanish" else "the member's language"
 }
 
+private fun isWeightTrendQuestion(text: String): Boolean = listOf("pérdida de peso", "perdida de peso", "mi peso", "weight loss", "weight trend").any { it in text.lowercase() }
+
+private fun weightTrendFacts(entries: List<WeightEntry>, cycleContext: CycleContext = CycleContext()): String {
+    val ordered = entries.sortedBy(WeightEntry::recordedAt)
+    val first = ordered.firstOrNull(); val latest = ordered.lastOrNull()
+    if (first == null || latest == null || first.id == latest.id) return "There are not enough weight entries to describe a trend yet."
+    val days = java.time.Duration.between(first.recordedAt, latest.recordedAt).toDays().coerceAtLeast(1)
+    val base = "${ordered.size} weight entries from ${first.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate()} to ${latest.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate()}: ${"%.1f".format(first.kilograms)} kg to ${"%.1f".format(latest.kilograms)} kg (${"%+.1f".format(latest.kilograms - first.kilograms)} kg over $days days)."
+    val latestDate = latest.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate()
+    val latestPeriodStart = cycleContext.periodStarts.filter { !it.isAfter(latestDate) }.maxOrNull()
+    val cycleNote = latestPeriodStart?.let { start ->
+        val daysSinceStart = java.time.temporal.ChronoUnit.DAYS.between(start, latestDate)
+        if (cycleContext.enabled && daysSinceStart in 0..7) " Cycle context: the latest reading is $daysSinceStart days after a member-logged period start. Short-term fluid variation is possible but cannot be confirmed from these records."
+        else ""
+    }.orEmpty()
+    return base + cycleNote
+}
+
 private fun isDirectChatRequest(text: String) = parseChatWeight(text) != null || PrivateCoachQuestions.asksYesterdayWeight(text) || PrivateCoachQuestions.asksTodaySummary(text)
 
 @Composable
@@ -800,12 +869,14 @@ private fun TodayScreen(
     meals: List<MealEntry>,
     unit: String,
     nutritionTargets: NutritionTargets?,
+    cycleContext: CycleContext,
     selectedTab: Int,
     onSelectTab: (Int) -> Unit,
     onEditMeal: (MealEntry) -> Unit,
     onEditNutritionTargets: () -> Unit,
 ) {
     val latest = entries.maxByOrNull(WeightEntry::recordedAt)
+    val todayWeights = entries.filter { it.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate() == LocalDate.now() }.sortedByDescending(WeightEntry::recordedAt)
     val month = WeightTrend.filter(entries, LocalDate.now().minusDays(29), LocalDate.now())
     val todayNutrition = MealNutritionSummaries.between(meals, LocalDate.now(), LocalDate.now())
     val weekNutrition = MealNutritionSummaries.between(meals, LocalDate.now().minusDays(6), LocalDate.now())
@@ -829,6 +900,17 @@ private fun TodayScreen(
             Text("30-day reflection", style = MaterialTheme.typography.titleMedium)
             Text(WeightTrend.description(month), color = Color(0xFF655D6E))
             if (month.size >= 2) MiniTrend(month)
+        }
+    }
+    CycleAwareWeightNote(entries, cycleContext)
+    if (todayWeights.isNotEmpty()) {
+        Text("Today’s weight entries", style = MaterialTheme.typography.titleMedium)
+        Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
+            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                todayWeights.forEach { entry ->
+                    Text("${formatWeight(entry.kilograms, unit)} · ${entry.recordedAt.atZone(ZoneId.systemDefault()).toLocalTime().withSecond(0).withNano(0)}")
+                }
+            }
         }
     }
     }
@@ -1129,7 +1211,7 @@ private fun MealRecordCard(meal: MealEntry, onEdit: (MealEntry) -> Unit) {
 }
 
 @Composable
-private fun PrivacyScreen(unit: String, analysisAudits: List<LocalAnalysisAudit>, changeUnit: () -> Unit, lock: () -> Unit) {
+private fun PrivacyScreen(unit: String, analysisAudits: List<LocalAnalysisAudit>, cycleContext: CycleContext, changeUnit: () -> Unit, editCycleContext: () -> Unit, lock: () -> Unit) {
     Text("Private by default", style = MaterialTheme.typography.displaySmall)
     Card(colors = CardDefaults.cardColors(containerColor = Color.White)) { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Your data stays with you", style = MaterialTheme.typography.titleLarge)
@@ -1159,8 +1241,60 @@ private fun PrivacyScreen(unit: String, analysisAudits: List<LocalAnalysisAudit>
             }
         }
     }
+    Card(colors = CardDefaults.cardColors(containerColor = Color.White)) { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Cycle-aware weight insights", style = MaterialTheme.typography.titleMedium)
+        Text(if (cycleContext.enabled) "Enabled. Period-start dates stay encrypted here and only add cautious context to short-term weight changes." else "Optional. Metria will not infer this from your identity or use it unless you choose to enable it.", color = Color(0xFF655D6E))
+        Button(onClick = editCycleContext, modifier = Modifier.fillMaxWidth()) { Text(if (cycleContext.enabled) "Edit private cycle context" else "Set up private cycle context") }
+    } }
     Button(onClick = changeUnit, modifier = Modifier.fillMaxWidth()) { Text(if (unit == "kg") "Use pounds" else "Use kilograms") }
     Button(onClick = lock, modifier = Modifier.fillMaxWidth()) { Text("Lock vault") }
+}
+
+@Composable
+private fun CycleAwareWeightNote(entries: List<WeightEntry>, context: CycleContext) {
+    if (!context.enabled || entries.size < 2 || context.periodStarts.isEmpty()) return
+    val ordered = entries.sortedBy(WeightEntry::recordedAt)
+    val latest = ordered.last()
+    val previous = ordered.dropLast(1).last()
+    if (latest.kilograms <= previous.kilograms) return
+    val latestDate = latest.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate()
+    val periodStart = context.periodStarts.filter { !it.isAfter(latestDate) }.maxOrNull() ?: return
+    val daysSinceStart = java.time.temporal.ChronoUnit.DAYS.between(periodStart, latestDate)
+    if (daysSinceStart !in 0..7) return
+    Card(colors = CardDefaults.cardColors(containerColor = PlumSoft)) {
+        Text("A short-term increase can reflect normal fluid variation. Your private cycle context is one possible factor; follow the trend over several readings.", color = Plum, modifier = Modifier.padding(16.dp))
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CycleContextSheet(context: CycleContext, onDismiss: () -> Unit, onSave: (CycleContext) -> Unit) {
+    var enabled by remember(context) { mutableStateOf(context.enabled) }
+    var starts by remember(context) { mutableStateOf(context.periodStarts.sortedDescending().joinToString("\n")) }
+    var error by remember { mutableStateOf<String?>(null) }
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.padding(24.dp).padding(bottom = 72.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Private cycle context", style = MaterialTheme.typography.headlineMedium)
+            Text("Optional and encrypted on this phone. This helps Metria phrase short-term weight changes more carefully. It does not diagnose, predict a cycle, change goals, or share data.", color = Color(0xFF655D6E))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text("Use cycle-aware insights")
+                Switch(checked = enabled, onCheckedChange = { enabled = it })
+            }
+            if (enabled) {
+                OutlinedTextField(starts, { starts = it }, label = { Text("Period start dates · YYYY-MM-DD") }, supportingText = { Text("One date per line. You can remove every date or turn this off whenever you want.") }, minLines = 3, modifier = Modifier.fillMaxWidth())
+            }
+            error?.let { Text(it, color = Color(0xFFB3261E)) }
+            Button(onClick = {
+                val parsed = starts.lineSequence().map(String::trim).filter(String::isNotEmpty).map { runCatching { LocalDate.parse(it) }.getOrNull() }.toList()
+                if (enabled && (parsed.any { it == null } || parsed.size != starts.lineSequence().map(String::trim).count(String::isNotEmpty))) {
+                    error = "Use one valid past or current date per line."
+                } else {
+                    val next = CycleContext(enabled = enabled, periodStarts = parsed.filterNotNull())
+                    if (CycleContextValidation.valid(next)) onSave(next) else error = "Use at most 24 unique dates from the last three years."
+                }
+            }, modifier = Modifier.fillMaxWidth()) { Text("Save privately") }
+        }
+    }
 }
 
 private fun formatWeight(kilograms: Double, unit: String): String = if (unit == "lb") "${"%.1f".format(WeightUnits.kilogramsToPounds(kilograms))} lb" else "${"%.1f".format(kilograms)} kg"
