@@ -57,6 +57,7 @@ class MainActivity : FragmentActivity() {
     private var pendingVoiceDraft: VoiceWeightDraft? = null
     private var pendingCameraCapture: File? = null
     private var externalImageFlowInProgress = false
+    private var externalArchiveFlowInProgress = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -101,7 +102,7 @@ class MainActivity : FragmentActivity() {
     }
 
     override fun onStop() {
-        if (!externalImageFlowInProgress) {
+        if (!externalImageFlowInProgress && !externalArchiveFlowInProgress) {
             vault.lock()
             modelLifecycle.clearDeveloperResponse()
         }
@@ -195,6 +196,38 @@ class MainActivity : FragmentActivity() {
     fun readLocalNutritionLabel(): ModelStatus = modelLifecycle.readNutritionLabel()
 
     fun discardLocalMealImage(): ModelStatus = modelLifecycle.discardPreparedImage()
+
+    fun beginExternalArchiveFlow() { externalArchiveFlowInProgress = true }
+
+    fun finishExternalArchiveFlow() { externalArchiveFlowInProgress = false }
+
+    fun exportRecoveryArchive(destination: Uri, passphrase: String): Result<Unit> {
+        val secret = passphrase.toCharArray()
+        return try {
+            vault.exportRecoveryArchive(secret).mapCatching { archive ->
+                contentResolver.openOutputStream(destination)?.use { it.write(archive) }
+                    ?: error("Metria could not write the selected archive file.")
+            }
+        } finally {
+            secret.fill('\u0000')
+            externalArchiveFlowInProgress = false
+        }
+    }
+
+    fun inspectRecoveryArchive(source: Uri, passphrase: String): Result<EncryptedVault.ArchiveSummary> {
+        val secret = passphrase.toCharArray()
+        return try {
+            val archive = contentResolver.openInputStream(source)?.use { input -> input.readNBytes(8 * 1024 * 1024 + 1) }
+                ?: return Result.failure(IllegalStateException("Metria could not read the selected archive."))
+            if (archive.size > 8 * 1024 * 1024) return Result.failure(IllegalArgumentException("This archive is too large to restore safely."))
+            vault.inspectRecoveryArchive(archive, secret)
+        } finally {
+            secret.fill('\u0000')
+            externalArchiveFlowInProgress = false
+        }
+    }
+
+    fun confirmRecoveryRestore(): Result<EncryptedVault.ArchiveSummary> = vault.confirmRecoveryRestore()
 
     fun lockVault() {
         vault.lock()

@@ -165,6 +165,18 @@ exposing their health data.
 
 ## Delivery order
 
+### Recovery archive decision (M6)
+
+Metria recovery is a member-held `.metria` archive encrypted with a
+member-created passphrase. It is independent from the device-bound biometric
+key, so it can be restored to a newly created vault on another phone. The
+archive includes member-confirmed weights, meals, optional confirmed reference
+thumbnails, goals, unit choice, cycle context, and food corrections. It
+excludes Android Keystore keys, model artifacts, temporary images, chat,
+diagnostics, and local inference audit metadata. Import must authenticate and
+validate the complete archive, show record counts, and obtain explicit
+replacement confirmation before writing the receiving vault.
+
 1. M0 on-device vision feasibility spike.
 2. M1 safety and product decisions.
 3. M2 private weight tracker.

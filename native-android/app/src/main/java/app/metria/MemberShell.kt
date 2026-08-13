@@ -103,6 +103,30 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
     var showAssistantLoadingPreview by remember { mutableStateOf(false) }
     var editNutritionTargets by remember { mutableStateOf(false) }
     var editCycleContext by remember { mutableStateOf(false) }
+    var exportPassphrase by remember { mutableStateOf<CharArray?>(null) }
+    var restoreSource by remember { mutableStateOf<android.net.Uri?>(null) }
+    var archivePreview by remember { mutableStateOf<EncryptedVault.ArchiveSummary?>(null) }
+    var archiveMessage by remember { mutableStateOf<String?>(null) }
+    val archiveExportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { destination ->
+        val passphrase = exportPassphrase
+        exportPassphrase = null
+        if (destination == null || passphrase == null) {
+            passphrase?.fill('\u0000')
+            activity.finishExternalArchiveFlow()
+        } else {
+            val result = activity.exportRecoveryArchive(destination, passphrase.concatToString())
+            passphrase.fill('\u0000')
+            archiveMessage = result.fold(
+                onSuccess = { "Encrypted recovery archive saved. Keep its passphrase separately." },
+                onFailure = { "Archive was not saved: ${it.message ?: "unknown error"}" },
+            )
+        }
+    }
+    val archiveImportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { source ->
+        activity.finishExternalArchiveFlow()
+        restoreSource = source
+        if (source == null) archiveMessage = "No archive was selected."
+    }
     val foodCatalog = remember { runCatching { FoodCatalog.load(activity.applicationContext) }.getOrNull() }
     DisposableEffect(activity) {
         activity.setVaultCallback { status = it }
@@ -206,6 +230,18 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                                 vaultStatus.cycleContext,
                                 { status = vault.setDisplayUnit(if (vaultStatus.displayUnit == "kg") "lb" else "kg") },
                                 { editCycleContext = true },
+                                archiveMessage = archiveMessage,
+                                exportArchive = { passphrase ->
+                                    exportPassphrase = passphrase
+                                    archiveMessage = null
+                                    activity.beginExternalArchiveFlow()
+                                    archiveExportLauncher.launch("metria-recovery-${LocalDate.now()}.metria")
+                                },
+                                importArchive = {
+                                    archiveMessage = null
+                                    activity.beginExternalArchiveFlow()
+                                    archiveImportLauncher.launch(arrayOf("application/octet-stream", "application/json", "*/*"))
+                                },
                             ) { activity.lockVault() }
                         }
                     }
@@ -274,6 +310,36 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                     onDismiss = { editCycleContext = false },
                     onSave = { context -> status = vault.setCycleContext(context); editCycleContext = false },
                 )
+                if (restoreSource != null && archivePreview == null) ArchivePassphraseSheet(
+                    title = "Unlock recovery archive",
+                    detail = "Enter the passphrase used when this archive was created. Metria will check it before changing anything.",
+                    confirmLabel = "Check archive",
+                    onDismiss = { restoreSource = null },
+                    onConfirm = { passphrase ->
+                        val source = restoreSource ?: return@ArchivePassphraseSheet
+                        val result = activity.inspectRecoveryArchive(source, passphrase.concatToString())
+                        passphrase.fill('\u0000')
+                        result.fold(
+                            onSuccess = { archivePreview = it; restoreSource = null },
+                            onFailure = { archiveMessage = "Archive could not be opened: ${it.message ?: "wrong passphrase or damaged file"}"; restoreSource = null },
+                        )
+                    },
+                )
+                archivePreview?.let { preview -> AlertDialog(
+                    onDismissRequest = { archivePreview = null },
+                    title = { Text("Replace this vault?") },
+                    text = { Text("The archive contains ${preview.weights} weight entries and ${preview.meals} meals. This replaces the current records on this phone. Model files, chat, diagnostics, and device keys are not restored.") },
+                    confirmButton = { Button(onClick = {
+                        val result = activity.confirmRecoveryRestore()
+                        archivePreview = null
+                        status = vault.status()
+                        archiveMessage = result.fold(
+                            onSuccess = { "Recovery completed locally: ${it.weights} weights and ${it.meals} meals restored." },
+                            onFailure = { "Recovery did not change your vault: ${it.message ?: "unknown error"}" },
+                        )
+                    }) { Text("Replace and restore") } },
+                    dismissButton = { Button(onClick = { archivePreview = null }) { Text("Keep current vault") } },
+                ) }
             }
         }
     }
@@ -485,7 +551,10 @@ private fun AssistantScreen(
         modelStatus.state == "thinking" -> "Metria is reading your meal." to "Creating an editable estimate locally."
         modelStatus.imageState == "preparing" -> "Metria is preparing your image." to "A temporary local copy is being made."
         modelStatus.imageState == "ready" && pendingImagePurpose != null -> "Metria is getting your result ready." to "Nothing is saved automatically."
-        modelStatus.imageState == "analyzing" -> "Metria is reading your meal photo." to "This can take a little while on your phone."
+        modelStatus.imageState == "analyzing" && modelStatus.imageProgress == "reading_image" -> "Looking for the clearest foods." to "This may take a moment while Metria reads the photo."
+        modelStatus.imageState == "analyzing" && modelStatus.imageProgress == "identifying_foods" -> "Identifying the main foods." to "Metria is separating the visible ingredients into your draft."
+        modelStatus.imageState == "analyzing" && modelStatus.imageProgress == "estimating_portions" -> "Estimating portions and preparation." to "You will be able to adjust every estimate before saving."
+        modelStatus.imageState == "analyzing" -> "Checking your editable draft." to "Metria is making sure the review is ready to show."
         modelStatus.imageState == "reading_label" -> "Metria is reading your label." to "Text is read locally and must be reviewed."
         else -> null
     }
@@ -651,6 +720,18 @@ private fun AssistantScreen(
 private data class PrivateChatMessage(val text: String, val fromMember: Boolean)
 
 @Composable
+private fun TypingAssistantText() {
+    val transition = rememberInfiniteTransition(label = "metria-chat-typing")
+    val phase by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 3f,
+        animationSpec = infiniteRepeatable(tween(900, easing = LinearEasing)),
+        label = "metria-chat-dots",
+    )
+    Text("Metria is thinking${".".repeat(phase.toInt() + 1)}", color = Color(0xFF4E4655))
+}
+
+@Composable
 private fun PrivateAssistantChat(
     modelStatus: ModelStatus,
     entries: List<WeightEntry>,
@@ -746,6 +827,17 @@ private fun PrivateAssistantChat(
                 else androidx.compose.foundation.layout.Box(Modifier.padding(14.dp)) { SafeMarkdownText(message.text, Color(0xFF4E4655)) }
             }
         }
+        if (modelStatus.state == "thinking" && modelStatus.assistantOperation?.startsWith("coach") == true) {
+            Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    modelStatus.coachStreamingReply?.let { SafeMarkdownText(it, Color(0xFF4E4655)) } ?: TypingAssistantText()
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Text(if (modelStatus.coachStreamingReply == null) "Metria is considering your question" else "Metria is finishing this reply", color = Color(0xFF655D6E), style = MaterialTheme.typography.bodySmall)
+                        Button(onClick = cancelAssistant) { Text("Cancel") }
+                    }
+                }
+            }
+        }
         savedWeight?.let { entry ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(onClick = { editSavedWeight(entry) }, modifier = Modifier.weight(1f)) { Text("Edit saved weight") }
@@ -756,15 +848,7 @@ private fun PrivateAssistantChat(
                 }, modifier = Modifier.weight(1f)) { Text("Undo") }
             }
         }
-        if (modelStatus.state == "thinking" && modelStatus.assistantOperation?.startsWith("coach") == true) {
-            Card(colors = CardDefaults.cardColors(containerColor = PlumSoft)) {
-                Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                    Text("Reading your private progress...", color = Plum, modifier = Modifier.weight(1f))
-                    Button(onClick = cancelAssistant) { Text("Cancel") }
-                }
-            }
-        } else if (modelStatus.state == "thinking") {
+        if (modelStatus.state == "thinking" && modelStatus.assistantOperation?.startsWith("coach") != true) {
             Card(colors = CardDefaults.cardColors(containerColor = PlumSoft)) {
                 Text("Metria is preparing an editable meal draft locally…", modifier = Modifier.padding(14.dp), color = Plum)
             }
@@ -1211,7 +1295,18 @@ private fun MealRecordCard(meal: MealEntry, onEdit: (MealEntry) -> Unit) {
 }
 
 @Composable
-private fun PrivacyScreen(unit: String, analysisAudits: List<LocalAnalysisAudit>, cycleContext: CycleContext, changeUnit: () -> Unit, editCycleContext: () -> Unit, lock: () -> Unit) {
+private fun PrivacyScreen(
+    unit: String,
+    analysisAudits: List<LocalAnalysisAudit>,
+    cycleContext: CycleContext,
+    changeUnit: () -> Unit,
+    editCycleContext: () -> Unit,
+    archiveMessage: String?,
+    exportArchive: (CharArray) -> Unit,
+    importArchive: () -> Unit,
+    lock: () -> Unit,
+) {
+    var exportSheet by remember { mutableStateOf(false) }
     Text("Private by default", style = MaterialTheme.typography.displaySmall)
     Card(colors = CardDefaults.cardColors(containerColor = Color.White)) { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Your data stays with you", style = MaterialTheme.typography.titleLarge)
@@ -1246,8 +1341,47 @@ private fun PrivacyScreen(unit: String, analysisAudits: List<LocalAnalysisAudit>
         Text(if (cycleContext.enabled) "Enabled. Period-start dates stay encrypted here and only add cautious context to short-term weight changes." else "Optional. Metria will not infer this from your identity or use it unless you choose to enable it.", color = Color(0xFF655D6E))
         Button(onClick = editCycleContext, modifier = Modifier.fillMaxWidth()) { Text(if (cycleContext.enabled) "Edit private cycle context" else "Set up private cycle context") }
     } }
+    Card(colors = CardDefaults.cardColors(containerColor = Color.White)) { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Encrypted recovery", style = MaterialTheme.typography.titleMedium)
+        Text("Create an encrypted file you can keep yourself. Its passphrase is never stored by Metria, so losing both means the archive cannot be recovered.", color = Color(0xFF655D6E))
+        Button(onClick = { exportSheet = true }, modifier = Modifier.fillMaxWidth()) { Text("Create encrypted archive") }
+        Button(onClick = importArchive, modifier = Modifier.fillMaxWidth()) { Text("Restore encrypted archive") }
+        archiveMessage?.let { Text(it, color = if (it.startsWith("Archive was not") || it.startsWith("Recovery did not") || it.startsWith("Archive could not")) Color(0xFFB3261E) else Sage) }
+    } }
     Button(onClick = changeUnit, modifier = Modifier.fillMaxWidth()) { Text(if (unit == "kg") "Use pounds" else "Use kilograms") }
     Button(onClick = lock, modifier = Modifier.fillMaxWidth()) { Text("Lock vault") }
+    if (exportSheet) ArchivePassphraseSheet(
+        title = "Protect recovery archive",
+        detail = "Choose a passphrase with at least 12 characters. Metria cannot reset it or recover the archive for you.",
+        confirmLabel = "Choose file location",
+        onDismiss = { exportSheet = false },
+        onConfirm = { passphrase -> exportSheet = false; exportArchive(passphrase) },
+    )
+}
+
+@Composable
+private fun ArchivePassphraseSheet(title: String, detail: String, confirmLabel: String, onDismiss: () -> Unit, onConfirm: (CharArray) -> Unit) {
+    var passphrase by remember { mutableStateOf("") }
+    var confirmation by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(detail)
+            OutlinedTextField(passphrase, { passphrase = it }, label = { Text("Archive passphrase") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(confirmation, { confirmation = it }, label = { Text("Confirm passphrase") }, modifier = Modifier.fillMaxWidth())
+            error?.let { Text(it, color = Color(0xFFB3261E)) }
+        } },
+        confirmButton = { Button(onClick = {
+            when {
+                passphrase.length < 12 -> error = "Use at least 12 characters."
+                confirmation.isNotEmpty() && passphrase != confirmation -> error = "The passphrases do not match."
+                else -> onConfirm(passphrase.toCharArray())
+            }
+        }) { Text(confirmLabel) } },
+        dismissButton = { Button(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 @Composable

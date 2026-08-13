@@ -24,6 +24,8 @@ import javax.crypto.spec.GCMParameterSpec
  * cleared on lock; encrypted files never contain a plaintext reusable key.
  */
 class EncryptedVault(context: Context) {
+    data class ArchiveSummary(val weights: Int, val meals: Int)
+
     sealed interface Status {
         data object Missing : Status
         data object Locked : Status
@@ -51,6 +53,7 @@ class EncryptedVault(context: Context) {
     private var nutritionTargets: NutritionTargets? = null
     private var cycleContext = CycleContext()
     private var displayUnit = "kg"
+    private var pendingArchiveRestore: LoadedPayload? = null
 
     fun status(): Status = when {
         sessionKey != null -> unlockedStatus()
@@ -109,6 +112,7 @@ class EncryptedVault(context: Context) {
             lock()
             sessionKey = dataKey
             entries = loaded.entries.toMutableList()
+            displayUnit = loaded.displayUnit
             meals = loaded.meals.toMutableList()
             foodCorrections = loaded.foodCorrections.toMutableList()
             analysisAudits = loaded.analysisAudits.toMutableList()
@@ -228,6 +232,65 @@ class EncryptedVault(context: Context) {
         nutritionTargets = null
         cycleContext = CycleContext()
         displayUnit = "kg"
+        pendingArchiveRestore = null
+    }
+
+    /** Export contains member records only, never device keys, model files, temporary images, chat, diagnostics, or audits. */
+    fun exportRecoveryArchive(passphrase: CharArray): Result<ByteArray> {
+        if (sessionKey == null) return Result.failure(IllegalStateException("Unlock your vault before exporting."))
+        return runCatching {
+            val payload = currentPayloadRoot()
+            payload.remove("analysisAudits")
+            EncryptedArchive.create(payload, passphrase)
+        }
+    }
+
+    /** Authenticates and fully validates an archive without changing current member data. */
+    fun inspectRecoveryArchive(archive: ByteArray, passphrase: CharArray): Result<ArchiveSummary> {
+        if (sessionKey == null) return Result.failure(IllegalStateException("Unlock or create a vault before restoring."))
+        return runCatching {
+            val restored = parsePayload(EncryptedArchive.open(archive, passphrase))
+            pendingArchiveRestore = restored
+            ArchiveSummary(restored.entries.size, restored.meals.size)
+        }
+    }
+
+    /** Replaces current data only after a successful inspection and an explicit member confirmation. */
+    fun confirmRecoveryRestore(): Result<ArchiveSummary> {
+        if (sessionKey == null) return Result.failure(IllegalStateException("Unlock or create a vault before restoring."))
+        return runCatching {
+            val restored = requireNotNull(pendingArchiveRestore) { "Review an encrypted archive before restoring." }
+            val previous = LoadedPayload(displayUnit, entries, meals, foodCorrections, analysisAudits, nutritionTargets, cycleContext)
+            try {
+                displayUnit = restored.displayUnit
+                entries = restored.entries.toMutableList()
+                meals = restored.meals.toMutableList()
+                foodCorrections = restored.foodCorrections.toMutableList()
+                analysisAudits = mutableListOf()
+                nutritionTargets = restored.nutritionTargets
+                cycleContext = restored.cycleContext
+                persist()
+                pendingArchiveRestore = null
+                ArchiveSummary(entries.size, meals.size)
+            } catch (error: Exception) {
+                displayUnit = previous.displayUnit
+                entries = previous.entries.toMutableList()
+                meals = previous.meals.toMutableList()
+                foodCorrections = previous.foodCorrections.toMutableList()
+                analysisAudits = previous.analysisAudits.toMutableList()
+                nutritionTargets = previous.nutritionTargets
+                cycleContext = previous.cycleContext
+                throw error
+            }
+        }
+    }
+
+    private fun currentPayloadRoot(): JSONObject {
+        val key = requireNotNull(sessionKey) { "Vault is locked." }
+        val envelope = JSONObject(dataFile.readText(Charsets.UTF_8))
+        val decrypted = cipher(Cipher.DECRYPT_MODE, rawKey(key), decode(envelope.getString("iv")))
+            .doFinal(decode(envelope.getString("ciphertext")))
+        return JSONObject(decrypted.toString(Charsets.UTF_8))
     }
 
     private fun unlockedStatus() = Status.Unlocked(
@@ -313,6 +376,7 @@ class EncryptedVault(context: Context) {
     }
 
     private data class LoadedPayload(
+        val displayUnit: String,
         val entries: List<WeightEntry>,
         val meals: List<MealEntry>,
         val foodCorrections: List<FoodCorrection>,
@@ -326,8 +390,13 @@ class EncryptedVault(context: Context) {
         require(envelope.getInt("version") == 1) { "Unsupported vault version." }
         val decrypted = cipher(Cipher.DECRYPT_MODE, rawKey(key), decode(envelope.getString("iv")))
             .doFinal(decode(envelope.getString("ciphertext")))
-        val root = JSONObject(decrypted.toString(Charsets.UTF_8))
-        displayUnit = root.optString("displayUnit", "kg").takeIf { it == "kg" || it == "lb" } ?: "kg"
+        return parsePayload(JSONObject(decrypted.toString(Charsets.UTF_8)))
+    }
+
+    /** Parses and fully validates data before an archive can replace this vault. */
+    private fun parsePayload(root: JSONObject): LoadedPayload {
+        require(root.getInt("version") == 1) { "Unsupported archive data version." }
+        val loadedDisplayUnit = root.optString("displayUnit", "kg").takeIf { it == "kg" || it == "lb" } ?: "kg"
         val items = root.getJSONArray("entries")
         val loadedEntries = buildList {
             for (index in 0 until items.length()) {
@@ -409,7 +478,7 @@ class EncryptedVault(context: Context) {
             ).let(CycleContextValidation::normalized)
         } ?: CycleContext()
         require(CycleContextValidation.valid(loadedCycleContext)) { "Invalid cycle context." }
-        return LoadedPayload(loadedEntries, loadedMeals, loadedCorrections, loadedAudits, loadedTargets, loadedCycleContext)
+        return LoadedPayload(loadedDisplayUnit, loadedEntries, loadedMeals, loadedCorrections, loadedAudits, loadedTargets, loadedCycleContext)
     }
 
     fun recordFoodCorrections(corrections: List<FoodCorrection>): Status {

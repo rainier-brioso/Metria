@@ -19,10 +19,13 @@ import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Content
+import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.Conversation
 import com.google.ai.edge.litertlm.Contents
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
+import com.google.ai.edge.litertlm.Message
+import com.google.ai.edge.litertlm.MessageCallback
 import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
@@ -32,6 +35,9 @@ import java.time.Instant
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Owns only the local model artifact lifecycle. LiteRT engine initialization and
@@ -45,6 +51,7 @@ data class ModelStatus(
     val testOutput: String?,
     val backendSummary: String,
     val imageState: String,
+    val imageProgress: String,
     val imageReason: String,
     val proposal: MealProposal?,
     val proposalDiagnostic: String?,
@@ -56,6 +63,7 @@ data class ModelStatus(
     val assistantProposal: MealProposal?,
     val assistantDiagnostic: String?,
     val coachReply: String?,
+    val coachStreamingReply: String?,
     val coachDiagnostic: String?,
     val assistantOperation: String?,
     val coachToolCall: PrivateCoachToolCall?,
@@ -108,6 +116,7 @@ class ModelLifecycle(
     private var reason = "No local model is installed."
     private var testOutput: String? = null
     private var imageState = "none"
+    private var imageProgress = "none"
     private var imageReason = "No image selected."
     private var proposal: MealProposal? = null
     private var proposalDiagnostic: String? = null
@@ -117,6 +126,9 @@ class ModelLifecycle(
     private var assistantProposal: MealProposal? = null
     private var assistantDiagnostic: String? = null
     private var coachReply: String? = null
+    // This is an ephemeral, locally-sanitized preview. The completed reply still
+    // crosses parseCoachReply before it is treated as a settled answer.
+    private var coachStreamingReply: String? = null
     private var coachDiagnostic: String? = null
     private var assistantOperation: String? = null
     private var coachToolCall: PrivateCoachToolCall? = null
@@ -236,6 +248,7 @@ class ModelLifecycle(
         assistantOperation = null
         coachToolCall = null
         coachReply = null
+        coachStreamingReply = null
         assistantProposal = null
         assistantDiagnostic = "Response cancelled."
         return statusLocked()
@@ -283,6 +296,7 @@ class ModelLifecycle(
         assistantProposal = null
         assistantDiagnostic = null
         coachReply = null
+        coachStreamingReply = null
         coachDiagnostic = null
         assistantOperation = "meal"
         val startedAt = SystemClock.elapsedRealtime()
@@ -312,6 +326,7 @@ class ModelLifecycle(
         assistantProposal = null
         assistantDiagnostic = null
         coachReply = null
+        coachStreamingReply = null
         coachDiagnostic = null
         assistantOperation = "coach"
         val startedAt = SystemClock.elapsedRealtime()
@@ -328,7 +343,7 @@ class ModelLifecycle(
             return statusLocked()
         }
         if (input.length !in 1..600 || activeInference?.isDone == false) return statusLocked()
-        state = "thinking"; assistantOperation = "coach_intent"; coachToolCall = null; coachReply = null; coachDiagnostic = null
+        state = "thinking"; assistantOperation = "coach_intent"; coachToolCall = null; coachReply = null; coachStreamingReply = null; coachDiagnostic = null
         activeInference = executor.submit { understandCoachRequest(loadedEngine, input) }
         return statusLocked()
     }
@@ -339,6 +354,7 @@ class ModelLifecycle(
         assistantProposal = null
         assistantDiagnostic = null
         coachReply = null
+        coachStreamingReply = null
         coachDiagnostic = null
         assistantOperation = null
         coachToolCall = null
@@ -416,6 +432,7 @@ class ModelLifecycle(
             return statusLocked()
         }
         imageState = "analyzing"
+        imageProgress = "reading_image"
         imageReason = "Analyzing the temporary image locally."
         testOutput = null
         proposal = null
@@ -686,13 +703,22 @@ class ModelLifecycle(
         }
     }
 
+    /**
+     * Product decision: policy is a LiteRT system instruction, never member
+     * text. This keeps untrusted input separate from Metria's local safeguards.
+     */
+    private fun createMetriaConversation(loadedEngine: Engine): Conversation =
+        loadedEngine.createConversation(
+            ConversationConfig(systemInstruction = Contents.of(Content.Text(metriaSystemPrompt))),
+        )
+
     private fun proposeMealFromText(loadedEngine: Engine, memberText: String, startedAt: Long) {
         var conversation: Conversation? = null
         try {
-            conversation = loadedEngine.createConversation()
+            conversation = createMetriaConversation(loadedEngine)
             synchronized(this) { activeConversation = conversation }
             val response = conversation.sendMessage(
-                "$metriaSystemPrompt\n\n" + """Return only one JSON object with exactly these keys: kind, items, assumptions,
+                """Return only one JSON object with exactly these keys: kind, items, assumptions,
                     questions, overall_confidence. kind must be meal_proposal. Each item is exactly one visible ingredient
                     with name, description, visible_portion, estimated_grams_range, preparation, confidence, role.
                     preparation, confidence. name is a short searchable core food name (for example potatoes or sauce),
@@ -746,11 +772,11 @@ class ModelLifecycle(
     private fun proposeCoachInsight(loadedEngine: Engine, memberText: String, snapshot: PrivateCoachSnapshot, startedAt: Long) {
         var conversation: Conversation? = null
         try {
-            conversation = loadedEngine.createConversation()
+            conversation = createMetriaConversation(loadedEngine)
             synchronized(this) { activeConversation = conversation }
             val facts = if (memberText.contains("[LOCAL_FACTS]")) "Use only the [LOCAL_FACTS] block supplied in MEMBER_QUESTION." else snapshot.promptFacts()
-            val response = conversation.sendMessage(
-                "$metriaSystemPrompt\n\n" + """Return only one JSON object with exactly one key: message.
+            val output = sendMessageStreaming(conversation,
+                Contents.of(Content.Text("""Return only one JSON object with exactly one key: message.
                     Write exactly three short, warm, factual, non-judgmental sentences (maximum 480 characters) in the member's language:
                     recognition of logging consistency, comparison with the selected-period goals using the supplied numbers,
                     then one optional gentle next step only about calories or protein when the supplied goal figures support it.
@@ -762,15 +788,20 @@ class ModelLifecycle(
                     MEMBER_QUESTION_END
                     PRIVATE_FACTS_START
                     $facts
-                    PRIVATE_FACTS_END""".trimIndent()
-            )
-            val output = response.contents.contents.filterIsInstance<Content.Text>().joinToString("") { it.text }.trim()
+                    PRIVATE_FACTS_END""".trimIndent())),
+            ) { partial ->
+                val preview = coachPreview(partial) ?: return@sendMessageStreaming
+                synchronized(this) {
+                    if (engine === loadedEngine && activeConversation === conversation) coachStreamingReply = preview
+                }
+            }.trim()
             val reply = parseCoachReply(output)
             synchronized(this) {
                 if (engine !== loadedEngine) return
                 debugLatestModelResponse = output.take(16_000).takeIf { BuildConfig.DEBUG }
                 state = "loaded"
                 coachReply = reply
+                coachStreamingReply = null
                 coachDiagnostic = if (reply == null) "Local insight was not safe to display. Try asking more simply." else null
                 reason = if (reply == null) "Local progress insight was rejected safely." else "Private progress insight ready."
                 diagnostics = measurement("private coach insight", startedAt)
@@ -780,6 +811,7 @@ class ModelLifecycle(
                 if (engine === loadedEngine) {
                     state = "loaded"
                     coachReply = null
+                    coachStreamingReply = null
                     coachDiagnostic = "Local progress insight failed. Try again."
                     reason = "Local progress insight failed; LiteRT remains loaded."
                 }
@@ -793,9 +825,9 @@ class ModelLifecycle(
     private fun understandCoachRequest(loadedEngine: Engine, memberText: String) {
         var conversation: Conversation? = null
         try {
-            conversation = loadedEngine.createConversation()
+            conversation = createMetriaConversation(loadedEngine)
             synchronized(this) { activeConversation = conversation }
-            val response = conversation.sendMessage("$metriaSystemPrompt\n\n" + """Return only one JSON object with these keys: intent, period, start, end, kilograms.
+            val response = conversation.sendMessage("""Return only one JSON object with these keys: intent, period, start, end, kilograms.
                 intent is exactly one of read_goal_progress, read_weight, read_weight_trend, read_meals, draft_weight, draft_meal, clarify.
                 period is today, week, yesterday, latest, or null. start and end are ISO dates or null; use them only when the member explicitly asks a date range.
                 kilograms is a number from 15 to 500 or null.
@@ -833,6 +865,58 @@ class ModelLifecycle(
         val match = Regex("\\\"message\\\"\\s*:\\s*\\\"((?:\\\\.|[^\\\"])*)\\\"").find(output) ?: return null
         val text = match.groupValues[1].replace("\\n", " ").replace("\\\"", "\"").trim()
         return text.takeIf { it.length in 3..480 && it.none { char -> char == '{' || char == '}' || char == '<' || char == '>' } }
+    }
+
+    /**
+     * LiteRT streams generated chunks from native code. We retain the full raw
+     * response only in memory for the same strict final parser used previously.
+     */
+    private fun sendMessageStreaming(
+        conversation: Conversation,
+        prompt: Contents,
+        onPartial: (String) -> Unit = {},
+    ): String {
+        val completed = CountDownLatch(1)
+        val failure = AtomicReference<Throwable?>(null)
+        val response = StringBuilder()
+        conversation.sendMessageAsync(prompt, object : MessageCallback {
+            override fun onMessage(message: Message) {
+                val chunk = message.contents.contents.filterIsInstance<Content.Text>().joinToString("") { it.text }
+                if (chunk.isBlank()) return
+                val current = synchronized(response) {
+                    // LiteRT callbacks may contain delta chunks or an accumulated response.
+                    if (chunk.startsWith(response.toString())) {
+                        response.setLength(0)
+                        response.append(chunk)
+                    } else {
+                        response.append(chunk)
+                    }
+                    response.toString()
+                }
+                onPartial(current)
+            }
+
+            override fun onDone() = completed.countDown()
+
+            override fun onError(error: Throwable) {
+                failure.set(error)
+                completed.countDown()
+            }
+        })
+        if (!completed.await(2, TimeUnit.MINUTES)) {
+            conversation.cancelProcess()
+            throw IllegalStateException("Local generation timed out")
+        }
+        failure.get()?.let { throw it }
+        return synchronized(response) { response.toString() }
+    }
+
+    /** Never expose JSON punctuation, markup, or a model instruction as a partial chat bubble. */
+    private fun coachPreview(output: String): String? {
+        val start = Regex("\\\"message\\\"\\s*:\\s*\\\"").find(output)?.range?.last?.plus(1) ?: return null
+        val raw = output.substring(start)
+        if (raw.any { it == '{' || it == '}' || it == '<' || it == '>' || it.code < 0x20 && it !in listOf('\n', '\r', '\t') }) return null
+        return raw.replace("\\n", " ").replace("\\\"", "\"").trim().take(480).takeIf { it.isNotBlank() }
     }
 
     private fun prepareImageInBackground(
@@ -911,7 +995,8 @@ class ModelLifecycle(
             val conversationSetupMillis = SystemClock.elapsedRealtime() - conversationStartedAt
             synchronized(this) { activeConversation = conversation }
             val modelRequestStartedAt = SystemClock.elapsedRealtime()
-            val response = conversation.sendMessage(
+            var firstTokenMillis: Long? = null
+            val output = sendMessageStreaming(conversation,
                 Contents.of(
                     Content.ImageFile(image.absolutePath),
                     Content.Text(
@@ -922,16 +1007,25 @@ class ModelLifecycle(
                             "role is exactly one of main_food, side, drink, sauce_oil, dry_seasoning; never use synonyms. " +
                             "Use at most one short assumption and one short question. Return JSON only."
                     ),
-                )
-            )
+                ),
+            ) {
+                synchronized(this) {
+                    if (engine === loadedEngine && currentAnalysisGeneration == analysisGeneration) {
+                        if (firstTokenMillis == null) firstTokenMillis = SystemClock.elapsedRealtime() - modelRequestStartedAt
+                        imageProgress = when {
+                            "\"estimated_grams_range\"" in it -> "estimating_portions"
+                            "\"items\"" in it -> "identifying_foods"
+                            else -> "identifying_foods"
+                        }
+                        imageReason = "Generating the editable meal draft."
+                    }
+                }
+            }
             val modelRequestMillis = SystemClock.elapsedRealtime() - modelRequestStartedAt
             val validationStartedAt = SystemClock.elapsedRealtime()
-            val output = response.contents.contents
-                .filterIsInstance<Content.Text>()
-                .joinToString("") { it.text }
-                .trim()
             synchronized(this) {
                 if (engine === loadedEngine && currentAnalysisGeneration == analysisGeneration) {
+                    imageProgress = "validating_draft"
                     debugLatestModelResponse = output.take(16_000).takeIf { BuildConfig.DEBUG }
                     proposal = MealProposalParser.parse(output)
                     if (proposal == null) {
@@ -950,7 +1044,7 @@ class ModelLifecycle(
                         Image preparation: ${latestImagePreparationMillis?.let { "${it} ms" } ?: "not measured"}
                         Conversation setup: ${conversationSetupMillis} ms
                         Model request (vision + prefill + generation): ${modelRequestMillis} ms
-                        First token: unavailable with the current synchronous API
+                        First token: ${firstTokenMillis?.let { "${it} ms" } ?: "not received"}
                         Response validation: ${validationMillis} ms
                         Total analysis: ${totalMillis} ms | process memory: ${Debug.getPss() / 1024} MB | battery: ${appContext.getSystemService(BatteryManager::class.java)?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)?.takeIf { it in 0..100 } ?: "unknown"}% | thermal: ${if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) appContext.getSystemService(PowerManager::class.java)?.currentThermalStatus ?: "unknown" else "unknown"}""".trimIndent()
                     if (SystemClock.elapsedRealtime() - startedAt >= 20_000) {
@@ -976,6 +1070,7 @@ class ModelLifecycle(
                 if (preparedImage === image) preparedImage = null
                 if (currentAnalysisGeneration == analysisGeneration) activeImageAuditStart = null
                 imageState = "none"
+                imageProgress = "none"
             }
         }
     }
@@ -1121,6 +1216,7 @@ class ModelLifecycle(
         testOutput,
         backendSummary,
         imageState,
+        imageProgress,
         imageReason,
         proposal,
         proposalDiagnostic,
@@ -1132,6 +1228,7 @@ class ModelLifecycle(
         assistantProposal,
         assistantDiagnostic,
         coachReply,
+        coachStreamingReply,
         coachDiagnostic,
         assistantOperation,
         coachToolCall,
