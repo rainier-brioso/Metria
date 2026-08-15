@@ -88,6 +88,8 @@ private val MetriaCanvas = Color(0xFFFBF8FC)
 @Composable
 fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
     var status by remember { mutableStateOf(vault.status()) }
+    var hasCompletedOnboarding by remember { mutableStateOf(activity.hasCompletedOnboarding()) }
+    var setupModelStatus by remember { mutableStateOf(activity.modelStatus()) }
     var destination by remember { mutableStateOf("Today") }
     var todayTab by remember { mutableStateOf(0) }
     var addSheet by remember { mutableStateOf(false) }
@@ -136,6 +138,12 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
     LaunchedEffect(status, voiceDraft) {
         if (status is EncryptedVault.Status.Unlocked && voiceDraft != null) addSheet = true
     }
+    LaunchedEffect(status, hasCompletedOnboarding) {
+        while (hasCompletedOnboarding && (status is EncryptedVault.Status.Missing || status is EncryptedVault.Status.Unlocked)) {
+            setupModelStatus = activity.modelStatus()
+            delay(250)
+        }
+    }
     LaunchedEffect(destination) {
         while (destination == "Assistant") {
             modelStatus = activity.modelStatus()
@@ -161,15 +169,29 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
         surface = MetriaCanvas, onSurface = Ink, surfaceVariant = PlumSoft,
     )) {
         when (val vaultStatus = status) {
-            EncryptedVault.Status.Missing -> VaultGate("A private space for your health.", "Create an encrypted vault on this phone. No account is needed.") {
-                activity.authenticateVault(true)
-            }
+            EncryptedVault.Status.Missing -> if (!hasCompletedOnboarding) FirstRunOnboarding(
+                onComplete = { activity.completeOnboarding(); hasCompletedOnboarding = true },
+            ) else AssistantSetupGate(
+                modelStatus = setupModelStatus,
+                download = { setupModelStatus = activity.downloadLocalAssistant() },
+                cancelDownload = { setupModelStatus = activity.cancelLocalAssistantDownload() },
+                continueToApp = { activity.authenticateVault(true) },
+            )
             EncryptedVault.Status.Locked -> VaultGate("Welcome back.", "Your entries are protected until you unlock your vault.", autoAuthenticate = true) {
                 activity.authenticateVault(false)
             }
             is EncryptedVault.Status.RecoveryRequired -> VaultGate("Vault unavailable", vaultStatus.message) {}
             is EncryptedVault.Status.Failed -> VaultGate("Try again", vaultStatus.message) { status = vault.status() }
             is EncryptedVault.Status.Unlocked -> {
+                if (setupModelStatus.state in setOf("absent", "removed", "failed", "downloading", "verifying")) {
+                    AssistantSetupGate(
+                        modelStatus = setupModelStatus,
+                        download = { setupModelStatus = activity.downloadLocalAssistant() },
+                        cancelDownload = { setupModelStatus = activity.cancelLocalAssistantDownload() },
+                        continueToApp = {},
+                    )
+                    return@MaterialTheme
+                }
                 Scaffold(
                     containerColor = MetriaCanvas,
                     bottomBar = { MemberNavigation(destination) { destination = it } },
@@ -198,6 +220,8 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                                 meals = vaultStatus.meals,
                                 nutritionTargets = vaultStatus.nutritionTargets,
                                 cycleContext = vaultStatus.cycleContext,
+                                downloadAssistant = { modelStatus = activity.downloadLocalAssistant() },
+                                cancelAssistantDownload = { modelStatus = activity.cancelLocalAssistantDownload() },
                                 openWeightDraft = { draft -> voiceDraft = draft; addSheet = true },
                                 askMeal = { text -> modelStatus = activity.askLocalMealAssistant(text) },
                                 askCoach = { question, snapshot -> modelStatus = activity.askPrivateCoach(question, snapshot) },
@@ -368,6 +392,87 @@ private fun VaultGate(title: String, body: String, autoAuthenticate: Boolean = f
 }
 
 @Composable
+private fun FirstRunOnboarding(onComplete: () -> Unit) {
+    var page by remember { mutableStateOf(0) }
+    val pages = listOf(
+        Triple("Your health data stays with you", "Metria has no account and no default cloud sync. Your entries are encrypted on this phone.", "Private by default"),
+        Triple("You stay in control", "Your fingerprint unlocks the vault. Create a recovery archive later if you want a way back after device loss or a biometric change.", "Protected on this phone"),
+        Triple("Your private assistant powers Metria", "Metria installs its assistant on your phone during setup. It can understand voice or text, draft actions, and guide you—while you always confirm important changes.", "Private intelligence, on your phone"),
+    )
+    val current = pages[page]
+    Surface(color = MetriaCanvas, modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(28.dp),
+            verticalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text("METRIA", color = Plum, style = MaterialTheme.typography.labelLarge)
+                Text("${page + 1} of ${pages.size}", color = Color(0xFF655D6E), style = MaterialTheme.typography.labelMedium)
+                Card(colors = CardDefaults.cardColors(containerColor = PlumSoft)) {
+                    Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(current.third, color = Plum, style = MaterialTheme.typography.labelLarge)
+                        Text(current.first, style = MaterialTheme.typography.headlineMedium, color = Ink)
+                        Text(current.second, color = Color(0xFF4E4655), style = MaterialTheme.typography.bodyLarge)
+                    }
+                }
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    repeat(pages.size) { index ->
+                        Surface(
+                            color = if (index == page) Plum else Color(0xFFE0D8E4),
+                            shape = CircleShape,
+                            modifier = Modifier.weight(1f).height(6.dp),
+                        ) {}
+                    }
+                }
+                Button(onClick = { if (page == pages.lastIndex) onComplete() else page += 1 }, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (page == pages.lastIndex) "Set up my private assistant" else "Continue")
+                }
+                if (page > 0) Button(onClick = { page -= 1 }, modifier = Modifier.fillMaxWidth()) { Text("Back") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AssistantSetupGate(
+    modelStatus: ModelStatus,
+    download: () -> Unit,
+    cancelDownload: () -> Unit,
+    continueToApp: () -> Unit,
+) {
+    Surface(color = MetriaCanvas, modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(28.dp),
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Text("METRIA", color = Plum, style = MaterialTheme.typography.labelLarge)
+            Text("Set up your private assistant", style = MaterialTheme.typography.displaySmall, modifier = Modifier.padding(top = 20.dp))
+            when (modelStatus.state) {
+                "absent", "removed", "failed" -> {
+                    Text("Metria needs its on-device assistant before you begin. It is about 2.6 GB, remains in this phone’s private storage, and after setup it can work offline.", modifier = Modifier.padding(top = 12.dp, bottom = 24.dp))
+                    if (modelStatus.state == "failed") Text(modelStatus.reason, color = Color(0xFFB3261E), modifier = Modifier.padding(bottom = 12.dp))
+                    Button(onClick = download, modifier = Modifier.fillMaxWidth()) { Text(if (modelStatus.state == "failed") "Try download again" else "Download private assistant") }
+                    Text("The download contacts only the selected model distributor. It does not include your entries, photos, prompts, or a vault identifier.", color = Color(0xFF655D6E), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 12.dp))
+                }
+                "downloading" -> {
+                    val percent = if (modelStatus.expectedBytes > 0) (modelStatus.downloadedBytes * 100 / modelStatus.expectedBytes).coerceIn(0, 100) else 0
+                    Text("Downloading · $percent%", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 18.dp))
+                    Text("${modelStatus.downloadedBytes / 1_000_000} MB of ${modelStatus.expectedBytes / 1_000_000} MB", color = Color(0xFF655D6E), modifier = Modifier.padding(top = 8.dp, bottom = 20.dp))
+                    Button(onClick = cancelDownload, modifier = Modifier.fillMaxWidth()) { Text("Cancel download") }
+                }
+                "ready", "initializing", "loaded" -> {
+                    Text("Your private assistant is ready on this phone. Next, protect your records with biometrics.", modifier = Modifier.padding(top = 12.dp, bottom = 24.dp))
+                    Button(onClick = continueToApp, modifier = Modifier.fillMaxWidth()) { Text("Continue with Metria") }
+                }
+                else -> Text("Checking your private assistant…", modifier = Modifier.padding(top = 16.dp))
+            }
+        }
+    }
+}
+
+@Composable
 private fun MemberNavigation(current: String, choose: (String) -> Unit) {
     NavigationBar(containerColor = Color.White) {
         listOf("Today", "History", "Assistant", "Privacy").forEach { item ->
@@ -475,6 +580,8 @@ private fun AssistantScreen(
     meals: List<MealEntry>,
     nutritionTargets: NutritionTargets?,
     cycleContext: CycleContext,
+    downloadAssistant: () -> Unit,
+    cancelAssistantDownload: () -> Unit,
     openWeightDraft: (VoiceWeightDraft) -> Unit,
     askMeal: (String) -> Unit,
     askCoach: (String, PrivateCoachSnapshot) -> Unit,
@@ -599,6 +706,21 @@ private fun AssistantScreen(
     Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (modelStatus.state != "loaded") when (modelStatus.state) {
+                "absent", "removed" -> {
+                    Text("Add Metria's private assistant", style = MaterialTheme.typography.titleLarge)
+                    Text("The model is optional. It is about 2.6 GB and stays on this phone; manual tracking already works without it.", color = Color(0xFF655D6E))
+                    Button(onClick = downloadAssistant, modifier = Modifier.fillMaxWidth()) { Text("Download private assistant") }
+                }
+                "downloading" -> {
+                    val percent = if (modelStatus.expectedBytes > 0) (modelStatus.downloadedBytes * 100 / modelStatus.expectedBytes).coerceIn(0, 100) else 0
+                    Text("Downloading private assistant · $percent%", style = MaterialTheme.typography.titleMedium)
+                    Text("${modelStatus.downloadedBytes / 1_000_000} MB of ${modelStatus.expectedBytes / 1_000_000} MB. You can cancel at any time.", color = Color(0xFF655D6E))
+                    Button(onClick = cancelAssistantDownload, modifier = Modifier.fillMaxWidth()) { Text("Cancel download") }
+                }
+                "failed" -> {
+                    Text(modelStatus.reason, color = Color(0xFFB3261E))
+                    Button(onClick = downloadAssistant, modifier = Modifier.fillMaxWidth()) { Text("Try download again") }
+                }
                 "loaded" -> Text("Ready on this phone. Estimates can be wrong—review every assumption.", color = Sage)
                 else -> Text("The optional local model is ${modelStatus.state}. This developer build needs a downloaded model before chat can run.")
             }

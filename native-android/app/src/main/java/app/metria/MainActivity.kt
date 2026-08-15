@@ -58,6 +58,7 @@ class MainActivity : FragmentActivity() {
     private var pendingCameraCapture: File? = null
     private var externalImageFlowInProgress = false
     private var externalArchiveFlowInProgress = false
+    private val onboardingPreferences by lazy { getSharedPreferences("metria-onboarding", MODE_PRIVATE) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -143,7 +144,18 @@ class MainActivity : FragmentActivity() {
         vaultCallback = callback
     }
 
+    /** This stores no health data; it only prevents repeating the first-run explanation. */
+    fun hasCompletedOnboarding(): Boolean = onboardingPreferences.getBoolean("completed", false)
+
+    fun completeOnboarding() {
+        onboardingPreferences.edit().putBoolean("completed", true).apply()
+    }
+
     fun modelStatus(): ModelStatus = modelLifecycle.status()
+
+    fun downloadLocalAssistant(): ModelStatus = modelLifecycle.download()
+
+    fun cancelLocalAssistantDownload(): ModelStatus = modelLifecycle.cancelDownload()
 
     fun prepareLocalAssistant(): ModelStatus = modelLifecycle.initializeRuntime()
 

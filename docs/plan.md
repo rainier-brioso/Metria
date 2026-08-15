@@ -113,12 +113,22 @@ editable estimated proposal with clear assumptions and only saves after a tap.
 
 **Outcome:** chat is helpful but constrained, private, and auditable.
 
+**Product decision:** the on-device assistant is a required part of Metria's
+first-run setup, downloaded explicitly into private app storage rather than
+bundled with the store package. It supports voice/text understanding, drafted
+actions, navigation, and grounded local insights throughout the app. Manual
+forms remain available when the model is busy or unsuitable; they are a
+reliable fallback, not Metria's primary product identity. The assistant may
+never bypass validation or required member confirmation for writes, edits,
+deletions, or goal changes.
+
 - [ ] Add a chat interface with local conversation storage and clear deletion.
 - [ ] Implement the allowlisted action dispatcher from `architecture.md`.
 - [ ] Start with a mocked/local rule parser to validate the complete UI flow.
 - [ ] Evaluate small text models on target Android and iPhone hardware for
   latency, battery, RAM, language quality, and offline packaging size.
-- [ ] Select a runtime only after measurement; make model download optional.
+- [ ] Select a runtime only after measurement; require an explicit model
+  download during first-run setup.
 - [ ] Add a visible "AI estimate" label and explanation on all model proposals.
 - [ ] Test prompt injection attempts, unsupported actions, confirmation
   cancellation, and model unavailability.
