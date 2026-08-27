@@ -12,6 +12,8 @@ data class MealProposalItem(
     val estimatedGramsRange: GramRange,
     val preparation: String,
     val confidence: String,
+    /** Seen in the photo, or an uncertain component of a recognisable dish. */
+    val evidence: String = "seen",
     /** Optional dish/drink label supplied by the nested proposal normalizer. */
     val groupLabel: String? = null,
     val role: String = "main_food",
@@ -29,7 +31,7 @@ object MealProposalParser {
     private val confidences = setOf("low", "medium", "high")
     private val proposalKeys = setOf("kind", "items", "assumptions", "questions", "overall_confidence")
     private val itemKeys = setOf(
-        "name", "description", "visible_portion", "estimated_grams_range", "preparation", "confidence", "role"
+        "name", "description", "visible_portion", "estimated_grams_range", "preparation", "confidence", "role", "evidence"
     )
     private val itemKeysWithGroup = itemKeys + "group_label"
     private val groupedItemKeys = setOf("name", "kind", "ingredients")
@@ -87,8 +89,8 @@ object MealProposalParser {
             }
         } }
         root.put("items", items)
-        root.put("assumptions", root.get("assumptions").asStringArray("assumptions"))
-        root.put("questions", root.get("questions").asStringArray("questions"))
+        root.put("assumptions", root.get("assumptions").asStringArray("assumptions").withoutLinks().take(1))
+        root.put("questions", root.get("questions").asStringArray("questions").take(1))
         root.put("overall_confidence", normalizedConfidence(root.getString("overall_confidence")))
         return root
     }
@@ -116,7 +118,13 @@ object MealProposalParser {
         item.put("estimated_grams_range", range)
         if (!item.has("description")) item.put("description", "")
         if (!item.has("role")) item.put("role", "main_food")
+        if (!item.has("evidence")) item.put("evidence", "seen")
         item.put("role", roleAliases[item.getString("role").trim().lowercase()] ?: item.getString("role").trim().lowercase())
+        item.put("evidence", when (item.getString("evidence").trim().lowercase()) {
+            "visible", "observed" -> "seen"
+            "inferred", "possible", "hidden", "likely_inside" -> "possible_inside"
+            else -> item.getString("evidence").trim().lowercase()
+        })
         item.put("confidence", normalizedConfidence(item.getString("confidence")))
         return item
     }
@@ -187,19 +195,31 @@ object MealProposalParser {
             val preparation = item.getString("preparation").trim().also { require(it.length <= 120) }
             val confidence = normalizedConfidence(item.getString("confidence"))
             val role = item.getString("role").trim().lowercase().also { require(it in ingredientRoles) }
+            val evidence = item.getString("evidence").trim().lowercase().also { require(it in setOf("seen", "possible_inside")) }
             val range = item.getJSONObject("estimated_grams_range")
             require(keys(range) == rangeKeys)
             val min = range.getInt("min")
             val max = range.getInt("max")
             require(min in 1..2_000 && max in min..2_000)
             val groupLabel = item.optString("group_label").takeIf(String::isNotEmpty)?.boundedText(120)
-            add(MealProposalItem(name, description, visiblePortion, GramRange(min, max), preparation, confidence, groupLabel, role))
+            add(MealProposalItem(name, description, visiblePortion, GramRange(min, max), preparation, confidence, evidence, groupLabel, role))
         }
     }
 
     private fun JSONArray.parseStrings(): List<String> = buildList {
         require(length() <= 12)
         for (index in 0 until length()) add(getString(index).boundedText(280))
+    }
+
+    private fun JSONArray.withoutLinks(): JSONArray = JSONArray().also { safe ->
+        for (index in 0 until length()) {
+            val value = getString(index).trim()
+            if (!value.contains(Regex("https?://", RegexOption.IGNORE_CASE))) safe.put(value)
+        }
+    }
+
+    private fun JSONArray.take(maxItems: Int): JSONArray = JSONArray().also { limited ->
+        for (index in 0 until minOf(length(), maxItems)) limited.put(get(index))
     }
 
     private fun keys(json: JSONObject): Set<String> = buildSet {
@@ -219,7 +239,12 @@ object MealProposalParser {
      * accepts arbitrary prose around a JSON object.
      */
     private fun unwrapSingleJsonFence(raw: String): String {
-        val trimmed = raw.trim()
+        // A model occasionally inserts an unquoted search URL into assumptions.
+        // Delete only that non-content transport error; never interpret it as an assumption.
+        val trimmed = raw.trim().replace(
+            Regex("\\\"assumptions\\\"\\s*:\\s*\\[\\s*https?://[^\\]]*]", RegexOption.IGNORE_CASE),
+            "\"assumptions\": []",
+        )
         val match = Regex("^```(?:json)?\\s*(\\{[\\s\\S]*\\})\\s*```$").matchEntire(trimmed)
         return match?.groupValues?.get(1) ?: trimmed
     }

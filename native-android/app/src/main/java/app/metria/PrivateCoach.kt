@@ -59,7 +59,20 @@ data class PrivateCoachSnapshot(
     }
 }
 
-data class PrivateCoachToolCall(val intent: String, val period: String? = null, val start: LocalDate? = null, val end: LocalDate? = null, val kilograms: Double? = null)
+data class PrivateCoachToolCall(
+    val intent: String,
+    val period: String? = null,
+    val start: LocalDate? = null,
+    val end: LocalDate? = null,
+    val kilograms: Double? = null,
+    val spokenText: String? = null,
+    val daysAgo: Int? = null,
+    val fromDaysAgo: Int? = null,
+    val toDaysAgo: Int? = null,
+    val mealSlot: String? = null,
+    val message: String? = null,
+    val query: String? = null,
+)
 
 fun PrivateCoachSnapshot.goalProgressFacts(period: String?): String {
     val weekly = period == "week"

@@ -1,0 +1,1529 @@
+package app.metria.ui.screens
+
+import android.graphics.BitmapFactory
+import android.os.Build
+import android.util.Base64
+import android.view.WindowInsets as PlatformWindowInsets
+import android.view.WindowManager
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import app.metria.CatalogFood
+import app.metria.CatalogNutrition
+import app.metria.FoodCatalog
+import app.metria.FoodCorrection
+import app.metria.GramRange
+import app.metria.MealEntry
+import app.metria.MealEntryItem
+import app.metria.MealEntryValidation
+import app.metria.MealIdentity
+import app.metria.MealNutrition
+import app.metria.MealProposal
+import app.metria.MealProposalItem
+import app.metria.MealSlots
+import app.metria.OfflineFoodCatalog
+import app.metria.PersonalDish
+import app.metria.PersonalDishMatch
+import app.metria.PersonalDishMatchReason
+import app.metria.PersonalDishMatcher
+import app.metria.PersonalDishQuery
+import app.metria.PersonalDishValidation
+import app.metria.ui.components.MetriaEstimateBadge
+import app.metria.ui.theme.MetriaColors
+import java.time.Instant
+import java.time.LocalDate
+import java.time.LocalTime
+import java.time.ZoneId
+import java.util.UUID
+
+private data class MealReviewItemDraft(
+    val id: String,
+    val dishId: String,
+    val dishName: String,
+    val name: String,
+    val description: String,
+    val grams: String,
+    val preparation: String,
+    val role: String,
+    val evidence: String,
+)
+
+private val MealReviewItemsSaver = listSaver<List<MealReviewItemDraft>, String>(
+    save = { items ->
+        items.flatMap { item ->
+            listOf(
+                item.id, item.dishId, item.dishName, item.name, item.description,
+                item.grams, item.preparation, item.role, item.evidence,
+            )
+        }
+    },
+    restore = { saved ->
+        saved.chunked(9).mapNotNull { values ->
+            values.takeIf { it.size == 9 }?.let {
+                MealReviewItemDraft(it[0], it[1], it[2], it[3], it[4], it[5], it[6], it[7], it[8])
+            }
+        }
+    },
+)
+
+private val MatchIdsSaver = listSaver<Map<String, Long>, String>(
+    save = { matches -> matches.map { (id, foodId) -> "$id|$foodId" } },
+    restore = { saved ->
+        saved.mapNotNull { value ->
+            val split = value.lastIndexOf('|')
+            if (split <= 0) null else value.substring(split + 1).toLongOrNull()?.let { value.substring(0, split) to it }
+        }.toMap()
+    },
+)
+
+private val StringSetSaver = listSaver<Set<String>, String>(
+    save = { it.toList() },
+    restore = { it.toSet() },
+)
+
+private val BooleanMapSaver = listSaver<Map<String, Boolean>, String>(
+    save = { choices -> choices.map { (id, enabled) -> "$id|$enabled" } },
+    restore = { saved ->
+        saved.mapNotNull { value ->
+            val split = value.lastIndexOf('|')
+            if (split <= 0) null else value.substring(split + 1).toBooleanStrictOrNull()?.let { value.substring(0, split) to it }
+        }.toMap()
+    },
+)
+
+private val StringMapSaver = listSaver<Map<String, String>, String>(
+    save = { values -> values.map { (key, value) -> "$key|$value" } },
+    restore = { saved ->
+        saved.mapNotNull { value ->
+            val split = value.indexOf('|')
+            if (split <= 0) null else value.substring(0, split) to value.substring(split + 1)
+        }.toMap()
+    },
+)
+
+private data class DishGroup(
+    val id: String,
+    val name: String,
+    val items: List<MealReviewItemDraft>,
+)
+
+private data class AppliedPersonalDish(
+    val items: List<MealReviewItemDraft>,
+    val matchIds: Map<String, Long>,
+)
+
+private fun reviewProposalItems(proposal: MealProposal, catalog: OfflineFoodCatalog?): List<MealProposalItem> =
+    proposal.items.flatMap { item ->
+        val names = catalog?.let { FoodCatalog.splitUnmatchedJoinedFood(it, item.name) } ?: listOf(item.name)
+        if (names.size == 1) listOf(item) else names.map { name ->
+            item.copy(
+                name = name,
+                visiblePortion = "part of ${item.visiblePortion}",
+                estimatedGramsRange = GramRange(
+                    (item.estimatedGramsRange.min / names.size).coerceAtLeast(1),
+                    (item.estimatedGramsRange.max / names.size).coerceAtLeast(1),
+                ),
+                preparation = "",
+            )
+        }
+    }.take(12)
+
+private fun initialDrafts(items: List<MealProposalItem>): List<MealReviewItemDraft> {
+    val groupedDishIds = mutableMapOf<String, String>()
+    return items.mapIndexed { index, item ->
+        val groupKey = item.groupLabel?.trim()?.takeIf(String::isNotEmpty)
+        val dishId = groupKey?.let { groupedDishIds.getOrPut(it) { UUID.randomUUID().toString() } }
+            ?: "dish-${UUID.randomUUID()}-$index"
+        MealReviewItemDraft(
+            id = UUID.randomUUID().toString(),
+            dishId = dishId,
+            dishName = groupKey ?: item.name,
+            name = item.name,
+            description = item.description,
+            grams = ((item.estimatedGramsRange.min + item.estimatedGramsRange.max) / 2).toString(),
+            preparation = item.preparation,
+            role = item.role,
+            evidence = item.evidence,
+        )
+    }
+}
+
+private fun List<MealReviewItemDraft>.dishGroups(): List<DishGroup> {
+    val order = linkedSetOf<String>()
+    forEach { order += it.dishId }
+    return order.mapNotNull { dishId ->
+        filter { it.dishId == dishId }.takeIf(List<MealReviewItemDraft>::isNotEmpty)?.let { dishItems ->
+            DishGroup(dishId, dishItems.first().dishName.ifBlank { dishItems.first().name.ifBlank { "Unnamed dish" } }, dishItems)
+        }
+    }
+}
+
+private fun applyPersonalDishSuggestion(
+    current: DishGroup,
+    match: PersonalDishMatch,
+    selectedMatchIds: Map<String, Long>,
+    catalog: OfflineFoodCatalog?,
+): AppliedPersonalDish {
+    val saved = match.dish
+    val photoContextOnly = PersonalDishMatchReason.SAME_PHOTO_CONTEXT in match.reasons &&
+        match.reasons.none { reason ->
+            reason != PersonalDishMatchReason.SAME_PHOTO_CONTEXT &&
+                reason != PersonalDishMatchReason.REPEATED_CONFIRMATIONS
+        }
+
+    // A whole-photo match means the model's provisional label may be wrong
+    // (for example, "Cutlet" for the member's saved "San Jacobo"). Reusing
+    // that label would double-count the mistaken observation alongside the
+    // confirmed dish structure. Replace it, but mark every restored component
+    // as possible-inside so the member still reviews today's serving.
+    if (photoContextOnly) {
+        val replacementMatches = linkedMapOf<String, Long>()
+        val replacementItems = saved.items.take(12).map { savedItem ->
+            val id = UUID.randomUUID().toString()
+            savedItem.catalogFoodId
+                ?.takeIf { foodId -> catalog?.foods?.any { it.fdcId == foodId } == true }
+                ?.let { replacementMatches[id] = it }
+            MealReviewItemDraft(
+                id = id,
+                dishId = current.id,
+                dishName = saved.name,
+                name = savedItem.name,
+                description = savedItem.description.orEmpty(),
+                grams = savedItem.grams?.toString().orEmpty(),
+                preparation = savedItem.preparation.orEmpty(),
+                role = savedItem.role,
+                evidence = "possible_inside",
+            )
+        }
+        return AppliedPersonalDish(replacementItems, replacementMatches)
+    }
+
+    val usedSavedItems = mutableSetOf<String>()
+    val updatedMatches = linkedMapOf<String, Long>()
+    val updatedItems = current.items.map { item ->
+        val currentFoodId = selectedMatchIds[item.id]
+        val savedItem = saved.items.firstOrNull { candidate ->
+            candidate.catalogFoodId != null && candidate.catalogFoodId == currentFoodId
+        } ?: saved.items.firstOrNull { candidate ->
+            PersonalDishMatcher.identityKey(candidate.name) == PersonalDishMatcher.identityKey(item.name)
+        }
+        if (savedItem != null) usedSavedItems += savedItemIdentity(savedItem)
+        (currentFoodId ?: savedItem?.catalogFoodId)?.let { updatedMatches[item.id] = it }
+        item.copy(
+            dishName = saved.name,
+            description = item.description.ifBlank { savedItem?.description.orEmpty() },
+            preparation = item.preparation.ifBlank { savedItem?.preparation.orEmpty() },
+        )
+    }.toMutableList()
+
+    saved.items.filterNot { savedItemIdentity(it) in usedSavedItems }.forEach { savedItem ->
+        if (updatedItems.size >= 12) return@forEach
+        val id = UUID.randomUUID().toString()
+        updatedItems += MealReviewItemDraft(
+            id = id,
+            dishId = current.id,
+            dishName = saved.name,
+            name = savedItem.name,
+            description = savedItem.description.orEmpty(),
+            grams = savedItem.grams?.toString().orEmpty(),
+            preparation = savedItem.preparation.orEmpty(),
+            role = savedItem.role,
+            evidence = "possible_inside",
+        )
+        savedItem.catalogFoodId?.takeIf { foodId -> catalog?.foods?.any { it.fdcId == foodId } == true }
+            ?.let { updatedMatches[id] = it }
+    }
+    return AppliedPersonalDish(updatedItems, updatedMatches)
+}
+
+private fun savedItemIdentity(item: MealEntryItem): String =
+    item.catalogFoodId?.let { "food:$it" } ?: "name:${PersonalDishMatcher.identityKey(item.name)}"
+
+private fun mealInstantForReview(date: String, localTime: LocalTime): Instant? =
+    runCatching { LocalDate.parse(date).atTime(localTime).atZone(ZoneId.systemDefault()).toInstant() }.getOrNull()
+
+private fun nutritionLine(nutrition: CatalogNutrition): String = listOfNotNull(
+    nutrition.caloriesKcal?.let { "${"%.0f".format(it)} kcal" },
+    nutrition.proteinGrams?.let { "${"%.1f".format(it)} g protein" },
+    nutrition.carbohydrateGrams?.let { "${"%.1f".format(it)} g carbs" },
+    nutrition.fatGrams?.let { "${"%.1f".format(it)} g fat" },
+).joinToString(" · ")
+
+/**
+ * Approved redesign: the first level is dish-oriented and glanceable. Editing one
+ * dish happens in a focused draft; only the persistent meal action writes to the vault.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MetriaMealReviewSheet(
+    proposal: MealProposal,
+    catalog: OfflineFoodCatalog?,
+    corrections: List<FoodCorrection>,
+    referenceThumbnailBase64: String?,
+    analysisAuditId: String?,
+    savedMeals: List<MealEntry>,
+    savedPersonalDishes: List<PersonalDish>,
+    findPersonalDishMatches: (PersonalDishQuery) -> List<PersonalDishMatch>,
+    onDismiss: () -> Unit,
+    onSave: (MealEntry, List<FoodCorrection>, List<PersonalDish>) -> String?,
+) {
+    val proposalItems = remember(proposal, catalog) { reviewProposalItems(proposal, catalog) }
+    val initialItems = remember(proposalItems) { initialDrafts(proposalItems) }
+    var items by rememberSaveable(proposal.items.hashCode(), stateSaver = MealReviewItemsSaver) {
+        mutableStateOf(initialItems)
+    }
+    val initialMatchIds = remember(initialItems, catalog, corrections) {
+        initialItems.mapNotNull { item ->
+            if (FoodCatalog.isAmbiguousModelFood(item.name)) null
+            else catalog?.let { FoodCatalog.suggest(it, item.name, item.description, corrections) }?.let { item.id to it.fdcId }
+        }.toMap()
+    }
+    var matchIds by rememberSaveable(proposal.items.hashCode(), stateSaver = MatchIdsSaver) {
+        mutableStateOf(initialMatchIds)
+    }
+    var includedPossibleIds by rememberSaveable(proposal.items.hashCode(), stateSaver = StringSetSaver) {
+        mutableStateOf(emptySet())
+    }
+    val captureTimeText = rememberSaveable(proposal.items.hashCode()) {
+        LocalTime.now().withSecond(0).withNano(0).toString()
+    }
+    val captureTime = remember(captureTimeText) { LocalTime.parse(captureTimeText) }
+    var date by rememberSaveable(proposal.items.hashCode()) { mutableStateOf(LocalDate.now().toString()) }
+    var title by rememberSaveable(proposal.items.hashCode()) {
+        mutableStateOf(MealIdentity.titleFor(proposalItems.map { MealEntryItem(it.name, null, null) }))
+    }
+    var titleEdited by rememberSaveable(proposal.items.hashCode()) { mutableStateOf(false) }
+    var dishMemoryChoices by rememberSaveable(proposal.items.hashCode(), stateSaver = BooleanMapSaver) {
+        mutableStateOf(emptyMap())
+    }
+    var rejectedSuggestionIds by rememberSaveable(proposal.items.hashCode(), stateSaver = StringSetSaver) {
+        mutableStateOf(emptySet())
+    }
+    var acceptedDishIds by rememberSaveable(proposal.items.hashCode(), stateSaver = StringMapSaver) {
+        mutableStateOf(emptyMap())
+    }
+    var mealSlot by rememberSaveable(proposal.items.hashCode()) { mutableStateOf<String?>(null) }
+    var keepReference by rememberSaveable(proposal.items.hashCode()) { mutableStateOf(referenceThumbnailBase64 != null) }
+    var detailsExpanded by rememberSaveable(proposal.items.hashCode()) { mutableStateOf(false) }
+    var editingDishId by rememberSaveable(proposal.items.hashCode()) { mutableStateOf<String?>(null) }
+    var error by rememberSaveable(proposal.items.hashCode()) { mutableStateOf<String?>(null) }
+
+    val foodsById = remember(catalog) { catalog?.foods?.associateBy(CatalogFood::fdcId).orEmpty() }
+    val catalogMatches = items.associate { item -> item.id to matchIds[item.id]?.let(foodsById::get) }
+    val parsedGrams = items.associate { item -> item.id to item.grams.replace(',', '.').toIntOrNull()?.takeIf { it in 1..2_000 } }
+    val perItemNutrition = items.associate { item ->
+        item.id to catalogMatches[item.id]?.let { food -> parsedGrams[item.id]?.let { FoodCatalog.calculate(food, it) } }
+    }
+    val nonMeasuredIds = items.filter { FoodCatalog.isNonMeasuredSeasoning(it.name) }.mapTo(mutableSetOf()) { it.id }
+    val includedIds = items.filter { item ->
+        val nutrition = perItemNutrition[item.id]
+        (item.evidence == "seen" || item.id in includedPossibleIds) &&
+            nutrition?.caloriesKcal != null && nutrition.proteinGrams != null &&
+            nutrition.carbohydrateGrams != null && nutrition.fatGrams != null
+    }.mapTo(linkedSetOf()) { it.id }
+    val totals = includedIds.takeIf(Set<String>::isNotEmpty)?.mapNotNull(perItemNutrition::get)?.let { values ->
+        CatalogNutrition(
+            values.sumOf { it.caloriesKcal!! },
+            values.sumOf { it.proteinGrams!! },
+            values.sumOf { it.carbohydrateGrams!! },
+            values.sumOf { it.fatGrams!! },
+            values.any { it.caloriesDerivedFromMacros },
+        )
+    }
+    val needsReviewIds = items.filter { item ->
+        val nutrition = perItemNutrition[item.id]
+        item.id !in nonMeasuredIds && (
+            item.evidence == "possible_inside" && item.id !in includedPossibleIds ||
+                catalogMatches[item.id] == null || parsedGrams[item.id] == null ||
+                nutrition?.caloriesKcal == null || nutrition.proteinGrams == null ||
+                nutrition.carbohydrateGrams == null || nutrition.fatGrams == null
+            )
+    }.mapTo(linkedSetOf()) { it.id }
+    val isPartialEstimate = totals != null && includedIds.size != items.size
+    val comparableItems = items.map { item ->
+        MealEntryItem(
+            name = item.name.trim(),
+            grams = parsedGrams[item.id],
+            preparation = item.preparation.trim().takeIf(String::isNotEmpty),
+            catalogFoodId = catalogMatches[item.id]?.fdcId.takeIf { item.id in includedIds },
+            groupLabel = item.dishName.trim().takeIf(String::isNotEmpty),
+        )
+    }
+    val similarMeal = MealIdentity.similarSavedMeal(comparableItems, savedMeals)
+    val dishGroups = items.dishGroups()
+    val personalDishQueries = dishGroups.associate { dish ->
+        val queryItems = dish.items.map { item ->
+            MealEntryItem(
+                name = item.name.trim(),
+                grams = parsedGrams[item.id],
+                preparation = item.preparation.trim().takeIf(String::isNotEmpty),
+                catalogFoodId = catalogMatches[item.id]?.fdcId,
+                catalogRelease = catalogMatches[item.id]?.let { catalog?.sourceRelease },
+                description = item.description.trim().takeIf(String::isNotEmpty),
+                role = item.role,
+            )
+        }
+        dish.id to PersonalDishQuery(dish.name, queryItems)
+    }
+    val semanticMatches = personalDishQueries.mapValues { (_, query) ->
+        findPersonalDishMatches(query).filter { match ->
+            match.dish.id !in rejectedSuggestionIds &&
+                PersonalDishMatchReason.SAME_PHOTO_CONTEXT !in match.reasons
+        }
+    }
+    // The whole-meal thumbnail is only a fallback for one unresolved dish.
+    // Showing it on every card would imply dish-level visual recognition that
+    // Metria does not yet have.
+    val photoFallbackDishId = dishGroups.firstOrNull { dish ->
+        acceptedDishIds[dish.id] == null && semanticMatches[dish.id].isNullOrEmpty()
+    }?.id
+    val personalDishSuggestions = dishGroups.associate { dish ->
+        val matches = when {
+            acceptedDishIds[dish.id] != null -> emptyList()
+            !semanticMatches[dish.id].isNullOrEmpty() -> semanticMatches.getValue(dish.id)
+            dish.id == photoFallbackDishId && referenceThumbnailBase64 != null -> {
+                val query = personalDishQueries.getValue(dish.id).copy(referenceThumbnailBase64 = referenceThumbnailBase64)
+                findPersonalDishMatches(query).filter { match ->
+                    match.dish.id !in rejectedSuggestionIds &&
+                        PersonalDishMatchReason.SAME_PHOTO_CONTEXT in match.reasons
+                }
+            }
+            else -> emptyList()
+        }
+        dish.id to matches.take(3)
+    }
+    val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+
+    // The full-screen review has no draggable/hidden state. While the keyboard
+    // is visible Android owns Back and dismisses only the IME; after that, Back
+    // navigates editor -> review -> analysis result.
+    BackHandler(enabled = !imeVisible) {
+        if (editingDishId != null) editingDishId = null else onDismiss()
+    }
+
+    Dialog(
+        onDismissRequest = {},
+        properties = DialogProperties(
+            dismissOnBackPress = false,
+            dismissOnClickOutside = false,
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = true,
+        ),
+    ) {
+        Surface(
+            color = MetriaColors.Canvas,
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            val editingDish = items.dishGroups().firstOrNull { it.id == editingDishId }
+            if (editingDish != null) {
+                DishEditor(
+                    dish = editingDish,
+                    otherDishes = items.dishGroups().filterNot { it.id == editingDish.id },
+                    catalog = catalog,
+                    corrections = corrections,
+                    selectedMatchIds = matchIds.filterKeys { id -> editingDish.items.any { it.id == id } },
+                    includedPossibleIds = includedPossibleIds.intersect(editingDish.items.map { it.id }.toSet()),
+                    rememberDish = dishMemoryChoices[editingDish.id] ?: true,
+                    canRemoveLastComponent = items.size > editingDish.items.size,
+                    onCancel = { editingDishId = null },
+                    onApply = { updatedItems, updatedMatches, updatedIncluded, rememberDish ->
+                        val oldIds = editingDish.items.mapTo(mutableSetOf()) { it.id }
+                        val insertionIndex = items.indexOfFirst { it.dishId == editingDish.id }.coerceAtLeast(0)
+                        items = items.filterNot { it.dishId == editingDish.id }.toMutableList().also {
+                            it.addAll(insertionIndex.coerceAtMost(it.size), updatedItems)
+                        }
+                        matchIds = matchIds.filterKeys { it !in oldIds } + updatedMatches
+                        includedPossibleIds = includedPossibleIds.filterNotTo(mutableSetOf()) { it in oldIds } + updatedIncluded
+                        dishMemoryChoices = if (updatedItems.any { it.dishId == editingDish.id }) {
+                            dishMemoryChoices + (editingDish.id to rememberDish)
+                        } else {
+                            dishMemoryChoices - editingDish.id
+                        }
+                        editingDishId = null
+                        error = null
+                    },
+                )
+            } else {
+                MealReview(
+                proposal = proposal,
+                items = items,
+                title = title,
+                onTitleChange = {
+                    title = it
+                    titleEdited = true
+                },
+                rememberedDishNames = items.dishGroups().filter { dishMemoryChoices[it.id] == true }.map { it.name },
+                personalDishSuggestions = personalDishSuggestions,
+                acceptedDishIds = acceptedDishIds,
+                referenceThumbnailBase64 = referenceThumbnailBase64,
+                keepReference = keepReference,
+                onKeepReferenceChange = { keepReference = it },
+                similarMeal = similarMeal,
+                totals = totals,
+                isPartialEstimate = isPartialEstimate,
+                includedIds = includedIds,
+                needsReviewIds = needsReviewIds,
+                catalog = catalog,
+                date = date,
+                onDateChange = { date = it },
+                mealSlot = mealSlot,
+                suggestedMealSlot = MealSlots.suggestedFor(captureTime),
+                onMealSlotChange = { mealSlot = it },
+                detailsExpanded = detailsExpanded,
+                onDetailsExpandedChange = { detailsExpanded = it },
+                error = error,
+                onEditDish = { editingDishId = it },
+                onAcceptPersonalDish = { dishId, match ->
+                    val currentDish = items.dishGroups().firstOrNull { it.id == dishId }
+                    if (currentDish != null) {
+                        val applied = applyPersonalDishSuggestion(currentDish, match, matchIds, catalog)
+                        val oldIds = currentDish.items.mapTo(mutableSetOf()) { it.id }
+                        val insertionIndex = items.indexOfFirst { it.dishId == dishId }.coerceAtLeast(0)
+                        items = items.filterNot { it.dishId == dishId }.toMutableList().also { updated ->
+                            updated.addAll(insertionIndex.coerceAtMost(updated.size), applied.items)
+                        }
+                        if (!titleEdited) {
+                            title = items.dishGroups().map(DishGroup::name).filter(String::isNotBlank)
+                                .distinct().take(3).joinToString(" and ").ifBlank { "Meal" }
+                        }
+                        matchIds = matchIds.filterKeys { it !in oldIds } + applied.matchIds
+                        acceptedDishIds = acceptedDishIds + (dishId to match.dish.id)
+                        dishMemoryChoices = dishMemoryChoices + (dishId to true)
+                        error = null
+                    }
+                },
+                onRejectPersonalDish = { match -> rejectedSuggestionIds = rejectedSuggestionIds + match.dish.id },
+                onAddDish = {
+                    if (items.size < 12) {
+                        val dishId = UUID.randomUUID().toString()
+                        items = items + MealReviewItemDraft(
+                            id = UUID.randomUUID().toString(), dishId = dishId, dishName = "New dish",
+                            name = "", description = "", grams = "", preparation = "",
+                            role = "main_food", evidence = "seen",
+                        )
+                        editingDishId = dishId
+                    }
+                },
+                onUseSimilarName = { previous ->
+                    title = MealIdentity.displayTitle(previous)
+                    titleEdited = true
+                },
+                onDismiss = onDismiss,
+                    onSave = {
+                    val recordedAt = mealInstantForReview(date, captureTime)
+                    val savedItems = items.map { item ->
+                        MealEntryItem(
+                            name = item.name.trim(),
+                            grams = parsedGrams[item.id],
+                            preparation = item.preparation.trim().takeIf(String::isNotEmpty),
+                            catalogFoodId = catalogMatches[item.id]?.fdcId.takeIf { item.id in includedIds },
+                            catalogRelease = catalog?.sourceRelease?.takeIf { item.id in includedIds },
+                            groupLabel = item.dishName.trim().takeIf(String::isNotEmpty),
+                            description = item.description.trim().takeIf(String::isNotEmpty),
+                            role = item.role,
+                        )
+                    }
+                    val nutrition = totals?.let {
+                        MealNutrition(
+                            it.caloriesKcal, it.proteinGrams, it.carbohydrateGrams, it.fatGrams,
+                            source = "member_confirmed_catalog",
+                            catalogRelease = catalog?.sourceRelease,
+                            estimateCoverage = if (isPartialEstimate) "partial" else "full",
+                        )
+                    }
+                    val meal = recordedAt?.let {
+                        MealEntry(
+                            recordedAt = it,
+                            title = title.trim().takeIf(String::isNotEmpty),
+                            mealSlot = mealSlot,
+                            recordedTimeKnown = true,
+                            items = savedItems,
+                            assumptions = proposal.assumptions,
+                            confidence = proposal.overallConfidence,
+                            source = if (nutrition == null) "ai_estimate" else "member_confirmed_catalog",
+                            nutrition = nutrition,
+                            referenceThumbnailBase64 = referenceThumbnailBase64.takeIf { keepReference },
+                            analysisAuditId = analysisAuditId,
+                        )
+                    }
+                    val learnedCorrections = items.mapNotNull { item ->
+                        catalogMatches[item.id]?.takeIf { it.fdcId != initialMatchIds[item.id] }
+                            ?.let { FoodCorrection(item.name.trim(), it.fdcId) }
+                    }
+                    val savedItemsByDraftId = items.mapIndexed { index, draft -> draft.id to savedItems[index] }.toMap()
+                    val selectedDishGroups = items.dishGroups().filter { dishMemoryChoices[it.id] == true }
+                    val personalDishes = meal?.let { savedMeal ->
+                        selectedDishGroups.mapNotNull { dish ->
+                            val dishItems = dish.items.mapNotNull { savedItemsByDraftId[it.id] }
+                            PersonalDishValidation.fromConfirmedMeal(
+                                savedMeal.copy(title = dish.name, items = dishItems),
+                                dish.name,
+                                existing = acceptedDishIds[dish.id]?.let { acceptedId ->
+                                    savedPersonalDishes.firstOrNull { it.id == acceptedId }
+                                },
+                            )
+                        }
+                    }.orEmpty()
+                    if (meal == null || !MealEntryValidation.valid(meal)) {
+                        error = "Review each food name, portion and the meal date before saving."
+                    } else if (personalDishes.size != selectedDishGroups.size) {
+                        error = "Review the name and foods in each dish you want Metria to remember."
+                    } else {
+                        error = onSave(meal, learnedCorrections, personalDishes)
+                    }
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MealReview(
+    proposal: MealProposal,
+    items: List<MealReviewItemDraft>,
+    title: String,
+    onTitleChange: (String) -> Unit,
+    rememberedDishNames: List<String>,
+    personalDishSuggestions: Map<String, List<PersonalDishMatch>>,
+    acceptedDishIds: Map<String, String>,
+    referenceThumbnailBase64: String?,
+    keepReference: Boolean,
+    onKeepReferenceChange: (Boolean) -> Unit,
+    similarMeal: MealEntry?,
+    totals: CatalogNutrition?,
+    isPartialEstimate: Boolean,
+    includedIds: Set<String>,
+    needsReviewIds: Set<String>,
+    catalog: OfflineFoodCatalog?,
+    date: String,
+    onDateChange: (String) -> Unit,
+    mealSlot: String?,
+    suggestedMealSlot: String,
+    onMealSlotChange: (String?) -> Unit,
+    detailsExpanded: Boolean,
+    onDetailsExpandedChange: (Boolean) -> Unit,
+    error: String?,
+    onEditDish: (String) -> Unit,
+    onAcceptPersonalDish: (String, PersonalDishMatch) -> Unit,
+    onRejectPersonalDish: (PersonalDishMatch) -> Unit,
+    onAddDish: () -> Unit,
+    onUseSimilarName: (MealEntry) -> Unit,
+    onDismiss: () -> Unit,
+    onSave: () -> Unit,
+) {
+    Column(Modifier.fillMaxSize().imePadding()) {
+        ReviewHeader(title = "Review this meal", onClose = onDismiss)
+        androidx.compose.foundation.lazy.LazyColumn(
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            item {
+                ReviewIntro(
+                    referenceThumbnailBase64 = referenceThumbnailBase64,
+                    confidence = proposal.overallConfidence,
+                    dishCount = items.dishGroups().size,
+                )
+            }
+            item {
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = onTitleChange,
+                    label = { Text("Meal name") },
+                    supportingText = { Text("Name it once. Foods stay inside their dishes.") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            similarMeal?.let { previous ->
+                item {
+                    Card(colors = CardDefaults.cardColors(containerColor = MetriaColors.PrimarySoft)) {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Looks similar to ${MealIdentity.displayTitle(previous)}", style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                "Use the familiar name, then review today’s foods and portions.",
+                                color = MetriaColors.InkMuted,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            TextButton(onClick = { onUseSimilarName(previous) }) { Text("Use this name") }
+                        }
+                    }
+                }
+            }
+            item {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                        Text("Dishes", style = MaterialTheme.typography.titleLarge)
+                        Text("Tap a dish to review its foods.", color = MetriaColors.InkMuted)
+                    }
+                    if (items.size < 12) TextButton(onClick = onAddDish) {
+                        Icon(Icons.Default.Add, contentDescription = null)
+                        Text("Add dish")
+                    }
+                }
+            }
+            items.dishGroups().forEach { dish ->
+                item(key = dish.id) {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        personalDishSuggestions[dish.id]?.takeIf(List<PersonalDishMatch>::isNotEmpty)?.let { matches ->
+                            PersonalDishSuggestionsCard(
+                                matches = matches,
+                                onAccept = { match -> onAcceptPersonalDish(dish.id, match) },
+                                onRejectAll = { matches.forEach(onRejectPersonalDish) },
+                            )
+                        }
+                        DishReviewCard(
+                            dish = dish,
+                            includedCount = dish.items.count { it.id in includedIds },
+                            needsReviewCount = dish.items.count { it.id in needsReviewIds },
+                            remembered = dish.name in rememberedDishNames,
+                            usingSavedDish = dish.id in acceptedDishIds,
+                            onClick = { onEditDish(dish.id) },
+                        )
+                    }
+                }
+            }
+            item {
+                NutritionReviewCard(
+                    totals = totals,
+                    isPartial = isPartialEstimate,
+                    includedItems = items.filter { it.id in includedIds }.map { it.name },
+                    excludedItems = items.filter { it.id in needsReviewIds }.map { it.name.ifBlank { "Unnamed food" } },
+                    catalog = catalog,
+                )
+            }
+            item {
+                Card(colors = CardDefaults.cardColors(containerColor = MetriaColors.Surface)) {
+                    Column(Modifier.fillMaxWidth()) {
+                        Row(
+                            Modifier.fillMaxWidth().clickable { onDetailsExpandedChange(!detailsExpanded) }.padding(16.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Meal details", style = MaterialTheme.typography.titleMedium)
+                                Text(
+                                    "${MealSlots.label(mealSlot)} · $date",
+                                    color = MetriaColors.InkMuted,
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                            Icon(
+                                Icons.Default.KeyboardArrowRight,
+                                contentDescription = if (detailsExpanded) "Hide meal details" else "Show meal details",
+                                modifier = Modifier.semantics { contentDescription = if (detailsExpanded) "Meal details expanded" else "Meal details collapsed" },
+                            )
+                        }
+                        if (detailsExpanded) {
+                            HorizontalDivider(color = MetriaColors.Divider)
+                            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                                OutlinedTextField(
+                                    value = date,
+                                    onValueChange = onDateChange,
+                                    label = { Text("Date · YYYY-MM-DD") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                                MealSlotChips(mealSlot, suggestedMealSlot, onMealSlotChange)
+                                referenceThumbnailBase64?.let {
+                                    SettingSwitchRow(
+                                        checked = keepReference,
+                                        onCheckedChange = onKeepReferenceChange,
+                                        title = "Keep a private thumbnail",
+                                        supporting = "Encrypted on this phone; the original photo is discarded.",
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            item {
+                Surface(
+                    color = if (rememberedDishNames.isEmpty()) MetriaColors.SurfaceSubtle else MetriaColors.PrimarySoft,
+                    shape = MaterialTheme.shapes.medium,
+                ) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Text(
+                            if (rememberedDishNames.isEmpty()) "Want Metria to remember a dish?" else "Remembering privately",
+                            style = MaterialTheme.typography.titleSmall,
+                        )
+                        Text(
+                            if (rememberedDishNames.isEmpty()) "Open a dish and keep “Remember this dish” on when you apply your correction."
+                            else rememberedDishNames.joinToString(),
+                            color = MetriaColors.InkMuted,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+            }
+            error?.let { message ->
+                item {
+                    Surface(color = MaterialTheme.colorScheme.errorContainer, shape = MaterialTheme.shapes.small) {
+                        Text(message, color = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.padding(14.dp))
+                    }
+                }
+            }
+            item { Spacer(Modifier.height(8.dp)) }
+        }
+        SystemSafeBottomActions(verticalPadding = 14.dp) {
+            Button(
+                onClick = onSave,
+                modifier = Modifier.fillMaxWidth().height(54.dp),
+            ) {
+                Text("Save reviewed meal")
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReviewHeader(title: String, onClose: () -> Unit) {
+    Surface(color = MetriaColors.Canvas) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onClose, modifier = Modifier.size(48.dp)) {
+                Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+            }
+            Text(title, style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(start = 4.dp))
+        }
+    }
+}
+
+@Composable
+private fun ReviewIntro(referenceThumbnailBase64: String?, confidence: String, dishCount: Int) {
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (referenceThumbnailBase64 != null) {
+            MealReviewThumbnail(referenceThumbnailBase64, Modifier.size(92.dp))
+        } else {
+            Surface(color = MetriaColors.AccentSoft, shape = MaterialTheme.shapes.medium, modifier = Modifier.size(92.dp)) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text("$dishCount", style = MaterialTheme.typography.displaySmall)
+                }
+            }
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            MetriaEstimateBadge("AI estimate · ${confidence.replaceFirstChar(Char::uppercase)} confidence")
+            Text(
+                if (dishCount == 1) "Metria found one dish. Check the foods and portions before saving."
+                else "Metria found $dishCount dishes. Check each one before saving.",
+                color = MetriaColors.InkMuted,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PersonalDishSuggestionsCard(
+    matches: List<PersonalDishMatch>,
+    onAccept: (PersonalDishMatch) -> Unit,
+    onRejectAll: () -> Unit,
+) {
+    val photoContextOnly = matches.all { match ->
+        match.reasons.none { it != PersonalDishMatchReason.SAME_PHOTO_CONTEXT && it != PersonalDishMatchReason.REPEATED_CONFIRMATIONS }
+    }
+    Card(colors = CardDefaults.cardColors(containerColor = MetriaColors.AccentSoft)) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = MetriaColors.Primary)
+                Text(
+                    if (matches.size == 1) "Could this be your ${matches.first().dish.name}?" else "Is this one of your saved dishes?",
+                    style = MaterialTheme.typography.titleMedium,
+                )
+            }
+            Text(
+                if (photoContextOnly) "Metria recognises the same meal photo, not the individual dish. Choose only if it is correct."
+                else "These foods or names resemble something you confirmed before.",
+                color = MetriaColors.InkMuted,
+                style = MaterialTheme.typography.bodySmall,
+            )
+            matches.forEach { match ->
+                OutlinedButton(onClick = { onAccept(match) }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Use ${match.dish.name}")
+                }
+            }
+            TextButton(onClick = onRejectAll) { Text("None of these") }
+        }
+    }
+}
+
+@Composable
+private fun DishReviewCard(
+    dish: DishGroup,
+    includedCount: Int,
+    needsReviewCount: Int,
+    remembered: Boolean,
+    usingSavedDish: Boolean,
+    onClick: () -> Unit,
+) {
+    val grams = dish.items.mapNotNull { it.grams.toIntOrNull() }.sum().takeIf { it > 0 }
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MetriaColors.Surface),
+        modifier = Modifier.fillMaxWidth().semantics {
+            contentDescription = "${dish.name}, ${dish.items.size} foods, tap to review"
+        }.clickable(role = Role.Button, onClick = onClick),
+    ) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Surface(color = MetriaColors.AccentSoft, shape = CircleShape, modifier = Modifier.size(42.dp)) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(dish.items.size.toString(), fontWeight = FontWeight.SemiBold)
+                    }
+                }
+                Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                    Text(dish.name, style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        dish.items.joinToString { it.name.ifBlank { "Unnamed food" } },
+                        color = MetriaColors.InkMuted,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 2,
+                    )
+                    if (remembered) Text(
+                        if (usingSavedDish) "Using your saved dish · review changes" else "Will remember privately",
+                        color = MetriaColors.Primary,
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                }
+                Icon(Icons.Default.Edit, contentDescription = "Edit ${dish.name}", tint = MetriaColors.Primary)
+            }
+            HorizontalDivider(color = MetriaColors.Divider)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(grams?.let { "About $it g" } ?: "Portion needs review", color = MetriaColors.InkMuted)
+                Text(
+                    when {
+                        needsReviewCount > 0 -> "$needsReviewCount to review"
+                        includedCount == dish.items.size -> "Ready"
+                        else -> "$includedCount included"
+                    },
+                    color = if (needsReviewCount > 0) MetriaColors.Estimated else MetriaColors.Verified,
+                    fontWeight = FontWeight.Medium,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun NutritionReviewCard(
+    totals: CatalogNutrition?,
+    isPartial: Boolean,
+    includedItems: List<String>,
+    excludedItems: List<String>,
+    catalog: OfflineFoodCatalog?,
+) {
+    Card(colors = CardDefaults.cardColors(containerColor = MetriaColors.PrimarySoft)) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text("Nutrition estimate", style = MaterialTheme.typography.titleLarge)
+                MetriaEstimateBadge(if (isPartial) "Partial" else if (totals == null) "Needs review" else "Reviewed estimate")
+            }
+            if (totals == null) {
+                Text("Review at least one food and its portion to calculate what Metria can.", color = MetriaColors.InkMuted)
+            } else {
+                Text(nutritionLine(totals), style = MaterialTheme.typography.titleMedium)
+                if (isPartial) {
+                    Text(
+                        "Calculated from ${includedItems.joinToString().ifBlank { "reviewed foods" }}. Not yet included: ${excludedItems.joinToString().ifBlank { "other foods" }}.",
+                        color = MetriaColors.InkMuted,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                catalog?.let {
+                    Text("Offline food data · ${it.sourceRelease}", color = MetriaColors.Primary, style = MaterialTheme.typography.labelMedium)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingSwitchRow(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    title: String,
+    supporting: String,
+) {
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f).padding(end = 12.dp)) {
+            Text(title, style = MaterialTheme.typography.titleSmall)
+            Text(supporting, color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall)
+        }
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
+}
+
+@Composable
+private fun MealSlotChips(selected: String?, suggested: String?, choose: (String?) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Meal type", style = MaterialTheme.typography.labelLarge)
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf("breakfast", "lunch", "dinner", "snack").forEach { slot ->
+                FilterChip(
+                    selected = selected == slot,
+                    onClick = { choose(if (selected == slot) null else slot) },
+                    label = { Text(MealSlots.label(slot) + if (selected == null && suggested == slot) " · suggested" else "") },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DishEditor(
+    dish: DishGroup,
+    otherDishes: List<DishGroup>,
+    catalog: OfflineFoodCatalog?,
+    corrections: List<FoodCorrection>,
+    selectedMatchIds: Map<String, Long>,
+    includedPossibleIds: Set<String>,
+    rememberDish: Boolean,
+    canRemoveLastComponent: Boolean,
+    onCancel: () -> Unit,
+    onApply: (List<MealReviewItemDraft>, Map<String, Long>, Set<String>, Boolean) -> Unit,
+) {
+    var localItems by rememberSaveable(dish.id, stateSaver = MealReviewItemsSaver) { mutableStateOf(dish.items) }
+    var movedItems by rememberSaveable("${dish.id}-moved", stateSaver = MealReviewItemsSaver) { mutableStateOf(emptyList()) }
+    var localDishName by rememberSaveable(dish.id) { mutableStateOf(dish.name) }
+    var localMatchIds by rememberSaveable(dish.id, stateSaver = MatchIdsSaver) { mutableStateOf(selectedMatchIds) }
+    var localIncludedPossible by rememberSaveable(dish.id, stateSaver = StringSetSaver) { mutableStateOf(includedPossibleIds) }
+    var localRememberDish by rememberSaveable(dish.id) { mutableStateOf(rememberDish) }
+    var expandedItemId by rememberSaveable(dish.id) { mutableStateOf(localItems.firstOrNull()?.id) }
+    var catalogSearchItemId by rememberSaveable(dish.id) { mutableStateOf<String?>(null) }
+    var editorError by rememberSaveable(dish.id) { mutableStateOf<String?>(null) }
+    val foodsById = remember(catalog) { catalog?.foods?.associateBy(CatalogFood::fdcId).orEmpty() }
+
+    Column(Modifier.fillMaxSize().imePadding()) {
+        ReviewHeader(title = "Edit dish", onClose = onCancel)
+        androidx.compose.foundation.lazy.LazyColumn(
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            item {
+                OutlinedTextField(
+                    value = localDishName,
+                    onValueChange = { value ->
+                        localDishName = value
+                        localItems = localItems.map { it.copy(dishName = value) }
+                    },
+                    label = { Text("Dish name") },
+                    supportingText = { Text("This name applies to the whole dish.") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            item {
+                SettingSwitchRow(
+                    checked = localRememberDish,
+                    onCheckedChange = { localRememberDish = it },
+                    title = "Remember this dish",
+                    supporting = "Save this corrected dish privately so Metria can suggest it next time.",
+                )
+            }
+            item {
+                Text("Foods", style = MaterialTheme.typography.titleLarge)
+                Text("Open only the food you want to change.", color = MetriaColors.InkMuted)
+            }
+            localItems.forEach { item ->
+                item(key = item.id) {
+                    ComponentEditorCard(
+                        item = item,
+                        expanded = expandedItemId == item.id,
+                        catalogFood = localMatchIds[item.id]?.let(foodsById::get),
+                        includedPossible = item.id in localIncludedPossible,
+                        canRemove = localItems.size > 1 || canRemoveLastComponent,
+                        otherDishes = otherDishes,
+                        onToggle = { expandedItemId = if (expandedItemId == item.id) null else item.id },
+                        onChange = { updated ->
+                            if (updated.name != item.name) localMatchIds = localMatchIds - item.id
+                            if (updated.evidence == "seen") localIncludedPossible = localIncludedPossible - item.id
+                            localItems = localItems.map { if (it.id == item.id) updated else it }
+                        },
+                        onTogglePossible = {
+                            localIncludedPossible = if (item.id in localIncludedPossible) localIncludedPossible - item.id else localIncludedPossible + item.id
+                        },
+                        onFindFood = { catalogSearchItemId = item.id },
+                        onRemove = {
+                            localItems = localItems.filterNot { it.id == item.id }
+                            localMatchIds = localMatchIds - item.id
+                            localIncludedPossible = localIncludedPossible - item.id
+                            if (expandedItemId == item.id) expandedItemId = localItems.firstOrNull()?.id
+                        },
+                        onMove = { destination ->
+                            movedItems = movedItems + item.copy(dishId = destination.id, dishName = destination.name)
+                            localItems = localItems.filterNot { it.id == item.id }
+                            if (expandedItemId == item.id) expandedItemId = localItems.firstOrNull()?.id
+                        },
+                    )
+                }
+            }
+            item {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedButton(
+                        onClick = {
+                            val added = newComponent(dish.id, localDishName, "seen")
+                            localItems = localItems + added
+                            expandedItemId = added.id
+                        },
+                        enabled = localItems.size < 12,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null)
+                        Text("Visible food")
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            val added = newComponent(dish.id, localDishName, "possible_inside")
+                            localItems = localItems + added
+                            expandedItemId = added.id
+                        },
+                        enabled = localItems.size < 12,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null)
+                        Text("May be inside")
+                    }
+                }
+            }
+            editorError?.let { message ->
+                item {
+                    Surface(color = MaterialTheme.colorScheme.errorContainer, shape = MaterialTheme.shapes.small) {
+                        Text(message, color = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.padding(14.dp))
+                    }
+                }
+            }
+            item { Spacer(Modifier.height(8.dp)) }
+        }
+        SystemSafeBottomActions {
+                Button(
+                    onClick = {
+                        if (localItems.isEmpty() && movedItems.isEmpty() && canRemoveLastComponent) {
+                            onApply(emptyList(), emptyMap(), emptySet(), false)
+                        } else if (localItems.isEmpty() && movedItems.isEmpty()) {
+                            editorError = "Keep at least one food in this meal."
+                        } else if (localItems.isNotEmpty() && (localDishName.trim().isEmpty() || localItems.any { it.name.trim().isEmpty() })) {
+                            editorError = "Give the dish and each food a short name before continuing."
+                        } else {
+                            onApply(localItems + movedItems, localMatchIds, localIncludedPossible, localRememberDish)
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().height(54.dp),
+                ) {
+                    Text(when {
+                        localItems.isEmpty() && movedItems.isEmpty() -> "Remove dish"
+                        movedItems.isNotEmpty() -> "Apply moves and changes"
+                        else -> "Apply dish changes"
+                    })
+                }
+                TextButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) { Text("Cancel changes") }
+        }
+    }
+
+    catalogSearchItemId?.let { itemId ->
+        val item = localItems.firstOrNull { it.id == itemId }
+        CatalogSearchSheet(
+            catalog = catalog,
+            initialQuery = item?.name.orEmpty(),
+            corrections = corrections,
+            description = item?.description.orEmpty(),
+            onDismiss = { catalogSearchItemId = null },
+            onSelect = { food ->
+                localMatchIds = localMatchIds + (itemId to food.fdcId)
+                catalogSearchItemId = null
+            },
+        )
+    }
+}
+
+@Composable
+private fun SystemSafeBottomActions(
+    verticalPadding: androidx.compose.ui.unit.Dp = 12.dp,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val context = LocalContext.current
+    val view = LocalView.current
+    val density = LocalDensity.current
+    val navigationBottomPixels = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        context.getSystemService(WindowManager::class.java)
+            ?.currentWindowMetrics
+            ?.windowInsets
+            ?.getInsetsIgnoringVisibility(PlatformWindowInsets.Type.navigationBars())
+            ?.bottom
+            ?: 0
+    } else {
+        ViewCompat.getRootWindowInsets(view)
+            ?.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.navigationBars())
+            ?.bottom
+            ?: 0
+    }
+    val navigationBottom = with(density) { navigationBottomPixels.toDp() }
+
+    Surface(color = MetriaColors.Surface, tonalElevation = 2.dp) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(
+                    start = 20.dp,
+                    top = verticalPadding,
+                    end = 20.dp,
+                    bottom = verticalPadding + navigationBottom,
+                ),
+            content = content,
+        )
+    }
+}
+
+private fun newComponent(dishId: String, dishName: String, evidence: String) = MealReviewItemDraft(
+    id = UUID.randomUUID().toString(),
+    dishId = dishId,
+    dishName = dishName,
+    name = "",
+    description = "",
+    grams = "",
+    preparation = "",
+    role = "main_food",
+    evidence = evidence,
+)
+
+@Composable
+private fun ComponentEditorCard(
+    item: MealReviewItemDraft,
+    expanded: Boolean,
+    catalogFood: CatalogFood?,
+    includedPossible: Boolean,
+    canRemove: Boolean,
+    otherDishes: List<DishGroup>,
+    onToggle: () -> Unit,
+    onChange: (MealReviewItemDraft) -> Unit,
+    onTogglePossible: () -> Unit,
+    onFindFood: () -> Unit,
+    onRemove: () -> Unit,
+    onMove: (DishGroup) -> Unit,
+) {
+    Card(colors = CardDefaults.cardColors(containerColor = MetriaColors.Surface)) {
+        Column(Modifier.fillMaxWidth()) {
+            Row(
+                Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Surface(
+                    color = if (item.evidence == "seen") MetriaColors.AccentSoft else MetriaColors.EstimatedSoft,
+                    shape = CircleShape,
+                    modifier = Modifier.size(38.dp),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            if (catalogFood == null) Icons.Default.Search else Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = if (catalogFood == null) MetriaColors.Estimated else MetriaColors.Verified,
+                            modifier = Modifier.size(19.dp),
+                        )
+                    }
+                }
+                Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                    Text(item.name.ifBlank { "Unnamed food" }, style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        listOfNotNull(
+                            item.grams.toIntOrNull()?.let { "$it g" },
+                            if (item.evidence == "seen") "Seen" else "May be inside",
+                            catalogFood?.let { "Food selected" } ?: "Needs food match",
+                        ).joinToString(" · "),
+                        color = MetriaColors.InkMuted,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Icon(Icons.Default.KeyboardArrowRight, contentDescription = if (expanded) "Collapse food" else "Edit food")
+            }
+            if (expanded) {
+                HorizontalDivider(color = MetriaColors.Divider)
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = item.name,
+                        onValueChange = { onChange(item.copy(name = it)) },
+                        label = { Text("Food") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedTextField(
+                            value = item.grams,
+                            onValueChange = { onChange(item.copy(grams = it.filter { char -> char.isDigit() })) },
+                            label = { Text("Portion") },
+                            suffix = { Text("g") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                        )
+                        OutlinedTextField(
+                            value = item.preparation,
+                            onValueChange = { onChange(item.copy(preparation = it)) },
+                            label = { Text("Prepared") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    OutlinedTextField(
+                        value = item.description,
+                        onValueChange = { onChange(item.copy(description = it)) },
+                        label = { Text("What Metria noticed · optional") },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Text("Photo evidence", style = MaterialTheme.typography.labelLarge)
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = item.evidence == "seen",
+                            onClick = { onChange(item.copy(evidence = "seen")) },
+                            label = { Text("Visible in photo") },
+                        )
+                        FilterChip(
+                            selected = item.evidence == "possible_inside",
+                            onClick = { onChange(item.copy(evidence = "possible_inside")) },
+                            label = { Text("May be inside") },
+                        )
+                    }
+                    if (item.evidence == "possible_inside") {
+                        SettingSwitchRow(
+                            checked = includedPossible,
+                            onCheckedChange = { onTogglePossible() },
+                            title = "Include in estimate",
+                            supporting = "Turn this on only if you confirm this food is inside the dish.",
+                        )
+                    }
+                    Text("Type", style = MaterialTheme.typography.labelLarge)
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(
+                            "main_food" to "Main",
+                            "side" to "Side",
+                            "drink" to "Drink",
+                            "sauce_oil" to "Sauce or oil",
+                            "dry_seasoning" to "Seasoning",
+                        ).forEach { (role, label) ->
+                            FilterChip(
+                                selected = item.role == role,
+                                onClick = { onChange(item.copy(role = role)) },
+                                label = { Text(label) },
+                            )
+                        }
+                    }
+                    Surface(color = MetriaColors.SurfaceSubtle, shape = MaterialTheme.shapes.small) {
+                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                catalogFood?.let(FoodCatalog::memberDisplayName) ?: "No food selected yet",
+                                style = MaterialTheme.typography.titleSmall,
+                            )
+                            Text(
+                                if (catalogFood == null) "Choose a similar offline food to calculate this portion."
+                                else "Used only for the nutrition estimate; you can change it.",
+                                color = MetriaColors.InkMuted,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            TextButton(onClick = onFindFood) {
+                                Icon(Icons.Default.Search, contentDescription = null)
+                                Text(if (catalogFood == null) "Choose a similar food" else "Change selected food")
+                            }
+                        }
+                    }
+                    if (otherDishes.isNotEmpty()) {
+                        Text("Move to another dish", style = MaterialTheme.typography.labelLarge)
+                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            otherDishes.forEach { destination ->
+                                FilterChip(
+                                    selected = false,
+                                    onClick = { onMove(destination) },
+                                    label = { Text(destination.name) },
+                                    leadingIcon = { Icon(Icons.Default.KeyboardArrowRight, contentDescription = null) },
+                                )
+                            }
+                        }
+                        Text(
+                            "Moves this food without asking you to type it again.",
+                            color = MetriaColors.InkMuted,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    if (canRemove) {
+                        TextButton(onClick = onRemove, modifier = Modifier.align(Alignment.End)) {
+                            Icon(Icons.Default.Delete, contentDescription = null, tint = MetriaColors.Danger)
+                            Text("Remove food", color = MetriaColors.Danger)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CatalogSearchSheet(
+    catalog: OfflineFoodCatalog?,
+    initialQuery: String,
+    corrections: List<FoodCorrection>,
+    description: String,
+    onDismiss: () -> Unit,
+    onSelect: (CatalogFood) -> Unit,
+) {
+    var query by rememberSaveable(initialQuery) { mutableStateOf(initialQuery) }
+    val results = remember(catalog, query, description, corrections) {
+        catalog?.let {
+            val precise = FoodCatalog.candidatesForAssistantItem(it, query, description, corrections, limit = 6)
+            if (precise.isNotEmpty()) precise else FoodCatalog.search(it, query, limit = 12)
+        }.orEmpty()
+    }
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = MetriaColors.Canvas,
+    ) {
+        Column(Modifier.fillMaxWidth().fillMaxHeight(0.86f).imePadding()) {
+            ReviewHeader("Choose a similar food", onDismiss)
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                label = { Text("Search food") },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+            )
+            if (catalog == null) {
+                Text(
+                    "The offline food list is unavailable. You can still keep this food without nutrition.",
+                    color = MetriaColors.Danger,
+                    modifier = Modifier.padding(20.dp),
+                )
+            } else {
+                androidx.compose.foundation.lazy.LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    if (query.isNotBlank() && results.isEmpty()) {
+                        item {
+                            Text("No similar food found. Try a shorter name, such as chicken, ham, or peas.", color = MetriaColors.InkMuted)
+                        }
+                    }
+                    results.forEach { food ->
+                        item(key = food.fdcId) {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = MetriaColors.Surface),
+                                modifier = Modifier.fillMaxWidth().clickable { onSelect(food) },
+                            ) {
+                                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Text(FoodCatalog.memberDisplayName(food), style = MaterialTheme.typography.titleMedium)
+                                    if (FoodCatalog.memberDisplayName(food) != food.description) {
+                                        Text(food.description, color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall)
+                                    }
+                                    Text("Offline Foundation Foods", color = MetriaColors.Primary, style = MaterialTheme.typography.labelMedium)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MealReviewThumbnail(encoded: String, modifier: Modifier = Modifier) {
+    val bitmap = remember(encoded) {
+        runCatching {
+            val bytes = Base64.decode(encoded, Base64.DEFAULT)
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+        }.getOrNull()
+    }
+    if (bitmap != null) {
+        Image(
+            bitmap = bitmap,
+            contentDescription = "Private meal reference",
+            contentScale = ContentScale.Crop,
+            modifier = modifier.clip(RoundedCornerShape(20.dp)),
+        )
+    }
+}

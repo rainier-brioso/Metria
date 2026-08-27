@@ -1,5 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Voice is opt-in and uses only Android's explicit on-device recognizer. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <application
         android:allowBackup="false"
         android:label="Metria"
@@ -18,6 +20,7 @@
         <activity
             android:name=".MainActivity"
             android:configChanges="orientation|screenSize|keyboardHidden"
+            android:windowSoftInputMode="adjustResize"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />

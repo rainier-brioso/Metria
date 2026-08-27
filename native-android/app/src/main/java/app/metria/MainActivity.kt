@@ -165,6 +165,8 @@ class MainActivity : FragmentActivity() {
 
     fun understandPrivateCoach(question: String): ModelStatus = modelLifecycle.understandCoachRequest(question)
 
+    fun understandPrivateCoachAudio(audioFile: java.io.File): ModelStatus = modelLifecycle.understandCoachAudio(audioFile)
+
     fun cancelPrivateAssistant(): ModelStatus = modelLifecycle.cancelAssistantRequest()
 
     fun clearLocalMealDraft(): ModelStatus = modelLifecycle.clearMealDraft()

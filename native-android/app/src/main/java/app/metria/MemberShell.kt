@@ -1,5 +1,7 @@
 package app.metria
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
 import android.os.SystemClock
 import android.util.Base64
@@ -18,8 +20,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Fingerprint
+import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.ShowChart
 import androidx.compose.foundation.layout.Arrangement
@@ -30,6 +34,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -44,7 +49,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -72,12 +76,23 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.unit.dp
 import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.ZoneId
 import kotlinx.coroutines.delay
+import androidx.core.content.ContextCompat
+import app.metria.ui.navigation.MetriaBottomNavigation
+import app.metria.ui.components.MetriaActionSheet
+import app.metria.ui.screens.MetriaMealReviewSheet
+import app.metria.ui.screens.MetriaSavedDishesScreen
+import app.metria.ui.screens.MetriaTodayScreen
+import app.metria.ui.theme.MetriaColors
+import app.metria.ui.theme.MetriaTheme
 
 private val Ink = Color(0xFF201A2B)
 private val Plum = Color(0xFF5C3E77)
@@ -85,13 +100,23 @@ private val PlumSoft = Color(0xFFECE3F3)
 private val Sage = Color(0xFF3F6C5B)
 private val MetriaCanvas = Color(0xFFFBF8FC)
 
+private fun mealInstantForDate(date: String, localTime: LocalTime): Instant? =
+    runCatching { LocalDate.parse(date).atTime(localTime).atZone(ZoneId.systemDefault()).toInstant() }.getOrNull()
+
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
     var status by remember { mutableStateOf(vault.status()) }
     var hasCompletedOnboarding by remember { mutableStateOf(activity.hasCompletedOnboarding()) }
     var setupModelStatus by remember { mutableStateOf(activity.modelStatus()) }
     var destination by remember { mutableStateOf("Today") }
-    var todayTab by remember { mutableStateOf(0) }
+    // UX decision: the full tab remains Metria's workspace; this sheet makes the same assistant available in context.
+    var quickAssistantOpen by remember { mutableStateOf(false) }
+    var quickAssistantMenuOpen by remember { mutableStateOf(false) }
+    var quickAssistantStartVoice by remember { mutableStateOf(false) }
+    var quickAssistantListening by remember { mutableStateOf(false) }
+    // Approved UX: the floating assistant reuses this one camera flow; no image path or storage is duplicated.
+    var assistantImagePurpose by remember { mutableStateOf<String?>(null) }
     var addSheet by remember { mutableStateOf(false) }
     var editEntry by remember { mutableStateOf<WeightEntry?>(null) }
     var deleteEntry by remember { mutableStateOf<WeightEntry?>(null) }
@@ -102,7 +127,6 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
     var labelDraftForConfirmation by remember { mutableStateOf<LabelNutritionDraft?>(null) }
     var browseFoodCatalog by remember { mutableStateOf(false) }
     var catalogFoodForConfirmation by remember { mutableStateOf<CatalogFood?>(null) }
-    var showAssistantLoadingPreview by remember { mutableStateOf(false) }
     var editNutritionTargets by remember { mutableStateOf(false) }
     var editCycleContext by remember { mutableStateOf(false) }
     var exportPassphrase by remember { mutableStateOf<CharArray?>(null) }
@@ -140,7 +164,16 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
     }
     LaunchedEffect(status, hasCompletedOnboarding) {
         while (hasCompletedOnboarding && (status is EncryptedVault.Status.Missing || status is EncryptedVault.Status.Unlocked)) {
-            setupModelStatus = activity.modelStatus()
+            val current = activity.modelStatus()
+            setupModelStatus = current
+            modelStatus = current
+            // Product decision: pre-warm only after biometric unlock. The downloaded artifact is already
+            // local; this prepares its runtime quietly while the member can use the rest of the app.
+            if (status is EncryptedVault.Status.Unlocked && current.state == "ready") {
+                val initializing = activity.prepareLocalAssistant()
+                setupModelStatus = initializing
+                modelStatus = initializing
+            }
             delay(250)
         }
     }
@@ -150,24 +183,18 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
             delay(250)
         }
     }
-    LaunchedEffect(destination, modelStatus.state) {
-        if (destination == "Assistant" && modelStatus.state == "ready") {
+    LaunchedEffect(quickAssistantOpen) {
+        while (quickAssistantOpen) {
+            modelStatus = activity.modelStatus()
+            delay(250)
+        }
+    }
+    LaunchedEffect(quickAssistantStartVoice, modelStatus.state) {
+        if (quickAssistantStartVoice && modelStatus.state == "ready") {
             modelStatus = activity.prepareLocalAssistant()
         }
     }
-    LaunchedEffect(destination) {
-        if (destination == "Assistant" && BuildConfig.DEBUG) {
-            showAssistantLoadingPreview = true
-            delay(1800)
-            showAssistantLoadingPreview = false
-        } else {
-            showAssistantLoadingPreview = false
-        }
-    }
-    MaterialTheme(colorScheme = MaterialTheme.colorScheme.copy(
-        primary = Plum, onPrimary = Color.White, secondary = Sage,
-        surface = MetriaCanvas, onSurface = Ink, surfaceVariant = PlumSoft,
-    )) {
+    MetriaTheme {
         when (val vaultStatus = status) {
             EncryptedVault.Status.Missing -> if (!hasCompletedOnboarding) FirstRunOnboarding(
                 onComplete = { activity.completeOnboarding(); hasCompletedOnboarding = true },
@@ -190,34 +217,38 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                         cancelDownload = { setupModelStatus = activity.cancelLocalAssistantDownload() },
                         continueToApp = {},
                     )
-                    return@MaterialTheme
+                    return@MetriaTheme
                 }
                 Scaffold(
-                    containerColor = MetriaCanvas,
-                    bottomBar = { MemberNavigation(destination) { destination = it } },
-                    floatingActionButton = {
-                        if (destination == "Today") FloatingActionButton(
-                            onClick = { if (todayTab == 0) addSheet = true else destination = "Assistant" },
-                            containerColor = Plum,
-                        ) { Text("+") }
-                        else if (destination == "History") FloatingActionButton(onClick = { addSheet = true }, containerColor = Plum) { Text("+") }
+                    containerColor = MetriaColors.Canvas,
+                    bottomBar = {
+                        MetriaBottomNavigation(
+                            current = destination,
+                            assistantListening = quickAssistantListening,
+                            onNavigate = { destination = it },
+                            onMetriaAction = { quickAssistantMenuOpen = true },
+                        )
                     },
                 ) { padding ->
                     Column(Modifier.padding(padding).verticalScroll(rememberScrollState()).padding(20.dp).padding(bottom = 104.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
                         when (destination) {
-                            "Today" -> TodayScreen(
+                            "Today" -> MetriaTodayScreen(
                                 vaultStatus.entries, vaultStatus.meals, vaultStatus.displayUnit,
                                 nutritionTargets = vaultStatus.nutritionTargets,
                                 cycleContext = vaultStatus.cycleContext,
-                                selectedTab = todayTab, onSelectTab = { todayTab = it }, onEditMeal = { editMeal = it },
+                                onEditMeal = { editMeal = it },
                                 onEditNutritionTargets = { editNutritionTargets = true },
+                                onOpenProgress = { destination = "History" },
                             )
                             "History" -> HistoryScreen(vaultStatus.entries, vaultStatus.meals, vaultStatus.displayUnit, onEdit = { editEntry = it }, onDelete = { deleteEntry = it }, onEditMeal = { editMeal = it })
                             "Assistant" -> AssistantScreen(
                                 modelStatus = modelStatus,
-                                showLoadingPreview = showAssistantLoadingPreview,
+                                showLoadingPreview = false,
+                                initialImagePurpose = assistantImagePurpose,
+                                onInitialImagePurposeHandled = { assistantImagePurpose = null },
                                 entries = vaultStatus.entries,
                                 meals = vaultStatus.meals,
+                                personalDishes = vaultStatus.personalDishes,
                                 nutritionTargets = vaultStatus.nutritionTargets,
                                 cycleContext = vaultStatus.cycleContext,
                                 downloadAssistant = { modelStatus = activity.downloadLocalAssistant() },
@@ -226,6 +257,7 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                                 askMeal = { text -> modelStatus = activity.askLocalMealAssistant(text) },
                                 askCoach = { question, snapshot -> modelStatus = activity.askPrivateCoach(question, snapshot) },
                                 understandCoach = { question -> modelStatus = activity.understandPrivateCoach(question) },
+                                understandCoachAudio = { audio -> modelStatus = activity.understandPrivateCoachAudio(audio) },
                                 cancelAssistant = { modelStatus = activity.cancelPrivateAssistant() },
                                 saveWeightDirect = { kilograms, date ->
                                     val entry = WeightEntry(kilograms = kilograms, recordedAt = date)
@@ -252,8 +284,13 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                                 vaultStatus.displayUnit,
                                 vaultStatus.analysisAudits,
                                 vaultStatus.cycleContext,
+                                vaultStatus.personalDishes,
                                 { status = vault.setDisplayUnit(if (vaultStatus.displayUnit == "kg") "lb" else "kg") },
                                 { editCycleContext = true },
+                                { dish ->
+                                    status = vault.deletePersonalDish(dish.id)
+                                    (status as? EncryptedVault.Status.Failed)?.message
+                                },
                                 archiveMessage = archiveMessage,
                                 exportArchive = { passphrase ->
                                     exportPassphrase = passphrase
@@ -267,6 +304,70 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                                     archiveImportLauncher.launch(arrayOf("application/octet-stream", "application/json", "*/*"))
                                 },
                             ) { activity.lockVault() }
+                        }
+                    }
+                }
+                if (quickAssistantMenuOpen) MetriaActionSheet(
+                    onDismiss = { quickAssistantMenuOpen = false },
+                    onSpeak = {
+                        quickAssistantMenuOpen = false
+                        quickAssistantStartVoice = true
+                        quickAssistantOpen = true
+                    },
+                    onChat = {
+                        quickAssistantMenuOpen = false
+                        quickAssistantStartVoice = false
+                        quickAssistantOpen = true
+                    },
+                    onAnalyseMeal = {
+                        quickAssistantMenuOpen = false
+                        assistantImagePurpose = "meal"
+                        destination = "Assistant"
+                    },
+                    onScanLabel = {
+                        quickAssistantMenuOpen = false
+                        assistantImagePurpose = "label"
+                        destination = "Assistant"
+                    },
+                    onAddWeight = {
+                        quickAssistantMenuOpen = false
+                        voiceDraft = null
+                        addSheet = true
+                    },
+                )
+                if (quickAssistantOpen) {
+                    ModalBottomSheet(onDismissRequest = {
+                        quickAssistantOpen = false
+                        quickAssistantStartVoice = false
+                        quickAssistantListening = false
+                    }) {
+                        Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp).padding(bottom = 28.dp)) {
+                            PrivateAssistantChat(
+                                modelStatus = modelStatus,
+                                entries = vaultStatus.entries,
+                                meals = vaultStatus.meals,
+                                personalDishes = vaultStatus.personalDishes,
+                                nutritionTargets = vaultStatus.nutritionTargets,
+                                cycleContext = vaultStatus.cycleContext,
+                                onBack = { quickAssistantOpen = false },
+                                onVoiceListeningChanged = { quickAssistantListening = it },
+                                startVoiceImmediately = quickAssistantStartVoice,
+                                onVoiceStartHandled = { quickAssistantStartVoice = false },
+                                onWeightDraft = { draft -> voiceDraft = draft; addSheet = true; quickAssistantOpen = false },
+                                askMeal = { text -> modelStatus = activity.askLocalMealAssistant(text) },
+                                askCoach = { question, snapshot -> modelStatus = activity.askPrivateCoach(question, snapshot) },
+                                understandCoach = { question -> modelStatus = activity.understandPrivateCoach(question) },
+                                understandCoachAudio = { audio -> modelStatus = activity.understandPrivateCoachAudio(audio) },
+                                cancelAssistant = { modelStatus = activity.cancelPrivateAssistant() },
+                                saveWeightDirect = { kilograms, date ->
+                                    val entry = WeightEntry(kilograms = kilograms, recordedAt = date)
+                                    status = vault.addWeightEntry(entry)
+                                    if (status is EncryptedVault.Status.Unlocked) entry else null
+                                },
+                                editSavedWeight = { editEntry = it; quickAssistantOpen = false },
+                                undoSavedWeight = { entry -> status = vault.deleteWeight(entry.id) },
+                                reviewMeal = { proposal -> mealProposalForConfirmation = proposal; quickAssistantOpen = false },
+                            )
                         }
                     }
                 }
@@ -285,19 +386,26 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                     onRemoveReference = { status = vault.updateMeal(meal.copy(referenceThumbnailBase64 = null)) },
                     onDelete = { status = vault.deleteMeal(meal.id); editMeal = null },
                 ) }
-                mealProposalForConfirmation?.let { proposal -> MealConfirmationSheet(
+                mealProposalForConfirmation?.let { proposal -> MetriaMealReviewSheet(
                     proposal = proposal,
                     catalog = foodCatalog,
                     corrections = vaultStatus.foodCorrections,
                     referenceThumbnailBase64 = modelStatus.referenceThumbnailBase64,
                     analysisAuditId = modelStatus.latestImageAudit?.id,
                     savedMeals = vaultStatus.meals,
+                    savedPersonalDishes = vaultStatus.personalDishes,
+                    findPersonalDishMatches = { query -> PersonalDishMatcher.search(query, vaultStatus.personalDishes) },
                     onDismiss = { mealProposalForConfirmation = null },
-                    onSave = { meal, corrections ->
-                        status = vault.addMeal(meal)
-                        if (status is EncryptedVault.Status.Unlocked && corrections.isNotEmpty()) status = vault.recordFoodCorrections(corrections)
-                        mealProposalForConfirmation = null
-                        modelStatus = activity.clearLocalMealDraft()
+                    onSave = { meal, corrections, personalDishes ->
+                        status = vault.saveReviewedMeal(meal, corrections, personalDishes)
+                        if (status is EncryptedVault.Status.Unlocked) {
+                            mealProposalForConfirmation = null
+                            modelStatus = activity.clearLocalMealDraft()
+                            null
+                        } else {
+                            (status as? EncryptedVault.Status.Failed)?.message
+                                ?: "Unlock your private vault and try saving again."
+                        }
                     },
                 ) }
                 labelDraftForConfirmation?.let { label -> LabelConfirmationSheet(
@@ -473,21 +581,6 @@ private fun AssistantSetupGate(
 }
 
 @Composable
-private fun MemberNavigation(current: String, choose: (String) -> Unit) {
-    NavigationBar(containerColor = Color.White) {
-        listOf("Today", "History", "Assistant", "Privacy").forEach { item ->
-            val icon = when (item) {
-                "Today" -> Icons.Default.Home
-                "History" -> Icons.Default.ShowChart
-                "Assistant" -> Icons.Default.SmartToy
-                else -> Icons.Default.Lock
-            }
-            NavigationBarItem(selected = current == item, onClick = { choose(item) }, icon = { Icon(icon, contentDescription = item) }, label = { Text(item) })
-        }
-    }
-}
-
-@Composable
 private fun QuietProgress(title: String, detail: String) {
     Card(colors = CardDefaults.cardColors(containerColor = PlumSoft), modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -576,8 +669,11 @@ private fun CoolingDownLoading(secondsLeft: Int) {
 private fun AssistantScreen(
     modelStatus: ModelStatus,
     showLoadingPreview: Boolean,
+    initialImagePurpose: String?,
+    onInitialImagePurposeHandled: () -> Unit,
     entries: List<WeightEntry>,
     meals: List<MealEntry>,
+    personalDishes: List<PersonalDish>,
     nutritionTargets: NutritionTargets?,
     cycleContext: CycleContext,
     downloadAssistant: () -> Unit,
@@ -586,6 +682,7 @@ private fun AssistantScreen(
     askMeal: (String) -> Unit,
     askCoach: (String, PrivateCoachSnapshot) -> Unit,
     understandCoach: (String) -> Unit,
+    understandCoachAudio: (java.io.File) -> Unit,
     cancelAssistant: () -> Unit,
     saveWeightDirect: (Double, Instant) -> WeightEntry?,
     editSavedWeight: (WeightEntry) -> Unit,
@@ -629,6 +726,13 @@ private fun AssistantScreen(
             discardPendingCapture()
         }
     }
+    LaunchedEffect(initialImagePurpose, modelStatus.state) {
+        val purpose = initialImagePurpose ?: return@LaunchedEffect
+        if (modelStatus.state == "loaded") {
+            if (beginImageFlow().imageState != "cooling_down") sourceChoice = purpose
+            onInitialImagePurposeHandled()
+        }
+    }
     LaunchedEffect(modelStatus.imageState, pendingImagePurpose) {
         if (modelStatus.imageState == "ready") {
             when (pendingImagePurpose) {
@@ -667,9 +771,10 @@ private fun AssistantScreen(
     }
     if (chatOpen) {
         PrivateAssistantChat(
-            modelStatus = modelStatus, entries = entries, meals = meals, nutritionTargets = nutritionTargets, cycleContext = cycleContext,
-            onBack = { chatOpen = false }, onWeightDraft = openWeightDraft, askMeal = askMeal,
+            modelStatus = modelStatus, entries = entries, meals = meals, personalDishes = personalDishes, nutritionTargets = nutritionTargets, cycleContext = cycleContext,
+            onBack = { chatOpen = false }, onVoiceListeningChanged = {}, onWeightDraft = openWeightDraft, askMeal = askMeal,
             askCoach = askCoach, understandCoach = understandCoach, cancelAssistant = cancelAssistant, reviewMeal = review,
+            understandCoachAudio = understandCoachAudio,
             saveWeightDirect = saveWeightDirect, editSavedWeight = editSavedWeight,
             undoSavedWeight = undoSavedWeight,
         )
@@ -688,13 +793,16 @@ private fun AssistantScreen(
             modelStatus = modelStatus,
             entries = entries,
             meals = meals,
+            personalDishes = personalDishes,
             nutritionTargets = nutritionTargets,
             cycleContext = cycleContext,
             onBack = { chatOpen = false },
+            onVoiceListeningChanged = {},
             onWeightDraft = openWeightDraft,
             askMeal = askMeal,
             askCoach = askCoach,
             understandCoach = understandCoach,
+            understandCoachAudio = understandCoachAudio,
             cancelAssistant = cancelAssistant,
             saveWeightDirect = saveWeightDirect,
             editSavedWeight = editSavedWeight,
@@ -839,7 +947,8 @@ private fun AssistantScreen(
     }
 }
 
-private data class PrivateChatMessage(val text: String, val fromMember: Boolean)
+/** UX decision: facts returned by a local tool remain visible, but secondary to Metria's answer. */
+private data class PrivateChatMessage(val text: String, val fromMember: Boolean, val localEvidence: Boolean = false)
 
 @Composable
 private fun TypingAssistantText() {
@@ -858,58 +967,123 @@ private fun PrivateAssistantChat(
     modelStatus: ModelStatus,
     entries: List<WeightEntry>,
     meals: List<MealEntry>,
+    personalDishes: List<PersonalDish>,
     nutritionTargets: NutritionTargets?,
     cycleContext: CycleContext,
     onBack: () -> Unit,
+    onVoiceListeningChanged: (Boolean) -> Unit,
+    startVoiceImmediately: Boolean = false,
+    onVoiceStartHandled: () -> Unit = {},
     onWeightDraft: (VoiceWeightDraft) -> Unit,
     askMeal: (String) -> Unit,
     askCoach: (String, PrivateCoachSnapshot) -> Unit,
     understandCoach: (String) -> Unit,
+    understandCoachAudio: (java.io.File) -> Unit,
     cancelAssistant: () -> Unit,
     saveWeightDirect: (Double, Instant) -> WeightEntry?,
     editSavedWeight: (WeightEntry) -> Unit,
     undoSavedWeight: (WeightEntry) -> Unit,
     reviewMeal: (MealProposal) -> Unit,
 ) {
+    val context = LocalContext.current
     var input by remember { mutableStateOf("") }
     var submittedQuestion by remember { mutableStateOf("") }
     var handledTool by remember { mutableStateOf<PrivateCoachToolCall?>(null) }
     var handledCoachReply by remember { mutableStateOf<String?>(null) }
     var savedWeight by remember { mutableStateOf<WeightEntry?>(null) }
+    var recordingVoice by remember { mutableStateOf(false) }
+    var voiceMessage by remember { mutableStateOf<String?>(null) }
     var messages by remember { mutableStateOf(listOf(PrivateChatMessage("Ask about a meal, add a weight, or ask what you logged today. Nothing is saved without your review.", false))) }
+    val voiceRobotTransition = rememberInfiniteTransition(label = "metria-sheet-listening")
+    val voiceRobotScale by voiceRobotTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.18f,
+        animationSpec = infiniteRepeatable(tween(680, easing = LinearEasing)),
+        label = "metria-sheet-robot-pulse",
+    )
     val today = LocalDate.now()
     val todayMeals = remember(meals, today) { meals.filter { it.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate() == today } }
     val todaySummary = remember(meals, today) { MealNutritionSummaries.between(meals, today, today) }
     val snapshot = remember(entries, meals, nutritionTargets, today) { PrivateCoachSnapshot.from(entries, meals, nutritionTargets, today) }
+    fun setVoiceRecording(value: Boolean) {
+        recordingVoice = value
+        onVoiceListeningChanged(value)
+    }
+    fun submitVoiceClip(clip: GemmaAudioRecorder.Clip) {
+        setVoiceRecording(false)
+        if (!clip.detectedSpeech) {
+            clip.file.delete()
+            voiceMessage = "Metria could not hear speech. Try again or type your request."
+            return
+        }
+        messages = messages + PrivateChatMessage("Voice request received locally.", true)
+        submittedQuestion = "Voice request"
+        understandCoachAudio(clip.file)
+    }
+    val audioRecorder = remember(context) { GemmaAudioRecorder(context) }
+    val microphonePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            audioRecorder.start(::submitVoiceClip).onSuccess { setVoiceRecording(true) }.onFailure { voiceMessage = it.message ?: "Microphone recording could not start." }
+        } else voiceMessage = "Microphone permission was not granted. You can type your request instead."
+    }
+    fun startVoiceCapture() {
+        voiceMessage = null
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            audioRecorder.start(::submitVoiceClip).onSuccess { setVoiceRecording(true) }
+                .onFailure { voiceMessage = it.message ?: "Microphone recording could not start." }
+        } else microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
+    }
+    DisposableEffect(audioRecorder) { onDispose { audioRecorder.cancel(); onVoiceListeningChanged(false) } }
+    LaunchedEffect(startVoiceImmediately, modelStatus.state) {
+        if (startVoiceImmediately) {
+            when (modelStatus.state) {
+                "loaded" -> {
+                    onVoiceStartHandled()
+                    startVoiceCapture()
+                }
+                "failed", "absent", "removed" -> {
+                    onVoiceStartHandled()
+                    voiceMessage = "Metria could not get ready for voice. Open Chat to check the local assistant."
+                }
+            }
+        }
+    }
     LaunchedEffect(modelStatus.coachToolCall, submittedQuestion) {
         val call = modelStatus.coachToolCall ?: return@LaunchedEffect
         if (call == handledTool) return@LaunchedEffect
         handledTool = call
-        when (call.intent) {
-            "read_goal_progress" -> {
-                val scopedSnapshot = if (call.start != null && call.end != null) PrivateCoachSnapshot.from(entries, meals, nutritionTargets, today, call.start, call.end) else snapshot
-                val label = if (call.start != null && call.end != null) "${call.start} to ${call.end}" else if (call.period == "week") "Last 7 days" else "Today"
-                messages = messages + PrivateChatMessage("$label. ${scopedSnapshot.goalProgressFacts(call.period)}", false)
+        call.spokenText?.let { spoken ->
+            submittedQuestion = spoken
+            messages = messages + PrivateChatMessage("Voice: $spoken", true)
+        }
+        val action = AssistantActionDispatcher.resolve(call)
+        if (action is AssistantAction.QueryWeightHistory && call.spokenText?.let(::soundsLikeMealHistoryQuestion) == true) {
+            messages = messages + PrivateChatMessage("I heard a meal-history question, but could not safely match the action. Please try again or type it.", false)
+            return@LaunchedEffect
+        }
+        when (action) {
+            is AssistantAction.QueryNutrition -> {
+                val scopedSnapshot = snapshot
+                val label = if (action.period == "week") "Last 7 days" else "Today"
+                messages = messages + PrivateChatMessage("$label. ${scopedSnapshot.goalProgressFacts(action.period)}", false, localEvidence = true)
                 val language = coachReplyLanguage(submittedQuestion)
                 askCoach("""MEMBER_LANGUAGE: $language
                     REQUESTED_PERIOD: $label
                     Respond in MEMBER_LANGUAGE. Use only the selected-period week fields and their week goals.
                     Never mention today or daily goals. Write recognition, factual comparison, and a gentle next focus.""".trimIndent(), scopedSnapshot)
             }
-            "read_weight" -> {
-                val entry = if (call.period == "latest") entries.maxByOrNull(WeightEntry::recordedAt) else entries.filter { it.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate() == today.minusDays(1) }.maxByOrNull(WeightEntry::recordedAt)
-                messages = messages + PrivateChatMessage(entry?.let { "Weight entry: ${"%.1f".format(it.kilograms)} kg." } ?: "There is no matching weight entry yet.", false)
-            }
-            "read_weight_trend" -> {
-                val ordered = entries.sortedBy(WeightEntry::recordedAt)
+            is AssistantAction.QueryWeightHistory -> {
+                val oldest = today.minusDays(action.fromDaysAgo.toLong())
+                val newest = today.minusDays(action.toDaysAgo.toLong())
+                val ordered = entries.filter { date -> date.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate() in oldest..newest }.sortedBy(WeightEntry::recordedAt)
                 val first = ordered.firstOrNull()
                 val latest = ordered.lastOrNull()
-                val trend = if (first == null || latest == null || first.id == latest.id) "There are not enough weight entries to describe a trend yet." else {
+                val trend = if (first == null || latest == null) "No weight entries were saved from $oldest to $newest." else if (first.id == latest.id) "One weight entry from $oldest to $newest: ${"%.1f".format(first.kilograms)} kg." else {
                     val days = java.time.Duration.between(first.recordedAt, latest.recordedAt).toDays().coerceAtLeast(1)
                     val change = latest.kilograms - first.kilograms
                     "${ordered.size} weight entries from ${first.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate()} to ${latest.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate()}: ${"%.1f".format(first.kilograms)} kg to ${"%.1f".format(latest.kilograms)} kg (${"%+.1f".format(change)} kg over $days days)."
                 }
-                messages = messages + PrivateChatMessage(trend, false)
+                messages = messages + PrivateChatMessage(trend, false, localEvidence = true)
                 askCoach("""MEMBER_LANGUAGE: ${coachReplyLanguage(submittedQuestion)}
                     MEMBER_QUESTION: $submittedQuestion
                     [LOCAL_FACTS]
@@ -917,17 +1091,59 @@ private fun PrivateAssistantChat(
                     [/LOCAL_FACTS]
                     Explain only these facts in three short supportive sentences. Do not mention nutrition goals or give medical advice.""".trimIndent(), snapshot)
             }
-            "read_meals" -> {
-                val date = when (call.period) { "day_before_yesterday" -> today.minusDays(2); "yesterday" -> today.minusDays(1); else -> today }
-                val saved = meals.filter { it.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate() == date }
-                messages = messages + PrivateChatMessage(if (saved.isEmpty()) "No meals were saved for $date." else "Meals on $date: ${saved.joinToString { MealIdentity.displayTitle(it) }}.", false)
+            is AssistantAction.QueryMealHistory -> {
+                val oldest = today.minusDays(action.fromDaysAgo.toLong())
+                val newest = today.minusDays(action.toDaysAgo.toLong())
+                val saved = meals.filter {
+                    it.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate() in oldest..newest &&
+                        (action.mealSlot == null || MealSlots.matches(it, action.mealSlot))
+                }
+                val typeLabel = action.mealSlot?.let(MealSlots::label)?.lowercase()
+                val facts = if (saved.isEmpty()) {
+                    "No ${typeLabel ?: ""} meals were saved from $oldest to $newest.".replace("No  meals", "No meals")
+                } else {
+                    "${typeLabel?.replaceFirstChar(Char::uppercase) ?: "Meals"} from $oldest to $newest: ${saved.joinToString { meal ->
+                        val local = meal.recordedAt.atZone(ZoneId.systemDefault())
+                        val timing = when {
+                            meal.mealSlot != null -> MealSlots.label(meal.mealSlot).lowercase()
+                            meal.recordedTimeKnown -> "around ${MealSlots.label(MealSlots.suggestedFor(local.toLocalTime())).lowercase()} (${local.toLocalTime().withSecond(0).withNano(0)})"
+                            else -> "time not recorded"
+                        }
+                        "${local.toLocalDate()}: ${MealIdentity.displayTitle(meal)} ($timing)"
+                    }}."
+                }
+                messages = messages + PrivateChatMessage(facts, false, localEvidence = true)
+                askCoach("""MEMBER_LANGUAGE: ${coachReplyLanguage(submittedQuestion)}
+                    MEMBER_QUESTION: $submittedQuestion
+                    [LOCAL_FACTS]
+                    $facts
+                    [/LOCAL_FACTS]
+                    Answer only from these local facts in no more than three short sentences.""".trimIndent(), snapshot)
             }
-            "draft_weight" -> call.kilograms?.let { kilograms ->
-                savedWeight = saveWeightDirect(kilograms, Instant.now())
-                messages = messages + PrivateChatMessage(if (savedWeight != null) "${"%.1f".format(kilograms)} kg saved locally." else "Weight could not be saved. Try again.", false)
+            is AssistantAction.SearchSavedDishes -> {
+                val matches = PersonalDishMatcher.search(PersonalDishQuery(name = action.query), personalDishes)
+                val facts = if (matches.isEmpty()) {
+                    "No saved private dish matched '${action.query}'."
+                } else {
+                    "Saved private dish matches for '${action.query}': ${matches.joinToString { match ->
+                        "${match.dish.name} (${match.dish.items.joinToString { it.name }}; confirmed ${match.dish.confirmationCount} ${if (match.dish.confirmationCount == 1) "time" else "times"})"
+                    }}."
+                }
+                messages = messages + PrivateChatMessage(facts, false, localEvidence = true)
+                askCoach("""MEMBER_LANGUAGE: ${coachReplyLanguage(submittedQuestion)}
+                    MEMBER_QUESTION: $submittedQuestion
+                    [LOCAL_FACTS]
+                    $facts
+                    [/LOCAL_FACTS]
+                    Answer only from these bounded saved-dish results. Say that the member can review or remove saved dishes in Privacy when useful.""".trimIndent(), snapshot)
             }
-            "draft_meal" -> askMeal(submittedQuestion)
-            else -> messages = messages + PrivateChatMessage("I can help with meals, weights, and your progress. Try asking in another way.", false)
+            is AssistantAction.DraftWeight -> {
+                savedWeight = saveWeightDirect(action.kilograms, Instant.now())
+                messages = messages + PrivateChatMessage(if (savedWeight != null) "${"%.1f".format(action.kilograms)} kg saved locally." else "Weight could not be saved. Try again.", false)
+            }
+            AssistantAction.DraftMeal -> askMeal(submittedQuestion)
+            is AssistantAction.Respond -> messages = messages + PrivateChatMessage(action.message, false)
+            AssistantAction.Clarify -> messages = messages + PrivateChatMessage("I can help with meals, weights, and your progress. Try asking in another way.", false)
         }
     }
     LaunchedEffect(modelStatus.coachReply) {
@@ -944,9 +1160,18 @@ private fun PrivateAssistantChat(
         }
         Text("This conversation stays only while Metria is open and unlocked.", color = Color(0xFF655D6E), style = MaterialTheme.typography.bodySmall)
         messages.forEach { message ->
-            Card(colors = CardDefaults.cardColors(containerColor = if (message.fromMember) PlumSoft else Color.White)) {
+            Card(colors = CardDefaults.cardColors(containerColor = when {
+                message.fromMember -> PlumSoft
+                message.localEvidence -> Color(0xFFF2F5F3)
+                else -> Color.White
+            })) {
                 if (message.fromMember) Text(message.text, modifier = Modifier.padding(14.dp), color = Ink)
-                else androidx.compose.foundation.layout.Box(Modifier.padding(14.dp)) { SafeMarkdownText(message.text, Color(0xFF4E4655)) }
+                else if (message.localEvidence) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Text("LOCAL RECORDS", color = Sage, style = MaterialTheme.typography.labelSmall)
+                        SafeMarkdownText(message.text, Color(0xFF3F4A45))
+                    }
+                } else androidx.compose.foundation.layout.Box(Modifier.padding(14.dp)) { SafeMarkdownText(message.text, Color(0xFF4E4655)) }
             }
         }
         if (modelStatus.state == "thinking" && modelStatus.assistantOperation?.startsWith("coach") == true) {
@@ -987,7 +1212,35 @@ private fun PrivateAssistantChat(
                 }
             }
         }
-        OutlinedTextField(input, { input = it }, label = { Text("Message") }, modifier = Modifier.fillMaxWidth())
+        if (startVoiceImmediately && !recordingVoice) Text("Getting Metria ready…", color = Plum, style = MaterialTheme.typography.bodySmall)
+        if (recordingVoice) Text("Listening locally… tap the robot to stop early.", color = Plum, style = MaterialTheme.typography.bodySmall)
+        voiceMessage?.let { Text(it, color = Color(0xFFB3261E), style = MaterialTheme.typography.bodySmall) }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(input, { input = it }, label = { Text("Message") }, modifier = Modifier.weight(1f))
+            IconButton(onClick = {
+                if (recordingVoice) {
+                    setVoiceRecording(false)
+                    audioRecorder.stop()?.let(::submitVoiceClip) ?: run { voiceMessage = "No local voice clip was captured. Try again." }
+                } else startVoiceCapture()
+            }, enabled = modelStatus.state == "loaded") {
+                Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                    if (recordingVoice) {
+                        Canvas(Modifier.fillMaxSize()) {
+                            drawCircle(Sage.copy(alpha = 0.18f), radius = size.minDimension * 0.44f * voiceRobotScale)
+                        }
+                    }
+                    Icon(
+                        Icons.Filled.SmartToy,
+                        contentDescription = if (recordingVoice) "Metria is listening; tap to stop" else "Speak to Metria",
+                        tint = if (recordingVoice) Sage else Plum,
+                        modifier = Modifier.graphicsLayer {
+                            val scale = if (recordingVoice) voiceRobotScale else 1f
+                            scaleX = scale; scaleY = scale
+                        },
+                    )
+                }
+            }
+        }
         Button(onClick = {
             val text = input.trim()
             if (text.isBlank()) return@Button
@@ -1050,6 +1303,10 @@ private fun coachReplyLanguage(text: String): String {
 }
 
 private fun isWeightTrendQuestion(text: String): Boolean = listOf("pérdida de peso", "perdida de peso", "mi peso", "weight loss", "weight trend").any { it in text.lowercase() }
+
+/** A safety backstop for a model action that conflicts with the member-visible transcription. */
+private fun soundsLikeMealHistoryQuestion(text: String): Boolean =
+    listOf("qué com", "que com", "what did i eat", "meals", "comidas").any { it in text.lowercase() }
 
 private fun weightTrendFacts(entries: List<WeightEntry>, cycleContext: CycleContext = CycleContext()): String {
     val ordered = entries.sortedBy(WeightEntry::recordedAt)
@@ -1348,7 +1605,7 @@ private fun HistoryScreen(entries: List<WeightEntry>, meals: List<MealEntry>, un
     val start = if (days == 0) runCatching { LocalDate.parse(customStart) }.getOrNull() else LocalDate.now().minusDays((days - 1).toLong())
     val end = if (days == 0) runCatching { LocalDate.parse(customEnd) }.getOrNull() else LocalDate.now()
     val points = WeightTrend.filter(entries, start, end)
-    Text("History", style = MaterialTheme.typography.displaySmall)
+    Text("Progress", style = MaterialTheme.typography.displaySmall)
     TabRow(selectedTabIndex = selectedTab, containerColor = Color.Transparent) {
         listOf("Weight", "Meals").forEachIndexed { index, label ->
             Tab(selected = selectedTab == index, onClick = { selectedTab = index }, text = { Text(label) })
@@ -1398,6 +1655,7 @@ private fun MealRecordCard(meal: MealEntry, onEdit: (MealEntry) -> Unit) {
                     MealIdentity.displayTitle(meal),
                     style = MaterialTheme.typography.titleMedium,
                 )
+                meal.mealSlot?.let { Text(MealSlots.label(it), color = Plum, style = MaterialTheme.typography.labelMedium) }
                 Text("${meal.source.replace('_', ' ')} - ${meal.confidence} confidence - ${meal.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate()}", color = Color(0xFF655D6E))
                 meal.nutrition?.let { nutrition ->
                     Text(nutritionSummary(nutrition), color = Color(0xFF655D6E))
@@ -1421,14 +1679,17 @@ private fun PrivacyScreen(
     unit: String,
     analysisAudits: List<LocalAnalysisAudit>,
     cycleContext: CycleContext,
+    personalDishes: List<PersonalDish>,
     changeUnit: () -> Unit,
     editCycleContext: () -> Unit,
+    deletePersonalDish: (PersonalDish) -> String?,
     archiveMessage: String?,
     exportArchive: (CharArray) -> Unit,
     importArchive: () -> Unit,
     lock: () -> Unit,
 ) {
     var exportSheet by remember { mutableStateOf(false) }
+    var savedDishesOpen by remember { mutableStateOf(false) }
     Text("Private by default", style = MaterialTheme.typography.displaySmall)
     Card(colors = CardDefaults.cardColors(containerColor = Color.White)) { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Your data stays with you", style = MaterialTheme.typography.titleLarge)
@@ -1463,6 +1724,19 @@ private fun PrivacyScreen(
         Text(if (cycleContext.enabled) "Enabled. Period-start dates stay encrypted here and only add cautious context to short-term weight changes." else "Optional. Metria will not infer this from your identity or use it unless you choose to enable it.", color = Color(0xFF655D6E))
         Button(onClick = editCycleContext, modifier = Modifier.fillMaxWidth()) { Text(if (cycleContext.enabled) "Edit private cycle context" else "Set up private cycle context") }
     } }
+    Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Saved private dishes", style = MaterialTheme.typography.titleMedium)
+            Text(
+                if (personalDishes.isEmpty()) "No dishes remembered yet. You choose what Metria remembers during meal review."
+                else "${personalDishes.size} ${if (personalDishes.size == 1) "dish" else "dishes"} encrypted on this phone.",
+                color = Color(0xFF655D6E),
+            )
+            Button(onClick = { savedDishesOpen = true }, modifier = Modifier.fillMaxWidth()) {
+                Text(if (personalDishes.isEmpty()) "About private dish memory" else "Manage saved dishes")
+            }
+        }
+    }
     Card(colors = CardDefaults.cardColors(containerColor = Color.White)) { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("Encrypted recovery", style = MaterialTheme.typography.titleMedium)
         Text("Create an encrypted file you can keep yourself. Its passphrase is never stored by Metria, so losing both means the archive cannot be recovered.", color = Color(0xFF655D6E))
@@ -1478,6 +1752,11 @@ private fun PrivacyScreen(
         confirmLabel = "Choose file location",
         onDismiss = { exportSheet = false },
         onConfirm = { passphrase -> exportSheet = false; exportArchive(passphrase) },
+    )
+    if (savedDishesOpen) MetriaSavedDishesScreen(
+        dishes = personalDishes,
+        onBack = { savedDishesOpen = false },
+        onDelete = deletePersonalDish,
     )
 }
 
@@ -1555,7 +1834,7 @@ private fun CycleContextSheet(context: CycleContext, onDismiss: () -> Unit, onSa
 
 private fun formatWeight(kilograms: Double, unit: String): String = if (unit == "lb") "${"%.1f".format(WeightUnits.kilogramsToPounds(kilograms))} lb" else "${"%.1f".format(kilograms)} kg"
 
-private data class EditableMealItem(val name: String, val description: String, val grams: String, val preparation: String, val groupLabel: String? = null, val role: String = "main_food")
+private data class EditableMealItem(val name: String, val description: String, val grams: String, val preparation: String, val groupLabel: String? = null, val role: String = "main_food", val evidence: String = "seen")
 
 @Composable
 private fun PrivateReferenceOption(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
@@ -1617,7 +1896,7 @@ private fun MealConfirmationSheet(
     analysisAuditId: String?,
     savedMeals: List<MealEntry>,
     onDismiss: () -> Unit,
-    onSave: (MealEntry, List<FoodCorrection>) -> Unit,
+    onSave: (MealEntry, List<FoodCorrection>, PersonalDish?) -> Unit,
 ) {
     // M3 recovery: if a model joins independently searchable foods, split only
     // after the local catalog disproves the joined phrase; divide its draft portion.
@@ -1638,10 +1917,13 @@ private fun MealConfirmationSheet(
         }.take(12)
     }
     var items by remember(reviewItems) { mutableStateOf(reviewItems.map { item ->
-        EditableMealItem(item.name, item.description, ((item.estimatedGramsRange.min + item.estimatedGramsRange.max) / 2).toString(), item.preparation, item.groupLabel, item.role)
+        EditableMealItem(item.name, item.description, ((item.estimatedGramsRange.min + item.estimatedGramsRange.max) / 2).toString(), item.preparation, item.groupLabel, item.role, item.evidence)
     }) }
     var date by remember(proposal) { mutableStateOf(LocalDate.now().toString()) }
+    val captureTime = remember(proposal) { LocalTime.now().withSecond(0).withNano(0) }
     var title by remember(proposal) { mutableStateOf(MealIdentity.titleFor(reviewItems.map { MealEntryItem(it.name, null, null) })) }
+    var rememberAsPersonalDish by remember { mutableStateOf(false) }
+    var mealSlot by remember { mutableStateOf<String?>(null) }
     var calories by remember { mutableStateOf("") }
     var protein by remember { mutableStateOf("") }
     var carbs by remember { mutableStateOf("") }
@@ -1654,6 +1936,7 @@ private fun MealConfirmationSheet(
     var catalogMatches by remember(reviewItems, catalog) {
         mutableStateOf(reviewItems.map { item -> if (FoodCatalog.isAmbiguousModelFood(item.name)) null else catalog?.let { FoodCatalog.suggest(it, item.name, item.description, corrections) } })
     }
+    var confirmedPossibleIngredients by remember(reviewItems) { mutableStateOf(emptySet<Int>()) }
     val initialMatchIds = remember(reviewItems, catalog, corrections) { reviewItems.map { item -> catalog?.let { FoodCatalog.suggest(it, item.name, item.description, corrections)?.fdcId } } }
     var catalogSearchIndex by remember { mutableStateOf<Int?>(null) }
     val parsedGrams = items.map { it.grams.replace(',', '.').toIntOrNull()?.takeIf { grams -> grams in 1..2_000 } }
@@ -1662,7 +1945,8 @@ private fun MealConfirmationSheet(
     }
     val includedIndexes = perItemNutrition.indices.filter { index ->
         val nutrition = perItemNutrition[index]
-        nutrition?.caloriesKcal != null && nutrition.proteinGrams != null &&
+        (items[index].evidence == "seen" || index in confirmedPossibleIngredients) &&
+            nutrition?.caloriesKcal != null && nutrition.proteinGrams != null &&
             nutrition.carbohydrateGrams != null && nutrition.fatGrams != null
     }
     val catalogTotals = includedIndexes.takeIf { it.isNotEmpty() }?.map { perItemNutrition[it]!! }?.let { values ->
@@ -1691,12 +1975,19 @@ private fun MealConfirmationSheet(
     }
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
-            Modifier.padding(24.dp).padding(bottom = 72.dp).verticalScroll(rememberScrollState()),
+            Modifier.padding(24.dp).padding(bottom = 72.dp).imePadding().verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text("Confirm meal", style = MaterialTheme.typography.headlineMedium)
             Text("The assistant identified these foods, then Metria searched its offline catalog. Review every local match and portion before saving.", color = Plum)
             OutlinedTextField(title, { title = it }, label = { Text("Meal name (optional)") }, modifier = Modifier.fillMaxWidth())
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Switch(checked = rememberAsPersonalDish, onCheckedChange = { rememberAsPersonalDish = it })
+                Column {
+                    Text("Remember as my private dish", style = MaterialTheme.typography.titleSmall)
+                    Text("Metria can suggest this later. It never leaves this phone.", color = Color(0xFF655D6E), style = MaterialTheme.typography.bodySmall)
+                }
+            }
             similarMeal?.let { previous ->
                 Card(colors = CardDefaults.cardColors(containerColor = PlumSoft)) {
                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1707,9 +1998,48 @@ private fun MealConfirmationSheet(
                 }
             }
             items.forEachIndexed { index, item ->
-                if (item.groupLabel != null && (index == 0 || items[index - 1].groupLabel != item.groupLabel)) {
-                    Text(item.groupLabel, style = MaterialTheme.typography.titleMedium, color = Plum)
+                // Every detected food lives in a dish card.  A model-provided group keeps its
+                // label; an ungrouped food starts as a one-food dish that the member can name.
+                val dishName = item.groupLabel ?: item.name
+                val previousDishName = items.getOrNull(index - 1)?.let { previous -> previous.groupLabel ?: previous.name }
+                if (index == 0 || previousDishName != dishName) {
+                    Card(colors = CardDefaults.cardColors(containerColor = PlumSoft), modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(
+                                dishName,
+                                { value ->
+                                    val renamed = value.trim().takeIf(String::isNotEmpty)
+                                    items = items.mapIndexed { position, existing ->
+                                        when {
+                                            // Rename all members of an existing grouped dish.
+                                            item.groupLabel != null && existing.groupLabel == item.groupLabel -> existing.copy(groupLabel = renamed)
+                                            // A standalone detected food becomes a named dish, without
+                                            // accidentally renaming every other ungrouped ingredient.
+                                            item.groupLabel == null && position == index -> existing.copy(groupLabel = renamed)
+                                            else -> existing
+                                        }
+                                    }
+                                },
+                                label = { Text("Dish name") },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+                                Button(onClick = {
+                                    val label = item.groupLabel ?: item.name.trim().takeIf(String::isNotEmpty)
+                                    if (label != null) {
+                                        items = items + EditableMealItem("", "", "", "", groupLabel = label, evidence = "possible_inside")
+                                        catalogMatches = catalogMatches + null
+                                    }
+                                }) { Text("Add possible inside") }
+                            }
+                        }
+                    }
                 }
+                Text(
+                    if (item.evidence == "possible_inside") "Possible ingredient" else "Visible ingredient",
+                    color = Color(0xFF655D6E),
+                    style = MaterialTheme.typography.labelMedium,
+                )
                 OutlinedTextField(item.name, { value ->
                     items = items.toMutableList().also { it[index] = item.copy(name = value) }
                     catalogMatches = catalogMatches.toMutableList().also { it[index] = null }
@@ -1720,6 +2050,14 @@ private fun MealConfirmationSheet(
                     label = { Text("What Metria saw (optional)") },
                     modifier = Modifier.fillMaxWidth(),
                 )
+                if (item.evidence == "possible_inside") {
+                    Text("Possible inside this dish — Metria did not see it directly.", color = Plum, style = MaterialTheme.typography.bodySmall)
+                    Button(onClick = {
+                        confirmedPossibleIngredients = if (index in confirmedPossibleIngredients) confirmedPossibleIngredients - index else confirmedPossibleIngredients + index
+                    }, modifier = Modifier.fillMaxWidth()) {
+                        Text(if (index in confirmedPossibleIngredients) "Exclude from nutrition estimate" else "Include in nutrition estimate")
+                    }
+                }
                 Button(onClick = {
                     val roles = listOf("main_food", "side", "drink", "sauce_oil", "dry_seasoning")
                     items = items.toMutableList().also { it[index] = item.copy(role = roles[(roles.indexOf(item.role) + 1) % roles.size]) }
@@ -1786,9 +2124,10 @@ private fun MealConfirmationSheet(
             }
             if (referenceThumbnailBase64 != null) PrivateReferenceOption(keepReference) { keepReference = it }
             OutlinedTextField(date, { date = it }, label = { Text("Date - YYYY-MM-DD") }, modifier = Modifier.fillMaxWidth())
+            MealSlotSelector(mealSlot, MealSlots.suggestedFor(captureTime)) { mealSlot = it }
             error?.let { Text(it, color = Color(0xFFB3261E)) }
             Button(onClick = {
-                val recordedAt = runCatching { LocalDate.parse(date).atStartOfDay(ZoneId.systemDefault()).toInstant() }.getOrNull()
+                val recordedAt = mealInstantForDate(date, captureTime)
                 val savedItems = items.mapIndexed { index, item -> MealEntryItem(
                     item.name.trim(), parsedGrams[index], item.preparation.trim().takeIf(String::isNotEmpty),
                     catalogMatches.getOrNull(index)?.fdcId.takeIf { index in includedIndexes },
@@ -1802,7 +2141,7 @@ private fun MealConfirmationSheet(
                     estimateCoverage = if (isPartialEstimate) "partial" else "full",
                 ) }
                 val meal = if (recordedAt == null) null else MealEntry(
-                    recordedAt = recordedAt, title = title.trim().takeIf(String::isNotEmpty), items = savedItems, assumptions = proposal.assumptions,
+                    recordedAt = recordedAt, title = title.trim().takeIf(String::isNotEmpty), mealSlot = mealSlot, recordedTimeKnown = true, items = savedItems, assumptions = proposal.assumptions,
                     confidence = proposal.overallConfidence,
                     source = if (nutrition == null) "ai_estimate" else "member_confirmed_catalog",
                     nutrition = nutrition, referenceThumbnailBase64 = referenceThumbnailBase64.takeIf { keepReference },
@@ -1811,7 +2150,12 @@ private fun MealConfirmationSheet(
                 val learnedCorrections = catalogMatches.mapIndexedNotNull { index, selected ->
                     selected?.takeIf { it.fdcId != initialMatchIds[index] }?.let { FoodCorrection(items[index].name.trim(), it.fdcId) }
                 }
-                if (meal == null || !MealEntryValidation.valid(meal)) error = "Review the food names, portions (1-2,000 g), and date." else onSave(meal, learnedCorrections)
+                val personalDish = meal?.let { saved ->
+                    if (rememberAsPersonalDish) PersonalDishValidation.fromConfirmedMeal(saved, title) else null
+                }
+                if (meal == null || !MealEntryValidation.valid(meal) || (rememberAsPersonalDish && personalDish == null)) {
+                    error = if (rememberAsPersonalDish) "Give this private dish a name and review its foods before saving." else "Review the food names, portions (1-2,000 g), and date."
+                } else onSave(meal, learnedCorrections, personalDish)
             }, modifier = Modifier.fillMaxWidth()) {
                 Text(when {
                     catalogTotals == null -> "Save meal without nutrition"
@@ -1845,6 +2189,8 @@ private fun MealEditSheet(meal: MealEntry, catalog: OfflineFoodCatalog?, onDismi
     var items by remember(meal) { mutableStateOf(meal.items.map { EditableMealItem(it.name, it.description.orEmpty(), it.grams?.toString().orEmpty(), it.preparation.orEmpty(), it.groupLabel, it.role) }) }
     var title by remember(meal) { mutableStateOf(meal.title ?: MealIdentity.titleFor(meal.items)) }
     var date by remember(meal) { mutableStateOf(meal.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate().toString()) }
+    val recordedTime = remember(meal) { meal.recordedAt.atZone(ZoneId.systemDefault()).toLocalTime().withSecond(0).withNano(0) }
+    var mealSlot by remember(meal) { mutableStateOf(meal.mealSlot) }
     var calories by remember(meal) { mutableStateOf(meal.nutrition?.caloriesKcal?.toString().orEmpty()) }
     var protein by remember(meal) { mutableStateOf(meal.nutrition?.proteinGrams?.toString().orEmpty()) }
     var carbs by remember(meal) { mutableStateOf(meal.nutrition?.carbohydrateGrams?.toString().orEmpty()) }
@@ -1879,6 +2225,7 @@ private fun MealEditSheet(meal: MealEntry, catalog: OfflineFoodCatalog?, onDismi
         Column(Modifier.padding(24.dp).padding(bottom = 72.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Edit meal", style = MaterialTheme.typography.headlineMedium)
             OutlinedTextField(title, { title = it }, label = { Text("Meal name (optional)") }, modifier = Modifier.fillMaxWidth())
+            MealSlotSelector(mealSlot, MealSlots.suggestedFor(recordedTime).takeIf { meal.recordedTimeKnown }) { mealSlot = it }
             referenceThumbnail?.let { reference ->
                 Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                     Box(Modifier.size(152.dp)) {
@@ -1956,7 +2303,7 @@ private fun MealEditSheet(meal: MealEntry, catalog: OfflineFoodCatalog?, onDismi
             OutlinedTextField(date, { date = it }, label = { Text("Date - YYYY-MM-DD") }, modifier = Modifier.fillMaxWidth())
             error?.let { Text(it, color = Color(0xFFB3261E)) }
             Button(onClick = {
-                val recordedAt = runCatching { LocalDate.parse(date).atStartOfDay(ZoneId.systemDefault()).toInstant() }.getOrNull()
+                val recordedAt = mealInstantForDate(date, recordedTime)
                 val updatedItems = items.mapIndexed { index, item -> MealEntryItem(
                     item.name.trim(),
                     if (isCatalogMeal) parsedCatalogGrams[index] else item.grams.replace(',', '.').toIntOrNull(),
@@ -1981,6 +2328,7 @@ private fun MealEditSheet(meal: MealEntry, catalog: OfflineFoodCatalog?, onDismi
                 val updated = if (recordedAt == null) null else meal.copy(
                     recordedAt = recordedAt,
                     title = title.trim().takeIf(String::isNotEmpty),
+                    mealSlot = mealSlot,
                     items = updatedItems,
                     source = if (isCatalogMeal) "member_confirmed_catalog" else meal.source,
                     nutrition = nutrition,
@@ -2017,6 +2365,26 @@ private fun MealEditSheet(meal: MealEntry, catalog: OfflineFoodCatalog?, onDismi
             confirmButton = { Button(onClick = onDelete) { Text("Delete") } },
             dismissButton = { Button(onClick = { confirmMealDeletion = false }) { Text("Keep meal") } },
         )
+    }
+}
+
+@Composable
+private fun MealSlotSelector(selected: String?, suggested: String? = null, choose: (String?) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            suggested?.let { "Meal type (optional) - suggested: ${MealSlots.label(it)}" } ?: "Meal type (optional)",
+            style = MaterialTheme.typography.labelLarge,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf("breakfast", "lunch", "dinner", "snack").forEach { slot ->
+                FilterChip(
+                    selected = selected == slot,
+                    onClick = { choose(if (selected == slot) null else slot) },
+                    label = { Text(MealSlots.label(slot)) },
+                )
+            }
+        }
+        Text("Optional — only a type you choose is used for personalised meal suggestions.", color = Color(0xFF655D6E), style = MaterialTheme.typography.bodySmall)
     }
 }
 
@@ -2073,6 +2441,7 @@ private fun CatalogMealConfirmationSheet(
     if (catalog == null) return
     var grams by remember(food) { mutableStateOf(FoodCatalog.suggestedGrams(food).toString()) }
     var date by remember { mutableStateOf(LocalDate.now().toString()) }
+    val captureTime = remember { LocalTime.now().withSecond(0).withNano(0) }
     var error by remember { mutableStateOf<String?>(null) }
     val parsedGrams = grams.replace(',', '.').toIntOrNull()
     val calculated = parsedGrams?.takeIf { it in 1..2_000 }?.let { FoodCatalog.calculate(food, it) }
@@ -2104,7 +2473,7 @@ private fun CatalogMealConfirmationSheet(
             Button(onClick = {
                 val safeGrams = parsedGrams?.takeIf { it in 1..2_000 }
                 val nutrition = safeGrams?.let { FoodCatalog.calculate(food, it) }
-                val recordedAt = runCatching { LocalDate.parse(date).atStartOfDay(ZoneId.systemDefault()).toInstant() }.getOrNull()
+                val recordedAt = mealInstantForDate(date, captureTime)
                 val meal = if (safeGrams == null || nutrition == null || recordedAt == null) null else MealEntry(
                     recordedAt = recordedAt,
                     items = listOf(MealEntryItem(
@@ -2152,6 +2521,7 @@ private fun ManualMealTextSheet(onDismiss: () -> Unit, onSubmit: (String) -> Uni
 private fun LabelConfirmationSheet(draft: LabelNutritionDraft, referenceThumbnailBase64: String?, onDismiss: () -> Unit, onSave: (MealEntry) -> Unit) {
     var name by remember { mutableStateOf("") }
     var date by remember { mutableStateOf(LocalDate.now().toString()) }
+    val captureTime = remember { LocalTime.now().withSecond(0).withNano(0) }
     var calories by remember { mutableStateOf(draft.caloriesKcal?.toString().orEmpty()) }
     var protein by remember { mutableStateOf(draft.proteinGrams?.toString().orEmpty()) }
     var carbs by remember { mutableStateOf(draft.carbohydrateGrams?.toString().orEmpty()) }
@@ -2175,7 +2545,7 @@ private fun LabelConfirmationSheet(draft: LabelNutritionDraft, referenceThumbnai
                 val values = listOf(value(calories), value(protein), value(carbs), value(fat))
                 val raw = listOf(calories, protein, carbs, fat)
                 val invalid = raw.zip(values).any { (input, parsed) -> input.isNotBlank() && parsed == null }
-                val recordedAt = runCatching { LocalDate.parse(date).atStartOfDay(ZoneId.systemDefault()).toInstant() }.getOrNull()
+                val recordedAt = mealInstantForDate(date, captureTime)
                 val meal = if (recordedAt == null) null else MealEntry(
                     recordedAt = recordedAt,
                     items = listOf(MealEntryItem(name.trim(), null, null)),

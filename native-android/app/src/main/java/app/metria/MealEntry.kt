@@ -1,6 +1,8 @@
 package app.metria
 
 import java.time.Instant
+import java.time.LocalTime
+import java.time.ZoneId
 import java.util.UUID
 
 /**
@@ -15,6 +17,10 @@ data class MealEntry(
     val id: String = UUID.randomUUID().toString(),
     val recordedAt: Instant = Instant.now(),
     val title: String? = null,
+    /** Member-selected classification; older records intentionally remain null. */
+    val mealSlot: String? = null,
+    /** False means an older record was saved with a date only. */
+    val recordedTimeKnown: Boolean = true,
     val items: List<MealEntryItem>,
     val assumptions: List<String>,
     val confidence: String,
@@ -54,6 +60,7 @@ data class MealNutrition(
 object MealEntryValidation {
     fun valid(entry: MealEntry): Boolean =
         (entry.title == null || entry.title.trim().length in 1..120) &&
+            (entry.mealSlot == null || entry.mealSlot in MealSlots.allowed) &&
             entry.items.isNotEmpty() && entry.items.size <= 12 &&
             entry.items.all { item ->
                 item.name.trim().length in 1..120 &&
@@ -81,4 +88,29 @@ object MealEntryValidation {
             nutrition.carbohydrateGrams,
             nutrition.fatGrams,
         ).all { it == null || it in 0.0..10_000.0 }
+}
+
+object MealSlots {
+    val allowed = setOf("breakfast", "lunch", "dinner", "snack")
+
+    fun label(slot: String?): String = when (slot) {
+        "breakfast" -> "Breakfast"
+        "lunch" -> "Lunch"
+        "dinner" -> "Dinner"
+        "snack" -> "Snack"
+        else -> "Not classified"
+    }
+
+    /** A private hint only; a member-selected type always takes precedence. */
+    fun suggestedFor(time: LocalTime): String = when (time.hour) {
+        in 5..10 -> "breakfast"
+        in 11..15 -> "lunch"
+        in 16..18 -> "snack"
+        else -> "dinner"
+    }
+
+    fun matches(entry: MealEntry, requested: String): Boolean =
+        entry.mealSlot == requested ||
+            (entry.mealSlot == null && entry.recordedTimeKnown &&
+                suggestedFor(entry.recordedAt.atZone(ZoneId.systemDefault()).toLocalTime()) == requested)
 }
