@@ -156,6 +156,48 @@ privacy.
 **Acceptance:** the app never converts an image directly into a saved meal;
 the member sees the interpretation, uncertainty, and assumptions first.
 
+## Milestone 5.5 — Private dish memory and retrieval
+
+**Outcome:** member-confirmed corrections make repeated personal meals easier
+without pretending that the vision model retrained itself or recognized a dish
+with certainty.
+
+- [x] Store a bounded structured `PersonalDish` record inside the encrypted
+  vault, including its member-chosen name, confirmed components, optional
+  aliases, confirmation history, and optional reduced reference thumbnail.
+- [x] Let the member opt each reviewed dish in or out before it is remembered.
+- [x] Add deterministic, explainable retrieval over normalized names and
+  aliases, confirmed catalog identities, component overlap, preparation, and
+  confirmation history. Return at most three candidates.
+- [x] Surface remembered dishes as suggestions during review; accepting,
+  correcting, or rejecting a suggestion must remain reversible until the meal
+  is saved.
+- [x] Use an exact encrypted whole-meal reference only as a clearly labelled
+  same-photo fallback for up to three candidates. Do not present it as
+  dish-level recognition.
+- [x] Save the reviewed meal, food corrections, and remembered-dish updates in
+  one encrypted-vault operation so a partial write cannot teach memory without
+  saving the meal, or vice versa.
+- [x] Give the assistant a bounded `search_my_saved_dishes` capability that
+  returns only relevant structured candidates and never exposes the full vault.
+- [x] Add member-facing saved-dish management under Privacy, including removal.
+- [x] Verify on the physical Android pilot phone that a remembered San Jacobo
+  survives an in-place app update, is offered from exact same-photo context,
+  and replaces the provisional Cutlet identity only after member acceptance.
+- [ ] Test false matches, renamed dishes, grouped components, hidden
+  ingredients, duplicate names, persistence/restart, and repeat-meal use on a
+  physical Android phone.
+
+**Acceptance:** after the member confirms and remembers a corrected dish, a
+later similar analysis can offer “Looks like your …” with an explanation; the
+member may accept, edit, or ignore it, and no memory or meal change is persisted
+until the final reviewed save succeeds.
+
+**Future enhancement:** combine this structured retrieval with an on-device
+visual embedding as a candidate signal. Visual similarity supplements rather
+than replaces the confirmed component structure, and does not require a vector
+database for the expected personal collection size.
+
 ## Milestone 6 — Private alpha and standalone release readiness
 
 **Outcome:** a small independent tester group can use Metria safely.
@@ -181,7 +223,8 @@ Metria recovery is a member-held `.metria` archive encrypted with a
 member-created passphrase. It is independent from the device-bound biometric
 key, so it can be restored to a newly created vault on another phone. The
 archive includes member-confirmed weights, meals, optional confirmed reference
-thumbnails, goals, unit choice, cycle context, and food corrections. It
+thumbnails, goals, unit choice, cycle context, food corrections, and saved
+private dishes. It
 excludes Android Keystore keys, model artifacts, temporary images, chat,
 diagnostics, and local inference audit metadata. Import must authenticate and
 validate the complete archive, show record counts, and obtain explicit
@@ -193,4 +236,5 @@ replacement confirmation before writing the receiving vault.
 4. M3 transparent text-assisted meals.
 5. M4 local action assistant.
 6. M5 persisted image/OCR assistance.
-7. M6 private alpha and store readiness.
+7. M5.5 private dish memory and retrieval.
+8. M6 private alpha and store readiness.
