@@ -18,7 +18,6 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Home
@@ -31,11 +30,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -62,6 +59,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -89,6 +87,7 @@ import androidx.core.content.ContextCompat
 import app.metria.ui.navigation.MetriaBottomNavigation
 import app.metria.ui.components.MetriaActionSheet
 import app.metria.ui.screens.MetriaMealReviewSheet
+import app.metria.ui.screens.MetriaProgressScreen
 import app.metria.ui.screens.MetriaSavedDishesScreen
 import app.metria.ui.screens.MetriaTodayScreen
 import app.metria.ui.theme.MetriaColors
@@ -240,7 +239,15 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                                 onEditNutritionTargets = { editNutritionTargets = true },
                                 onOpenProgress = { destination = "History" },
                             )
-                            "History" -> HistoryScreen(vaultStatus.entries, vaultStatus.meals, vaultStatus.displayUnit, onEdit = { editEntry = it }, onDelete = { deleteEntry = it }, onEditMeal = { editMeal = it })
+                            "History" -> MetriaProgressScreen(
+                                entries = vaultStatus.entries,
+                                meals = vaultStatus.meals,
+                                unit = vaultStatus.displayUnit,
+                                nutritionTargets = vaultStatus.nutritionTargets,
+                                onEditWeight = { editEntry = it },
+                                onEditMeal = { editMeal = it },
+                                onEditNutritionTargets = { editNutritionTargets = true },
+                            )
                             "Assistant" -> AssistantScreen(
                                 modelStatus = modelStatus,
                                 showLoadingPreview = false,
@@ -371,7 +378,18 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                         }
                     }
                 }
-                if (addSheet || editEntry != null) WeightBottomSheet(editEntry, voiceDraft, onDismiss = { addSheet = false; editEntry = null; voiceDraft = null }) { kilograms, note, date ->
+                if (addSheet || editEntry != null) WeightBottomSheet(
+                    entry = editEntry,
+                    voiceDraft = voiceDraft,
+                    onDismiss = { addSheet = false; editEntry = null; voiceDraft = null },
+                    onDelete = editEntry?.let { entry ->
+                        {
+                            deleteEntry = entry
+                            editEntry = null
+                            voiceDraft = null
+                        }
+                    },
+                ) { kilograms, note, date ->
                     status = editEntry?.let { vault.updateWeight(it.id, kilograms, note, date) } ?: vault.addWeight(kilograms, note, date)
                     addSheet = false
                     editEntry = null
@@ -1596,79 +1614,21 @@ private fun NutritionTargetsSheet(targets: NutritionTargets?, onDismiss: () -> U
     }
 }
 
-@Composable
-private fun HistoryScreen(entries: List<WeightEntry>, meals: List<MealEntry>, unit: String, onEdit: (WeightEntry) -> Unit, onDelete: (WeightEntry) -> Unit, onEditMeal: (MealEntry) -> Unit) {
-    var days by remember { mutableStateOf(30) }
-    var selectedTab by remember { mutableStateOf(0) }
-    var customStart by remember { mutableStateOf("") }
-    var customEnd by remember { mutableStateOf("") }
-    val start = if (days == 0) runCatching { LocalDate.parse(customStart) }.getOrNull() else LocalDate.now().minusDays((days - 1).toLong())
-    val end = if (days == 0) runCatching { LocalDate.parse(customEnd) }.getOrNull() else LocalDate.now()
-    val points = WeightTrend.filter(entries, start, end)
-    Text("Progress", style = MaterialTheme.typography.displaySmall)
-    TabRow(selectedTabIndex = selectedTab, containerColor = Color.Transparent) {
-        listOf("Weight", "Meals").forEachIndexed { index, label ->
-            Tab(selected = selectedTab == index, onClick = { selectedTab = index }, text = { Text(label) })
-        }
-    }
-    if (selectedTab == 0) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        listOf(7, 30, 90).forEach { option -> FilterChip(selected = days == option, onClick = { days = option }, label = { Text("${option}D") }) }
-        FilterChip(selected = days == 0, onClick = { days = 0 }, label = { Text("Custom") })
-    }
-    if (selectedTab == 0) {
-    if (days == 0) { OutlinedTextField(customStart, { customStart = it }, label = { Text("Start · YYYY-MM-DD") }, modifier = Modifier.fillMaxWidth()); OutlinedTextField(customEnd, { customEnd = it }, label = { Text("End · YYYY-MM-DD") }, modifier = Modifier.fillMaxWidth()) }
-    }
-    if (selectedTab == 0) Card(colors = CardDefaults.cardColors(containerColor = Color.White)) { Column(Modifier.padding(20.dp)) {
-        Text("Weight trend", style = MaterialTheme.typography.titleMedium)
-        Text(WeightTrend.description(points), color = Color(0xFF655D6E))
-        if (points.size >= 2) MiniTrend(points)
-    } }
-    if (selectedTab == 0) Text("Entries", style = MaterialTheme.typography.titleLarge)
-    if (selectedTab == 0) entries.sortedByDescending(WeightEntry::recordedAt).forEach { entry ->
-        Card(colors = CardDefaults.cardColors(containerColor = Color.White)) { Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-            Column { Text(formatWeight(entry.kilograms, unit), style = MaterialTheme.typography.titleMedium); entry.note?.let { Text(it, color = Color(0xFF655D6E)) } }
-            Column(horizontalAlignment = Alignment.End) {
-                Text(entry.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate().toString(), color = Color(0xFF655D6E))
-                Row {
-                    IconButton(onClick = { onEdit(entry) }) { Icon(Icons.Default.Edit, contentDescription = "Edit weight entry") }
-                    IconButton(onClick = { onDelete(entry) }) { Icon(Icons.Default.Delete, contentDescription = "Delete weight entry") }
-                }
-            }
-        } }
-    }
-    if (selectedTab == 1 && meals.isNotEmpty()) {
-        Text("Meals", style = MaterialTheme.typography.titleLarge)
-        meals.sortedByDescending(MealEntry::recordedAt).forEach { meal ->
-            MealRecordCard(meal, onEditMeal)
-        }
-    }
-}
-
+/** Retained only for legacy Today/meal-list helpers while those screens are migrated. */
 @Composable
 private fun MealRecordCard(meal: MealEntry, onEdit: (MealEntry) -> Unit) {
     Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
-        val photo = meal.referenceThumbnailBase64
-        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).clickable { onEdit(meal) }) {
-            photo?.let { HistoryReferenceThumbnail(it) }
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(
-                    MealIdentity.displayTitle(meal),
-                    style = MaterialTheme.typography.titleMedium,
-                )
+        Row(
+            Modifier.fillMaxWidth().clickable { onEdit(meal) }.padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            meal.referenceThumbnailBase64?.let { ReferenceThumbnail(it) }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(MealIdentity.displayTitle(meal), style = MaterialTheme.typography.titleMedium)
                 meal.mealSlot?.let { Text(MealSlots.label(it), color = Plum, style = MaterialTheme.typography.labelMedium) }
-                Text("${meal.source.replace('_', ' ')} - ${meal.confidence} confidence - ${meal.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate()}", color = Color(0xFF655D6E))
-                meal.nutrition?.let { nutrition ->
-                    Text(nutritionSummary(nutrition), color = Color(0xFF655D6E))
-                    if (nutrition.estimateCoverage == "partial") Text(
-                        "Partial estimate - excludes: ${meal.items.filter { it.catalogFoodId == null }.joinToString { it.name }}.",
-                        color = Color(0xFF655D6E),
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                } ?: Text(
-                    "No nutrition estimate - one or more foods were not matched locally.",
-                    color = Color(0xFF655D6E),
-                    style = MaterialTheme.typography.bodySmall,
-                )
+                meal.nutrition?.let { Text(nutritionSummary(it), color = Color(0xFF655D6E)) }
+                    ?: Text("Nutrition needs review", color = Color(0xFF655D6E))
             }
         }
     }
@@ -1864,24 +1824,6 @@ private fun ReferenceThumbnail(encoded: String, size: androidx.compose.ui.unit.D
             bitmap = it,
             contentDescription = "Private meal reference",
             modifier = Modifier.size(size),
-        )
-    }
-}
-
-@Composable
-private fun HistoryReferenceThumbnail(encoded: String) {
-    val bitmap = remember(encoded) {
-        runCatching {
-            val bytes = Base64.decode(encoded, Base64.DEFAULT)
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
-        }.getOrNull()
-    }
-    bitmap?.let {
-        Image(
-            bitmap = it,
-            contentDescription = "Private meal reference",
-            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-            modifier = Modifier.width(116.dp).fillMaxHeight(),
         )
     }
 }
@@ -2573,7 +2515,13 @@ private fun MiniTrend(points: List<WeightTrendPoint>) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun WeightBottomSheet(entry: WeightEntry?, voiceDraft: VoiceWeightDraft?, onDismiss: () -> Unit, save: (Double, String?, Instant) -> Unit) {
+private fun WeightBottomSheet(
+    entry: WeightEntry?,
+    voiceDraft: VoiceWeightDraft?,
+    onDismiss: () -> Unit,
+    onDelete: (() -> Unit)? = null,
+    save: (Double, String?, Instant) -> Unit,
+) {
     var value by remember(entry, voiceDraft) { mutableStateOf(entry?.kilograms?.toString() ?: voiceDraft?.kilograms?.toString().orEmpty()) }; var note by remember(entry) { mutableStateOf(entry?.note.orEmpty()) }; var date by remember(entry, voiceDraft) { mutableStateOf(entry?.recordedAt?.atZone(ZoneId.systemDefault())?.toLocalDate()?.toString() ?: voiceDraft?.recordedAt?.atZone(ZoneId.systemDefault())?.toLocalDate()?.toString().orEmpty()) }; var error by remember { mutableStateOf<String?>(null) }
     ModalBottomSheet(onDismissRequest = onDismiss) { Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(if (entry == null) "Record weight" else "Edit weight", style = MaterialTheme.typography.headlineMedium)
@@ -2584,5 +2532,10 @@ private fun WeightBottomSheet(entry: WeightEntry?, voiceDraft: VoiceWeightDraft?
         OutlinedTextField(note, { note = it }, label = { Text("A private note (optional)") }, modifier = Modifier.fillMaxWidth())
         error?.let { Text(it, color = Color(0xFFB3261E)) }
         Button(onClick = { val kg = value.replace(',', '.').toDoubleOrNull(); val instant = if (date.isBlank()) Instant.now() else runCatching { LocalDate.parse(date).atStartOfDay(ZoneId.systemDefault()).toInstant() }.getOrNull(); if (kg == null || instant == null || !WeightUnits.isValidKilograms(kg)) error = "Enter 15–500 kg and a valid optional date." else save(kg, note, instant) }, modifier = Modifier.fillMaxWidth()) { Text("Save locally") }
+        if (entry != null && onDelete != null) {
+            TextButton(onClick = onDelete, modifier = Modifier.fillMaxWidth()) {
+                Text("Delete weight entry", color = MetriaColors.Danger)
+            }
+        }
     } }
 }

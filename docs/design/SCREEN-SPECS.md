@@ -46,6 +46,8 @@ These are prototype contracts for the first redesign pass. Visual mockups must b
 **Secondary action:** set or edit a goal in context.  
 **Rule:** do not place Today’s full dashboard inside Progress.
 
+**Approved first slice:** use a fixed seven-day range including today with Weight, Calories, and Protein selectors. Selecting a metric surfaces its day value and applicable member-entered goal; selecting a chart day reveals only that day’s editable weight or meal entries in place. Partial nutrition remains included only as a visibly marked partial estimate. “All history” opens date-grouped Weight and Meals tabs containing every saved record; Android Back restores the unchanged seven-day view.
+
 ## Meal review
 
 **Purpose:** turn an assistant draft into a member-confirmed meal.

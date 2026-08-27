@@ -63,10 +63,12 @@ These flows define member intent and state transitions. They do not prescribe a 
 2. Progress defaults to the last seven days including today.
 3. The selected metric is visually dominant; targets are context, not the headline.
 4. Tapping a day reveals its meals and weights without navigating away unnecessarily.
-5. Complete and partial nutrition are visually distinct and explained on demand.
-6. Assistant insights use only approved local tools and the selected period.
+5. “All history” opens every saved weight and meal, grouped newest date first; tapping a row opens its existing editor.
+6. Back returns to the same seven-day Progress state without changing records.
+7. Complete and partial nutrition are visually distinct and explained on demand.
+8. Assistant insights use only approved local tools and the selected period.
 
-**States:** no data, partial estimates only, goal absent, one-day history, selected day, changed range, cycle-aware context enabled/disabled.
+**States:** no data, partial estimates only, goal absent, one-day history, selected day, all history, empty history tab, changed range, cycle-aware context enabled/disabled.
 
 ## 6. Ask Metria
 
