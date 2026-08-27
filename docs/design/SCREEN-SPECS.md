@@ -96,6 +96,8 @@ These are prototype contracts for the first redesign pass. Visual mockups must b
 - Development diagnostics are absent from release UI and live behind one explicit development-only entry.
 - Destructive actions have clear consequences and confirmation.
 
+**Approved first slice:** use one calm, scrollable settings hub. Lead with the encrypted-on-device promise, then group personal settings (units, member-entered goals, cycle context), private features (local assistant status and saved dishes), encrypted archive actions, and About. Routine rows reveal their current state before opening a focused editor or detail. Archive creation and restoration remain separate actions. Locking Metria is visually separate at the end, and development diagnostics appear only as one explicit debug-build row.
+
 ## First run and model setup
 
 **Purpose:** establish trust and complete required offline-assistant setup.

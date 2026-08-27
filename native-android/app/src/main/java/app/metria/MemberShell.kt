@@ -87,8 +87,8 @@ import androidx.core.content.ContextCompat
 import app.metria.ui.navigation.MetriaBottomNavigation
 import app.metria.ui.components.MetriaActionSheet
 import app.metria.ui.screens.MetriaMealReviewSheet
+import app.metria.ui.screens.MetriaPrivacySettingsScreen
 import app.metria.ui.screens.MetriaProgressScreen
-import app.metria.ui.screens.MetriaSavedDishesScreen
 import app.metria.ui.screens.MetriaTodayScreen
 import app.metria.ui.theme.MetriaColors
 import app.metria.ui.theme.MetriaTheme
@@ -287,30 +287,34 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                                 beginImageFlow = { activity.beginLocalImageFlow() },
                                 finishCooldown = { modelStatus = activity.finishLocalImageCooldown() },
                             )
-                            else -> PrivacyScreen(
-                                vaultStatus.displayUnit,
-                                vaultStatus.analysisAudits,
-                                vaultStatus.cycleContext,
-                                vaultStatus.personalDishes,
-                                { status = vault.setDisplayUnit(if (vaultStatus.displayUnit == "kg") "lb" else "kg") },
-                                { editCycleContext = true },
-                                { dish ->
+                            else -> MetriaPrivacySettingsScreen(
+                                unit = vaultStatus.displayUnit,
+                                nutritionTargets = vaultStatus.nutritionTargets,
+                                modelStatus = modelStatus,
+                                analysisAudits = vaultStatus.analysisAudits,
+                                cycleContext = vaultStatus.cycleContext,
+                                personalDishes = vaultStatus.personalDishes,
+                                archiveMessage = archiveMessage,
+                                onChangeUnit = { status = vault.setDisplayUnit(if (vaultStatus.displayUnit == "kg") "lb" else "kg") },
+                                onEditNutritionTargets = { editNutritionTargets = true },
+                                onEditCycleContext = { editCycleContext = true },
+                                onDeletePersonalDish = { dish ->
                                     status = vault.deletePersonalDish(dish.id)
                                     (status as? EncryptedVault.Status.Failed)?.message
                                 },
-                                archiveMessage = archiveMessage,
-                                exportArchive = { passphrase ->
+                                onExportArchive = { passphrase ->
                                     exportPassphrase = passphrase
                                     archiveMessage = null
                                     activity.beginExternalArchiveFlow()
                                     archiveExportLauncher.launch("metria-recovery-${LocalDate.now()}.metria")
                                 },
-                                importArchive = {
+                                onImportArchive = {
                                     archiveMessage = null
                                     activity.beginExternalArchiveFlow()
                                     archiveImportLauncher.launch(arrayOf("application/octet-stream", "application/json", "*/*"))
                                 },
-                            ) { activity.lockVault() }
+                                onLock = { activity.lockVault() },
+                            )
                         }
                     }
                 }
@@ -1632,92 +1636,6 @@ private fun MealRecordCard(meal: MealEntry, onEdit: (MealEntry) -> Unit) {
             }
         }
     }
-}
-
-@Composable
-private fun PrivacyScreen(
-    unit: String,
-    analysisAudits: List<LocalAnalysisAudit>,
-    cycleContext: CycleContext,
-    personalDishes: List<PersonalDish>,
-    changeUnit: () -> Unit,
-    editCycleContext: () -> Unit,
-    deletePersonalDish: (PersonalDish) -> String?,
-    archiveMessage: String?,
-    exportArchive: (CharArray) -> Unit,
-    importArchive: () -> Unit,
-    lock: () -> Unit,
-) {
-    var exportSheet by remember { mutableStateOf(false) }
-    var savedDishesOpen by remember { mutableStateOf(false) }
-    Text("Private by default", style = MaterialTheme.typography.displaySmall)
-    Card(colors = CardDefaults.cardColors(containerColor = Color.White)) { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Your data stays with you", style = MaterialTheme.typography.titleLarge)
-        Text("Weight entries are encrypted on this phone. Metria has no account, advertising, analytics, or default sync.")
-        Text("Optional photo assistance is processed locally and temporary copies are deleted after use. A reduced reference thumbnail is kept only when you confirm an entry and leave that option enabled.")
-    } }
-    if (BuildConfig.DEBUG) {
-        Card(colors = CardDefaults.cardColors(containerColor = PlumSoft)) {
-            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Development-only local analysis audit", style = MaterialTheme.typography.titleMedium)
-                Text("Encrypted audit metadata only. It contains no photo or model response.", color = Color(0xFF655D6E), style = MaterialTheme.typography.bodySmall)
-                if (analysisAudits.isEmpty()) {
-                    Text("No local image analyses recorded yet.", color = Color(0xFF655D6E))
-                } else {
-                    analysisAudits.sortedByDescending(LocalAnalysisAudit::completedAt).take(10).forEach { audit ->
-                        Text(
-                            "${audit.operation.replace('_', ' ')} · ${"%.1f".format(audit.durationMillis / 1_000.0)} s · ${audit.outcome.replace('_', ' ')}",
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                        Text(
-                            "${audit.modelId}${audit.failureCategory?.let { " · $it" }.orEmpty()}",
-                            color = Color(0xFF655D6E),
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                }
-            }
-        }
-    }
-    Card(colors = CardDefaults.cardColors(containerColor = Color.White)) { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("Cycle-aware weight insights", style = MaterialTheme.typography.titleMedium)
-        Text(if (cycleContext.enabled) "Enabled. Period-start dates stay encrypted here and only add cautious context to short-term weight changes." else "Optional. Metria will not infer this from your identity or use it unless you choose to enable it.", color = Color(0xFF655D6E))
-        Button(onClick = editCycleContext, modifier = Modifier.fillMaxWidth()) { Text(if (cycleContext.enabled) "Edit private cycle context" else "Set up private cycle context") }
-    } }
-    Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Saved private dishes", style = MaterialTheme.typography.titleMedium)
-            Text(
-                if (personalDishes.isEmpty()) "No dishes remembered yet. You choose what Metria remembers during meal review."
-                else "${personalDishes.size} ${if (personalDishes.size == 1) "dish" else "dishes"} encrypted on this phone.",
-                color = Color(0xFF655D6E),
-            )
-            Button(onClick = { savedDishesOpen = true }, modifier = Modifier.fillMaxWidth()) {
-                Text(if (personalDishes.isEmpty()) "About private dish memory" else "Manage saved dishes")
-            }
-        }
-    }
-    Card(colors = CardDefaults.cardColors(containerColor = Color.White)) { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("Encrypted recovery", style = MaterialTheme.typography.titleMedium)
-        Text("Create an encrypted file you can keep yourself. Its passphrase is never stored by Metria, so losing both means the archive cannot be recovered.", color = Color(0xFF655D6E))
-        Button(onClick = { exportSheet = true }, modifier = Modifier.fillMaxWidth()) { Text("Create encrypted archive") }
-        Button(onClick = importArchive, modifier = Modifier.fillMaxWidth()) { Text("Restore encrypted archive") }
-        archiveMessage?.let { Text(it, color = if (it.startsWith("Archive was not") || it.startsWith("Recovery did not") || it.startsWith("Archive could not")) Color(0xFFB3261E) else Sage) }
-    } }
-    Button(onClick = changeUnit, modifier = Modifier.fillMaxWidth()) { Text(if (unit == "kg") "Use pounds" else "Use kilograms") }
-    Button(onClick = lock, modifier = Modifier.fillMaxWidth()) { Text("Lock vault") }
-    if (exportSheet) ArchivePassphraseSheet(
-        title = "Protect recovery archive",
-        detail = "Choose a passphrase with at least 12 characters. Metria cannot reset it or recover the archive for you.",
-        confirmLabel = "Choose file location",
-        onDismiss = { exportSheet = false },
-        onConfirm = { passphrase -> exportSheet = false; exportArchive(passphrase) },
-    )
-    if (savedDishesOpen) MetriaSavedDishesScreen(
-        dishes = personalDishes,
-        onBack = { savedDishesOpen = false },
-        onDelete = deletePersonalDish,
-    )
 }
 
 @Composable
