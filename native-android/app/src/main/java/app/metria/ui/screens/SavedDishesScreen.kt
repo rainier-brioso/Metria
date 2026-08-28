@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import app.metria.PersonalDish
+import app.metria.PersonalDishStructure
 import app.metria.ui.theme.MetriaColors
 
 @Composable
@@ -105,7 +106,7 @@ fun MetriaSavedDishesScreen(
                                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                                         Text(dish.name, style = MaterialTheme.typography.titleMedium)
                                         Text(
-                                            dish.items.joinToString { it.name },
+                                            PersonalDishStructure.componentItems(dish).joinToString { it.name },
                                             color = MetriaColors.InkMuted,
                                             style = MaterialTheme.typography.bodySmall,
                                             maxLines = 2,

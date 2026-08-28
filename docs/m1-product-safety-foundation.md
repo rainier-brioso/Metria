@@ -47,7 +47,9 @@ prompt, or vault identifier.
 ## Assistant safety rules
 
 - Assistant and OCR output are drafts, never facts or commands.
-- Only a member tap on a confirmation screen may write a weight or meal entry.
+- A meal always requires member review and an explicit save. A valid assistant weight action
+  may save directly only when it produces a visible reversible card with Edit and Undo and
+  uses durable replay protection. Other writes require their focused confirmation flow.
 - Use neutral language such as “record”, “trend”, “estimate”, and “review”.
   Do not praise/reproach eating, weight, or compliance.
 - Do not diagnose conditions, prescribe diets, give medication guidance, or
@@ -57,8 +59,8 @@ prompt, or vault identifier.
   health professional or local emergency services for urgent symptoms.”
 - A failed, uncertain, malformed, or unavailable assistant result must retain
   the member's manual-entry path without inventing values.
-- Voice/App Actions may prefill a validated draft after vault unlock; no value
-  may be written from a voice handoff without the same confirmation tap.
+- Voice/App Actions may prefill a validated draft after vault unlock. Direct voice weight
+  recording is permitted only under the same bounded, reversible, idempotent policy as chat.
 
 ## Nutrition confidence labels
 

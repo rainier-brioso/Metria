@@ -92,6 +92,26 @@ class PersonalDishMatcherTest {
         )
     }
 
+    @Test
+    fun `compound dish presentation separates its identity from components`() {
+        val saved = dish(
+            "San Jacobo",
+            item("Cutlet", 10),
+            item("San Jacobo", 11),
+            item("Cheese", 12),
+            item("Ham", 13),
+        )
+
+        assertEquals(
+            listOf("Cutlet", "Cheese", "Ham"),
+            PersonalDishStructure.componentItems(saved).map(MealEntryItem::name),
+        )
+        assertEquals(
+            listOf("rice"),
+            PersonalDishStructure.componentItems(dish("rice", item("rice", 30))).map(MealEntryItem::name),
+        )
+    }
+
     private fun dish(
         name: String,
         vararg items: MealEntryItem,

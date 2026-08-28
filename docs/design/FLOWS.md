@@ -79,9 +79,13 @@ These flows define member intent and state transitions. They do not prescribe a 
 3. Listening is unmistakable and automatically stops after speech or timeout.
 4. Tool-backed requests show grounded results or a validated action outcome.
 5. General prose is allowed when safe, but it must not pretend to have read records without a matching approved tool result.
-6. Conversation preserves prior messages while the unlocked session remains active and does not replay the last request merely because the screen reopens.
+6. The active conversation is encrypted inside the member vault and survives screen close, app switching, biometric relock, and process restart without replaying the last request.
+7. Typed chat uses one native LiteRT conversation while unlocked. After restart or token rollover, Metria rebuilds it from a bounded window of visible encrypted turns; local evidence and hidden reasoning are excluded.
+8. A native tool call is executed manually by the host and returned to that same conversation. The unlocked shell owns the session shared by every Chat entry point. Each model operation has a monotonically increasing request ID; only the matching active result may be consumed, and it may be consumed once.
+9. The encrypted timeline keeps at most 50 visible messages and expires after 24 hours without a new visible message. Expiry starts a clean conversation with a short explanation; **New conversation** deletes it immediately after confirmation.
+10. Locking, cancellation after a runtime failure, and **New conversation** destroy model KV state. Recovery archives exclude conversation text. App-data deletion or uninstall removes it with the vault.
 
-**States:** model warming, listening, no speech, background noise, unsupported request, tool selection, tool result, cancellation, navigation away and return.
+**States:** model warming, listening, no speech, background noise, unsupported request, tool selection, tool result, cancellation, keyboard visible, rotation, navigation away and return, biometric relock, process restart, expired conversation, new conversation.
 
 ## 7. Edit or delete an entry
 

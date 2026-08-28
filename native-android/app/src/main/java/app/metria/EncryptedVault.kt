@@ -38,6 +38,8 @@ class EncryptedVault(context: Context) {
             val analysisAudits: List<LocalAnalysisAudit> = emptyList(),
             val nutritionTargets: NutritionTargets? = null,
             val cycleContext: CycleContext = CycleContext(),
+            val activeConversation: PrivateConversationRecord? = null,
+            val conversationExpired: Boolean = false,
         ) : Status
         data class RecoveryRequired(val message: String) : Status
         data class Failed(val message: String) : Status
@@ -54,6 +56,8 @@ class EncryptedVault(context: Context) {
     private var analysisAudits: MutableList<LocalAnalysisAudit> = mutableListOf()
     private var nutritionTargets: NutritionTargets? = null
     private var cycleContext = CycleContext()
+    private var activeConversation: PrivateConversationRecord? = null
+    private var conversationExpired = false
     private var displayUnit = "kg"
     private var pendingArchiveRestore: LoadedPayload? = null
 
@@ -89,6 +93,8 @@ class EncryptedVault(context: Context) {
             analysisAudits = mutableListOf()
             nutritionTargets = null
             cycleContext = CycleContext()
+            activeConversation = null
+            conversationExpired = false
             persist()
             unlockedStatus()
         } catch (error: Exception) {
@@ -122,6 +128,9 @@ class EncryptedVault(context: Context) {
             analysisAudits = loaded.analysisAudits.toMutableList()
             nutritionTargets = loaded.nutritionTargets
             cycleContext = loaded.cycleContext
+            activeConversation = PrivateConversationPolicy.active(loaded.activeConversation)
+            conversationExpired = loaded.activeConversation != null && activeConversation == null
+            if (conversationExpired) persist()
             unlockedStatus()
         } catch (_: KeyPermanentlyInvalidatedException) {
             lock()
@@ -236,6 +245,8 @@ class EncryptedVault(context: Context) {
         analysisAudits = mutableListOf()
         nutritionTargets = null
         cycleContext = CycleContext()
+        activeConversation = null
+        conversationExpired = false
         displayUnit = "kg"
         pendingArchiveRestore = null
     }
@@ -246,6 +257,7 @@ class EncryptedVault(context: Context) {
         return runCatching {
             val payload = currentPayloadRoot()
             payload.remove("analysisAudits")
+            payload.remove("activeConversation")
             EncryptedArchive.create(payload, passphrase)
         }
     }
@@ -255,7 +267,7 @@ class EncryptedVault(context: Context) {
         if (sessionKey == null) return Result.failure(IllegalStateException("Unlock or create a vault before restoring."))
         return runCatching {
             val restored = parsePayload(EncryptedArchive.open(archive, passphrase))
-            pendingArchiveRestore = restored
+            pendingArchiveRestore = restored.copy(activeConversation = null)
             ArchiveSummary(restored.entries.size, restored.meals.size)
         }
     }
@@ -265,7 +277,8 @@ class EncryptedVault(context: Context) {
         if (sessionKey == null) return Result.failure(IllegalStateException("Unlock or create a vault before restoring."))
         return runCatching {
             val restored = requireNotNull(pendingArchiveRestore) { "Review an encrypted archive before restoring." }
-            val previous = LoadedPayload(displayUnit, entries, meals, foodCorrections, personalDishes, analysisAudits, nutritionTargets, cycleContext)
+            val previous = LoadedPayload(displayUnit, entries, meals, foodCorrections, personalDishes, analysisAudits, nutritionTargets, cycleContext, activeConversation)
+            val previousConversationExpired = conversationExpired
             try {
                 displayUnit = restored.displayUnit
                 entries = restored.entries.toMutableList()
@@ -275,6 +288,8 @@ class EncryptedVault(context: Context) {
                 analysisAudits = mutableListOf()
                 nutritionTargets = restored.nutritionTargets
                 cycleContext = restored.cycleContext
+                activeConversation = null
+                conversationExpired = false
                 persist()
                 pendingArchiveRestore = null
                 ArchiveSummary(entries.size, meals.size)
@@ -287,6 +302,8 @@ class EncryptedVault(context: Context) {
                 analysisAudits = previous.analysisAudits.toMutableList()
                 nutritionTargets = previous.nutritionTargets
                 cycleContext = previous.cycleContext
+                activeConversation = previous.activeConversation
+                conversationExpired = previousConversationExpired
                 throw error
             }
         }
@@ -309,6 +326,8 @@ class EncryptedVault(context: Context) {
         analysisAudits = analysisAudits.toList(),
         nutritionTargets = nutritionTargets,
         cycleContext = cycleContext,
+        activeConversation = activeConversation,
+        conversationExpired = conversationExpired,
     )
 
     private fun persist() {
@@ -396,7 +415,16 @@ class EncryptedVault(context: Context) {
         }).put("cycleContext", JSONObject()
             .put("enabled", cycleContext.enabled)
             .put("periodStarts", JSONArray(cycleContext.periodStarts.map(LocalDate::toString)))
-        ).toString().toByteArray(Charsets.UTF_8)
+        ).put("activeConversation", activeConversation?.let { conversation -> JSONObject()
+            .put("updatedAt", conversation.updatedAt.toString())
+            .put("messages", JSONArray().apply {
+                conversation.messages.forEach { message -> put(JSONObject()
+                    .put("text", message.text)
+                    .put("fromMember", message.fromMember)
+                    .put("localEvidence", message.localEvidence))
+                }
+            })
+        }).toString().toByteArray(Charsets.UTF_8)
         val encrypted = cipher(Cipher.ENCRYPT_MODE, rawKey(key))
         val envelope = JSONObject()
             .put("version", 1)
@@ -414,6 +442,7 @@ class EncryptedVault(context: Context) {
         val analysisAudits: List<LocalAnalysisAudit>,
         val nutritionTargets: NutritionTargets?,
         val cycleContext: CycleContext,
+        val activeConversation: PrivateConversationRecord?,
     )
 
     private fun decryptPayload(key: ByteArray): LoadedPayload {
@@ -545,7 +574,83 @@ class EncryptedVault(context: Context) {
             ).let(CycleContextValidation::normalized)
         } ?: CycleContext()
         require(CycleContextValidation.valid(loadedCycleContext)) { "Invalid cycle context." }
-        return LoadedPayload(loadedDisplayUnit, loadedEntries, loadedMeals, loadedCorrections, loadedPersonalDishes, loadedAudits, loadedTargets, loadedCycleContext)
+        val loadedConversation = root.optJSONObject("activeConversation")?.let { conversation ->
+            val messageValues = conversation.getJSONArray("messages")
+            val record = PrivateConversationRecord(
+                messages = List(messageValues.length()) { index -> messageValues.getJSONObject(index).let { message ->
+                    PrivateConversationMessage(
+                        text = message.getString("text"),
+                        fromMember = message.getBoolean("fromMember"),
+                        localEvidence = message.optBoolean("localEvidence", false),
+                    )
+                } },
+                updatedAt = Instant.parse(conversation.getString("updatedAt")),
+            )
+            require(record.messages.size <= PrivateConversationPolicy.maxMessages) { "Conversation history is too large." }
+            require(record.messages.all { it.text.isNotBlank() && it.text.length <= PrivateConversationPolicy.maxMessageCharacters }) {
+                "Conversation history is invalid."
+            }
+            record
+        }
+        return LoadedPayload(loadedDisplayUnit, loadedEntries, loadedMeals, loadedCorrections, loadedPersonalDishes, loadedAudits, loadedTargets, loadedCycleContext, loadedConversation)
+    }
+
+    fun saveActiveConversation(
+        messages: List<PrivateConversationMessage>,
+        updatedAt: Instant = Instant.now(),
+    ): Status {
+        if (sessionKey == null) return Status.Locked
+        val previous = activeConversation
+        val previousExpired = conversationExpired
+        activeConversation = PrivateConversationPolicy.updated(messages, updatedAt)
+        conversationExpired = false
+        return try {
+            persist()
+            unlockedStatus()
+        } catch (_: Exception) {
+            activeConversation = previous
+            conversationExpired = previousExpired
+            Status.Failed("The private conversation could not be saved.")
+        }
+    }
+
+    fun clearActiveConversation(): Status {
+        if (sessionKey == null) return Status.Locked
+        val previous = activeConversation
+        val previousExpired = conversationExpired
+        activeConversation = null
+        conversationExpired = false
+        return try {
+            persist()
+            unlockedStatus()
+        } catch (_: Exception) {
+            activeConversation = previous
+            conversationExpired = previousExpired
+            Status.Failed("The private conversation could not be cleared.")
+        }
+    }
+
+    fun acknowledgeConversationExpiry(): Status {
+        if (sessionKey == null) return Status.Locked
+        conversationExpired = false
+        return unlockedStatus()
+    }
+
+    fun refreshConversationRetention(now: Instant = Instant.now()): Status {
+        if (sessionKey == null) return Status.Locked
+        val previous = activeConversation ?: return unlockedStatus()
+        val current = PrivateConversationPolicy.active(previous, now)
+        if (current != null) return unlockedStatus()
+        activeConversation = null
+        conversationExpired = true
+        return try {
+            persist()
+            unlockedStatus()
+        } catch (_: Exception) {
+            activeConversation = previous
+            conversationExpired = false
+            Status.Failed("The private conversation retention could not be updated.")
+        }
     }
 
     fun recordFoodCorrections(corrections: List<FoodCorrection>): Status {

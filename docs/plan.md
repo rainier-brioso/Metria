@@ -119,22 +119,30 @@ bundled with the store package. It supports voice/text understanding, drafted
 actions, navigation, and grounded local insights throughout the app. Manual
 forms remain available when the model is busy or unsuitable; they are a
 reliable fallback, not Metria's primary product identity. The assistant may
-never bypass validation or required member confirmation for writes, edits,
-deletions, or goal changes.
+never bypass host validation. A valid weight may use direct save with visible
+Undo/Edit and durable replay protection; meals remain reviewed drafts. Edits,
+deletions, goals, privacy, recovery, and model management stay explicit UI flows.
 
-- [ ] Add a chat interface with local conversation storage and clear deletion.
-- [ ] Implement the allowlisted action dispatcher from `architecture.md`.
-- [ ] Start with a mocked/local rule parser to validate the complete UI flow.
-- [ ] Evaluate small text models on target Android and iPhone hardware for
+- [x] Add encrypted local conversation storage, 24-hour retention, and clear deletion.
+- [x] Implement the transitional allowlisted action dispatcher from `architecture.md`.
+- [x] Select and validate Gemma 4 E2B with LiteRT-LM on the target Android phone.
+- [x] Complete `docs/assistant-agent-spec.md` Gate A using LiteRT's native persistent
+  conversation, manual tool calls, and five read-only tools. See
+  [M4 assistant checkpoints](m4-assistant-checkpoints.md).
+- [ ] Bind factual output as typed atomic facts so valid dates, weights, meals,
+  totals, goals, periods, and counts cannot be reassociated incorrectly.
+- [ ] Complete Gate B multi-turn/restart/token-budget physical acceptance.
+- [ ] Complete Gate C bilingual guardrail, scope, prompt-injection, AI disclosure,
+  and member-initiated reporting acceptance.
+- [ ] Complete Gate D idempotent native weight and meal action tools.
+- [ ] Evaluate later runtime/model candidates on target Android hardware for
   latency, battery, RAM, language quality, and offline packaging size.
-- [ ] Select a runtime only after measurement; require an explicit model
-  download during first-run setup.
-- [ ] Add a visible "AI estimate" label and explanation on all model proposals.
+- [x] Require an explicit model download during first-run setup.
+- [x] Add a visible "AI estimate" label and explanation on model proposals.
 - [ ] Test prompt injection attempts, unsupported actions, confirmation
   cancellation, and model unavailability.
 
-**Acceptance:** text can propose a weight or meal entry, but no assistant
-output can bypass schema validation and the confirmation sheet.
+**Acceptance:** see the measurable gates in `docs/assistant-agent-spec.md`.
 
 ## Milestone 5 — Persisted image and label assistance
 

@@ -105,6 +105,7 @@ class MainActivity : FragmentActivity() {
     override fun onStop() {
         if (!externalImageFlowInProgress && !externalArchiveFlowInProgress) {
             vault.lock()
+            modelLifecycle.lockPrivateAgentConversation()
             modelLifecycle.clearDeveloperResponse()
         }
         super.onStop()
@@ -161,11 +162,24 @@ class MainActivity : FragmentActivity() {
 
     fun askLocalMealAssistant(description: String): ModelStatus = modelLifecycle.proposeMealFromText(description)
 
-    fun askPrivateCoach(question: String, snapshot: PrivateCoachSnapshot): ModelStatus = modelLifecycle.proposeCoachInsight(question, snapshot)
+    fun askPrivateCoach(question: String, snapshot: PrivateCoachSnapshot, conversationContext: String = ""): ModelStatus =
+        modelLifecycle.proposeCoachInsight(question, snapshot, conversationContext)
 
-    fun understandPrivateCoach(question: String): ModelStatus = modelLifecycle.understandCoachRequest(question)
+    fun understandPrivateCoach(question: String, conversationContext: String = ""): ModelStatus =
+        modelLifecycle.understandCoachRequest(question, conversationContext)
 
-    fun understandPrivateCoachAudio(audioFile: java.io.File): ModelStatus = modelLifecycle.understandCoachAudio(audioFile)
+    fun understandPrivateCoachAudio(audioFile: java.io.File, conversationContext: String = ""): ModelStatus =
+        modelLifecycle.understandCoachAudio(audioFile, conversationContext)
+
+    fun startPrivateAgentTurn(
+        question: String,
+        history: List<PrivateConversationMessage>,
+    ): ModelStatus = modelLifecycle.startPrivateAgentTurn(question, history)
+
+    fun continuePrivateAgentTool(
+        toolName: String,
+        response: Map<String, Any?>,
+    ): ModelStatus = modelLifecycle.continuePrivateAgentTool(toolName, response)
 
     fun cancelPrivateAssistant(): ModelStatus = modelLifecycle.cancelAssistantRequest()
 
@@ -245,6 +259,7 @@ class MainActivity : FragmentActivity() {
 
     fun lockVault() {
         vault.lock()
+        modelLifecycle.lockPrivateAgentConversation()
         modelLifecycle.clearDeveloperResponse()
         vaultCallback?.invoke(vault.status())
     }

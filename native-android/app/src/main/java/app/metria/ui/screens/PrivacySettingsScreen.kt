@@ -1,6 +1,8 @@
 package app.metria.ui.screens
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -187,7 +189,7 @@ fun MetriaPrivacySettingsScreen(
     if (privacyDetailsOpen) PrivacyDetailsDialog(onDismiss = { privacyDetailsOpen = false })
     if (assistantDetailsOpen) AssistantDetailsDialog(modelStatus, onDismiss = { assistantDetailsOpen = false })
     if (aboutOpen) AboutDialog(onDismiss = { aboutOpen = false })
-    if (diagnosticsOpen && BuildConfig.DEBUG) DiagnosticsDialog(analysisAudits, onDismiss = { diagnosticsOpen = false })
+    if (diagnosticsOpen && BuildConfig.DEBUG) DiagnosticsDialog(analysisAudits, modelStatus, onDismiss = { diagnosticsOpen = false })
 }
 
 @Composable
@@ -364,13 +366,16 @@ private fun AboutDialog(onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun DiagnosticsDialog(audits: List<LocalAnalysisAudit>, onDismiss: () -> Unit) {
+private fun DiagnosticsDialog(audits: List<LocalAnalysisAudit>, modelStatus: ModelStatus, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Developer diagnostics") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Encrypted timing and outcome metadata only. No photo or model response is stored.", color = MetriaColors.InkMuted)
+                Text("Current local runtime", style = MaterialTheme.typography.titleSmall)
+                Text(modelStatus.backendSummary, color = MetriaColors.InkMuted)
+                Text(modelStatus.diagnostics, color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall)
                 if (audits.isEmpty()) {
                     Text("No local image analyses recorded yet.")
                 } else {
@@ -380,6 +385,11 @@ private fun DiagnosticsDialog(audits: List<LocalAnalysisAudit>, onDismiss: () ->
                             Text("${audit.modelId}${audit.failureCategory?.let { " · $it" }.orEmpty()}", color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall)
                         }
                     }
+                }
+                modelStatus.debugLatestModelResponse?.let { response ->
+                    Text("Latest in-memory response", style = MaterialTheme.typography.titleSmall)
+                    Text("Clears on the next operation, vault lock, backgrounding, or restart.", color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall)
+                    Text(response, style = MaterialTheme.typography.bodySmall)
                 }
             }
         },

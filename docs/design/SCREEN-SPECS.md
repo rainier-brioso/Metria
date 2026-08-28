@@ -86,6 +86,11 @@ These are prototype contracts for the first redesign pass. Visual mockups must b
 - Chat opens as a large sheet or full screen with a familiar message timeline, persistent composer, and cancel-generation control.
 - Tool results appear as compact structured cards; model prose stays short and conversational.
 - Reopening the conversation never resubmits the previous message.
+- Header exposes a labelled **New conversation** action with destructive confirmation.
+
+**Approved first slice:** conversation opens as a full-screen, keyboard-safe destination from the central Metria action. The header communicates on-device privacy once; member messages, assistant prose, and facts from encrypted records have distinct visual roles. Thinking and listening are live, cancellable states. Weight saves and meal drafts appear as structured, reversible action cards. The timeline scrolls to new content, survives configuration recreation while the vault session remains active, and a restored completed tool call must never execute twice. Runtime and raw-response inspection live only under the debug-build diagnostics entry in Privacy.
+
+**Conversation continuity:** typed conversation uses one native LiteRT `Conversation` while the vault session is unlocked. It is rebuilt from a token-bounded window of encrypted visible turns after restart or context rollover; local evidence and hidden reasoning are not replayed as model memory. The active timeline is encrypted in the vault, shared by all Chat entry points, capped at 50 visible messages, and retained for 24 hours after its latest visible activity. It survives biometric relock and process restart, but is excluded from recovery archives. Locking clears in-memory model context. Assistant prose may resolve conversational references but cannot become record evidence; every personal factual answer executes the matching approved local read tool. Model results carry request IDs and are displayed only when they match the active request and have not already been consumed.
 
 ## Privacy and settings
 

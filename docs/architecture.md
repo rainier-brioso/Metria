@@ -10,29 +10,33 @@ The on-device encrypted vault is the source of truth. A future optional backup
 must be encrypted end-to-end and must not include device private keys or unlock
 material.
 
-## Action-first assistant
+## Bounded local assistant agent
 
-The assistant cannot write arbitrary data. It may emit a constrained proposal,
-which the app validates and presents for confirmation.
+The assistant uses LiteRT-LM's native persistent conversation and declared tool protocol.
+It cannot write arbitrary data or access the vault directly. The app validates every tool
+request, executes it against a bounded local snapshot, and returns the result to the same
+conversation. See `docs/assistant-agent-spec.md`.
 
 ```text
-member text or image
-  -> local parser/model
-  -> proposed action and assumptions
-  -> editable confirmation sheet
-  -> validation + deterministic calculation
-  -> encrypted vault write
+member text
+  -> persistent local model conversation
+  -> native allowlisted tool request
+  -> host validation + bounded local result
+  -> same model conversation
+  -> member-facing answer or editable action
 ```
 
-Initial allowlisted actions:
+Initial read-only tools:
 
-- `propose_weight_entry`
-- `propose_meal`
-- `show_weight_trend`
-- `show_nutrition_summary`
-- `propose_goal`
+- `read_progress_overview`
+- `read_nutrition_summary`
+- `read_weight`
+- `read_meals`
+- `search_saved_dishes`
 
-Delete, bulk edit, and goal changes always require explicit confirmation.
+A later low-risk weight tool may save directly with a durable idempotency key and visible
+Undo/Edit. Meal output remains a reviewed draft. Delete, bulk edit, goals, privacy, recovery,
+and model management are not initial assistant tools.
 
 ## Android voice handoff
 

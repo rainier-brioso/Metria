@@ -51,6 +51,21 @@ object PersonalDishValidation {
     }
 }
 
+/**
+ * Presentation boundary for compound remembered dishes. A repeated item that is exactly the
+ * member's dish name is identity metadata, not an ingredient. The encrypted record is preserved
+ * so uncertain components are never silently deleted; member review remains authoritative.
+ */
+object PersonalDishStructure {
+    fun componentItems(dish: PersonalDish): List<MealEntryItem> {
+        if (dish.items.size <= 1) return dish.items
+        val dishKey = PersonalDishMatcher.identityKey(dish.name)
+        return dish.items
+            .filterNot { item -> PersonalDishMatcher.identityKey(item.name) == dishKey }
+            .ifEmpty { dish.items }
+    }
+}
+
 data class PersonalDishQuery(
     val name: String? = null,
     val items: List<MealEntryItem> = emptyList(),

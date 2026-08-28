@@ -19,12 +19,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Fingerprint
-import androidx.compose.material.icons.filled.Chat
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.SmartToy
-import androidx.compose.material.icons.filled.ShowChart
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -63,9 +57,11 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -74,7 +70,6 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.unit.dp
@@ -87,6 +82,9 @@ import androidx.core.content.ContextCompat
 import app.metria.ui.navigation.MetriaBottomNavigation
 import app.metria.ui.components.MetriaActionSheet
 import app.metria.ui.screens.MetriaMealReviewSheet
+import app.metria.ui.screens.MetriaAssistantConversationScreen
+import app.metria.ui.screens.MetriaAssistantHome
+import app.metria.ui.screens.MetriaChatMessage
 import app.metria.ui.screens.MetriaPrivacySettingsScreen
 import app.metria.ui.screens.MetriaProgressScreen
 import app.metria.ui.screens.MetriaTodayScreen
@@ -108,20 +106,21 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
     var status by remember { mutableStateOf(vault.status()) }
     var hasCompletedOnboarding by remember { mutableStateOf(activity.hasCompletedOnboarding()) }
     var setupModelStatus by remember { mutableStateOf(activity.modelStatus()) }
-    var destination by remember { mutableStateOf("Today") }
+    var destination by rememberSaveable { mutableStateOf("Today") }
     // UX decision: the full tab remains Metria's workspace; this sheet makes the same assistant available in context.
-    var quickAssistantOpen by remember { mutableStateOf(false) }
-    var quickAssistantMenuOpen by remember { mutableStateOf(false) }
-    var quickAssistantStartVoice by remember { mutableStateOf(false) }
+    var quickAssistantOpen by rememberSaveable { mutableStateOf(false) }
+    var quickAssistantMenuOpen by rememberSaveable { mutableStateOf(false) }
+    var quickAssistantStartVoice by rememberSaveable { mutableStateOf(false) }
     var quickAssistantListening by remember { mutableStateOf(false) }
     // Approved UX: the floating assistant reuses this one camera flow; no image path or storage is duplicated.
-    var assistantImagePurpose by remember { mutableStateOf<String?>(null) }
+    var assistantImagePurpose by rememberSaveable { mutableStateOf<String?>(null) }
     var addSheet by remember { mutableStateOf(false) }
     var editEntry by remember { mutableStateOf<WeightEntry?>(null) }
     var deleteEntry by remember { mutableStateOf<WeightEntry?>(null) }
     var editMeal by remember { mutableStateOf<MealEntry?>(null) }
     var voiceDraft by remember { mutableStateOf<VoiceWeightDraft?>(null) }
     var modelStatus by remember { mutableStateOf(activity.modelStatus()) }
+    val assistantConversationSession = rememberPrivateAssistantConversationSession()
     var mealProposalForConfirmation by remember { mutableStateOf<MealProposal?>(null) }
     var labelDraftForConfirmation by remember { mutableStateOf<LabelNutritionDraft?>(null) }
     var browseFoodCatalog by remember { mutableStateOf(false) }
@@ -160,6 +159,21 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
     }
     LaunchedEffect(status, voiceDraft) {
         if (status is EncryptedVault.Status.Unlocked && voiceDraft != null) addSheet = true
+    }
+    LaunchedEffect(status) {
+        when (val current = status) {
+            is EncryptedVault.Status.Unlocked -> {
+                assistantConversationSession.synchronize(current.activeConversation, current.conversationExpired)
+                if (current.conversationExpired) status = vault.acknowledgeConversationExpiry()
+            }
+            else -> assistantConversationSession.clearForLock()
+        }
+    }
+    LaunchedEffect(status is EncryptedVault.Status.Unlocked) {
+        while (status is EncryptedVault.Status.Unlocked) {
+            delay(60_000)
+            status = vault.refreshConversationRetention()
+        }
     }
     LaunchedEffect(status, hasCompletedOnboarding) {
         while (hasCompletedOnboarding && (status is EncryptedVault.Status.Missing || status is EncryptedVault.Status.Unlocked)) {
@@ -249,6 +263,16 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                                 onEditNutritionTargets = { editNutritionTargets = true },
                             )
                             "Assistant" -> AssistantScreen(
+                                onOpenConversation = {
+                                    quickAssistantStartVoice = false
+                                    quickAssistantOpen = true
+                                },
+                                assistantConversationSession = assistantConversationSession,
+                                onConversationChanged = { conversation -> status = vault.saveActiveConversation(conversation) },
+                                onNewConversation = {
+                                    assistantConversationSession.reset()
+                                    status = vault.clearActiveConversation()
+                                },
                                 modelStatus = modelStatus,
                                 showLoadingPreview = false,
                                 initialImagePurpose = assistantImagePurpose,
@@ -260,11 +284,12 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                                 cycleContext = vaultStatus.cycleContext,
                                 downloadAssistant = { modelStatus = activity.downloadLocalAssistant() },
                                 cancelAssistantDownload = { modelStatus = activity.cancelLocalAssistantDownload() },
-                                openWeightDraft = { draft -> voiceDraft = draft; addSheet = true },
-                                askMeal = { text -> modelStatus = activity.askLocalMealAssistant(text) },
-                                askCoach = { question, snapshot -> modelStatus = activity.askPrivateCoach(question, snapshot) },
-                                understandCoach = { question -> modelStatus = activity.understandPrivateCoach(question) },
-                                understandCoachAudio = { audio -> modelStatus = activity.understandPrivateCoachAudio(audio) },
+                                askMeal = { text -> activity.askLocalMealAssistant(text).also { modelStatus = it } },
+                                askCoach = { question, snapshot, conversationContext -> activity.askPrivateCoach(question, snapshot, conversationContext).also { modelStatus = it } },
+                                startAgent = { question, history -> activity.startPrivateAgentTurn(question, history).also { modelStatus = it } },
+                                continueAgentTool = { name, response -> activity.continuePrivateAgentTool(name, response).also { modelStatus = it } },
+                                understandCoach = { question, conversationContext -> activity.understandPrivateCoach(question, conversationContext).also { modelStatus = it } },
+                                understandCoachAudio = { audio, conversationContext -> activity.understandPrivateCoachAudio(audio, conversationContext).also { modelStatus = it } },
                                 cancelAssistant = { modelStatus = activity.cancelPrivateAssistant() },
                                 saveWeightDirect = { kilograms, date ->
                                     val entry = WeightEntry(kilograms = kilograms, recordedAt = date)
@@ -347,40 +372,43 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                     },
                 )
                 if (quickAssistantOpen) {
-                    ModalBottomSheet(onDismissRequest = {
-                        quickAssistantOpen = false
-                        quickAssistantStartVoice = false
-                        quickAssistantListening = false
-                    }) {
-                        Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp).padding(bottom = 28.dp)) {
-                            PrivateAssistantChat(
-                                modelStatus = modelStatus,
-                                entries = vaultStatus.entries,
-                                meals = vaultStatus.meals,
-                                personalDishes = vaultStatus.personalDishes,
-                                nutritionTargets = vaultStatus.nutritionTargets,
-                                cycleContext = vaultStatus.cycleContext,
-                                onBack = { quickAssistantOpen = false },
-                                onVoiceListeningChanged = { quickAssistantListening = it },
-                                startVoiceImmediately = quickAssistantStartVoice,
-                                onVoiceStartHandled = { quickAssistantStartVoice = false },
-                                onWeightDraft = { draft -> voiceDraft = draft; addSheet = true; quickAssistantOpen = false },
-                                askMeal = { text -> modelStatus = activity.askLocalMealAssistant(text) },
-                                askCoach = { question, snapshot -> modelStatus = activity.askPrivateCoach(question, snapshot) },
-                                understandCoach = { question -> modelStatus = activity.understandPrivateCoach(question) },
-                                understandCoachAudio = { audio -> modelStatus = activity.understandPrivateCoachAudio(audio) },
-                                cancelAssistant = { modelStatus = activity.cancelPrivateAssistant() },
-                                saveWeightDirect = { kilograms, date ->
-                                    val entry = WeightEntry(kilograms = kilograms, recordedAt = date)
-                                    status = vault.addWeightEntry(entry)
-                                    if (status is EncryptedVault.Status.Unlocked) entry else null
-                                },
-                                editSavedWeight = { editEntry = it; quickAssistantOpen = false },
-                                undoSavedWeight = { entry -> status = vault.deleteWeight(entry.id) },
-                                reviewMeal = { proposal -> mealProposalForConfirmation = proposal; quickAssistantOpen = false },
-                            )
-                        }
-                    }
+                    PrivateAssistantChat(
+                        conversationSession = assistantConversationSession,
+                        onConversationChanged = { conversation -> status = vault.saveActiveConversation(conversation) },
+                        onNewConversation = {
+                            assistantConversationSession.reset()
+                            status = vault.clearActiveConversation()
+                        },
+                        modelStatus = modelStatus,
+                        entries = vaultStatus.entries,
+                        meals = vaultStatus.meals,
+                        personalDishes = vaultStatus.personalDishes,
+                        nutritionTargets = vaultStatus.nutritionTargets,
+                        cycleContext = vaultStatus.cycleContext,
+                        onBack = {
+                            quickAssistantOpen = false
+                            quickAssistantStartVoice = false
+                            quickAssistantListening = false
+                        },
+                        onVoiceListeningChanged = { quickAssistantListening = it },
+                        startVoiceImmediately = quickAssistantStartVoice,
+                        onVoiceStartHandled = { quickAssistantStartVoice = false },
+                        askMeal = { text -> activity.askLocalMealAssistant(text).also { modelStatus = it } },
+                        askCoach = { question, snapshot, conversationContext -> activity.askPrivateCoach(question, snapshot, conversationContext).also { modelStatus = it } },
+                        startAgent = { question, history -> activity.startPrivateAgentTurn(question, history).also { modelStatus = it } },
+                        continueAgentTool = { name, response -> activity.continuePrivateAgentTool(name, response).also { modelStatus = it } },
+                        understandCoach = { question, conversationContext -> activity.understandPrivateCoach(question, conversationContext).also { modelStatus = it } },
+                        understandCoachAudio = { audio, conversationContext -> activity.understandPrivateCoachAudio(audio, conversationContext).also { modelStatus = it } },
+                        cancelAssistant = { modelStatus = activity.cancelPrivateAssistant() },
+                        saveWeightDirect = { kilograms, date ->
+                            val entry = WeightEntry(kilograms = kilograms, recordedAt = date)
+                            status = vault.addWeightEntry(entry)
+                            if (status is EncryptedVault.Status.Unlocked) entry else null
+                        },
+                        editSavedWeight = { editEntry = it; quickAssistantOpen = false },
+                        undoSavedWeight = { entry -> status = vault.deleteWeight(entry.id) },
+                        reviewMeal = { proposal -> mealProposalForConfirmation = proposal; quickAssistantOpen = false },
+                    )
                 }
                 if (addSheet || editEntry != null) WeightBottomSheet(
                     entry = editEntry,
@@ -689,6 +717,10 @@ private fun CoolingDownLoading(secondsLeft: Int) {
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
 private fun AssistantScreen(
+    onOpenConversation: () -> Unit,
+    assistantConversationSession: PrivateAssistantConversationSession,
+    onConversationChanged: (List<PrivateConversationMessage>) -> Unit,
+    onNewConversation: () -> Unit,
     modelStatus: ModelStatus,
     showLoadingPreview: Boolean,
     initialImagePurpose: String?,
@@ -700,11 +732,12 @@ private fun AssistantScreen(
     cycleContext: CycleContext,
     downloadAssistant: () -> Unit,
     cancelAssistantDownload: () -> Unit,
-    openWeightDraft: (VoiceWeightDraft) -> Unit,
-    askMeal: (String) -> Unit,
-    askCoach: (String, PrivateCoachSnapshot) -> Unit,
-    understandCoach: (String) -> Unit,
-    understandCoachAudio: (java.io.File) -> Unit,
+    askMeal: (String) -> ModelStatus,
+    askCoach: (String, PrivateCoachSnapshot, String) -> ModelStatus,
+    startAgent: (String, List<PrivateConversationMessage>) -> ModelStatus,
+    continueAgentTool: (String, Map<String, Any?>) -> ModelStatus,
+    understandCoach: (String, String) -> ModelStatus,
+    understandCoachAudio: (java.io.File, String) -> ModelStatus,
     cancelAssistant: () -> Unit,
     saveWeightDirect: (Double, Instant) -> WeightEntry?,
     editSavedWeight: (WeightEntry) -> Unit,
@@ -723,12 +756,10 @@ private fun AssistantScreen(
     beginImageFlow: () -> ModelStatus,
     finishCooldown: () -> Unit,
 ) {
-    var sourceChoice by remember { mutableStateOf<String?>(null) }
-    var chatOpen by remember { mutableStateOf(false) }
-    var pendingImagePurpose by remember { mutableStateOf<String?>(null) }
+    var sourceChoice by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingImagePurpose by rememberSaveable { mutableStateOf<String?>(null) }
     var capturedUri by remember { mutableStateOf<android.net.Uri?>(null) }
     var showOcrText by remember { mutableStateOf(false) }
-    var showDeveloperResponse by remember { mutableStateOf(false) }
     var coolingSecondsLeft by remember { mutableStateOf(0) }
     val photoPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
@@ -791,17 +822,6 @@ private fun AssistantScreen(
         modelStatus.imageState == "reading_label" -> "Metria is reading your label." to "Text is read locally and must be reviewed."
         else -> null
     }
-    if (chatOpen) {
-        PrivateAssistantChat(
-            modelStatus = modelStatus, entries = entries, meals = meals, personalDishes = personalDishes, nutritionTargets = nutritionTargets, cycleContext = cycleContext,
-            onBack = { chatOpen = false }, onVoiceListeningChanged = {}, onWeightDraft = openWeightDraft, askMeal = askMeal,
-            askCoach = askCoach, understandCoach = understandCoach, cancelAssistant = cancelAssistant, reviewMeal = review,
-            understandCoachAudio = understandCoachAudio,
-            saveWeightDirect = saveWeightDirect, editSavedWeight = editSavedWeight,
-            undoSavedWeight = undoSavedWeight,
-        )
-        return
-    }
     if (loading != null) {
         AppleByteLoading(loading.first, loading.second)
         return
@@ -810,59 +830,15 @@ private fun AssistantScreen(
         CoolingDownLoading(coolingSecondsLeft)
         return
     }
-    if (chatOpen) {
-        PrivateAssistantChat(
-            modelStatus = modelStatus,
-            entries = entries,
-            meals = meals,
-            personalDishes = personalDishes,
-            nutritionTargets = nutritionTargets,
-            cycleContext = cycleContext,
-            onBack = { chatOpen = false },
-            onVoiceListeningChanged = {},
-            onWeightDraft = openWeightDraft,
-            askMeal = askMeal,
-            askCoach = askCoach,
-            understandCoach = understandCoach,
-            understandCoachAudio = understandCoachAudio,
-            cancelAssistant = cancelAssistant,
-            saveWeightDirect = saveWeightDirect,
-            editSavedWeight = editSavedWeight,
-            undoSavedWeight = undoSavedWeight,
-            reviewMeal = review,
-        )
-        return
-    }
-    Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            if (modelStatus.state != "loaded") when (modelStatus.state) {
-                "absent", "removed" -> {
-                    Text("Add Metria's private assistant", style = MaterialTheme.typography.titleLarge)
-                    Text("The model is optional. It is about 2.6 GB and stays on this phone; manual tracking already works without it.", color = Color(0xFF655D6E))
-                    Button(onClick = downloadAssistant, modifier = Modifier.fillMaxWidth()) { Text("Download private assistant") }
-                }
-                "downloading" -> {
-                    val percent = if (modelStatus.expectedBytes > 0) (modelStatus.downloadedBytes * 100 / modelStatus.expectedBytes).coerceIn(0, 100) else 0
-                    Text("Downloading private assistant · $percent%", style = MaterialTheme.typography.titleMedium)
-                    Text("${modelStatus.downloadedBytes / 1_000_000} MB of ${modelStatus.expectedBytes / 1_000_000} MB. You can cancel at any time.", color = Color(0xFF655D6E))
-                    Button(onClick = cancelAssistantDownload, modifier = Modifier.fillMaxWidth()) { Text("Cancel download") }
-                }
-                "failed" -> {
-                    Text(modelStatus.reason, color = Color(0xFFB3261E))
-                    Button(onClick = downloadAssistant, modifier = Modifier.fillMaxWidth()) { Text("Try download again") }
-                }
-                "loaded" -> Text("Ready on this phone. Estimates can be wrong—review every assumption.", color = Sage)
-                else -> Text("The optional local model is ${modelStatus.state}. This developer build needs a downloaded model before chat can run.")
-            }
-            if (modelStatus.state == "loaded") {
-                Button(onClick = { chatOpen = true }, modifier = Modifier.fillMaxWidth()) { Text("Chat with Metria") }
-                Button(onClick = openFoodCatalog, modifier = Modifier.fillMaxWidth()) { Text("Search offline food catalog") }
-                Button(onClick = { if (beginImageFlow().imageState != "cooling_down") sourceChoice = "label" }, modifier = Modifier.fillMaxWidth()) { Text("Scan nutrition label") }
-                Button(onClick = { if (beginImageFlow().imageState != "cooling_down") sourceChoice = "meal" }, modifier = Modifier.fillMaxWidth()) { Text("Analyze meal photo") }
-            }
-            if (modelStatus.imageState == "failed") Text(modelStatus.imageReason, color = Color(0xFFB3261E))
-        }
-    }
+    MetriaAssistantHome(
+        modelStatus = modelStatus,
+        onDownload = downloadAssistant,
+        onCancelDownload = cancelAssistantDownload,
+        onOpenChat = onOpenConversation,
+        onSearchFoods = openFoodCatalog,
+        onScanLabel = { if (beginImageFlow().imageState != "cooling_down") sourceChoice = "label" },
+        onAnalyseMeal = { if (beginImageFlow().imageState != "cooling_down") sourceChoice = "meal" },
+    )
     sourceChoice?.let { choice ->
         ModalBottomSheet(onDismissRequest = { sourceChoice = null }) {
             Column(Modifier.padding(24.dp).padding(bottom = 56.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -906,29 +882,6 @@ private fun AssistantScreen(
         }
     }
     modelStatus.proposalDiagnostic?.let { Text(modelStatus.imageReason, color = Color(0xFFB3261E)) }
-    if (BuildConfig.DEBUG) {
-        Card(colors = CardDefaults.cardColors(containerColor = PlumSoft), modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("Development runtime", style = MaterialTheme.typography.titleSmall, color = Plum)
-                Text(modelStatus.backendSummary, color = Ink)
-                Text(modelStatus.diagnostics, color = Color(0xFF655D6E), style = MaterialTheme.typography.bodySmall)
-            }
-        }
-    }
-    if (BuildConfig.DEBUG && modelStatus.debugLatestModelResponse != null) {
-        Button(onClick = { showDeveloperResponse = !showDeveloperResponse }, modifier = Modifier.fillMaxWidth()) {
-            Text(if (showDeveloperResponse) "Hide development response" else "Inspect latest local response")
-        }
-        if (showDeveloperResponse) {
-            Card(colors = CardDefaults.cardColors(containerColor = PlumSoft)) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Development-only response inspector", style = MaterialTheme.typography.titleMedium)
-                    Text("In memory only. It clears on the next operation, vault lock, backgrounding, or restart.", color = Color(0xFF655D6E))
-                    Text(modelStatus.debugLatestModelResponse, color = Ink)
-                }
-            }
-        }
-    }
     modelStatus.ocrText?.takeIf { it.isNotBlank() }?.let {
         val draft = modelStatus.labelDraft ?: LabelNutritionDraft(null, null, null, null)
         Card(colors = CardDefaults.cardColors(containerColor = PlumSoft)) {
@@ -972,20 +925,91 @@ private fun AssistantScreen(
 /** UX decision: facts returned by a local tool remain visible, but secondary to Metria's answer. */
 private data class PrivateChatMessage(val text: String, val fromMember: Boolean, val localEvidence: Boolean = false)
 
-@Composable
-private fun TypingAssistantText() {
-    val transition = rememberInfiniteTransition(label = "metria-chat-typing")
-    val phase by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 3f,
-        animationSpec = infiniteRepeatable(tween(900, easing = LinearEasing)),
-        label = "metria-chat-dots",
-    )
-    Text("Metria is thinking${".".repeat(phase.toInt() + 1)}", color = Color(0xFF4E4655))
+private fun initialPrivateChatMessages() = listOf(
+    PrivateChatMessage("Ask about a meal, add a weight, or ask what you logged today. Any saved action stays visible and reversible.", false),
+)
+
+@Stable
+private class PrivateAssistantConversationSession(
+    initialInput: String = "",
+    initialSubmittedQuestion: String = "",
+    initialSubmittedContext: String = "",
+    initialActiveRequestId: Long? = null,
+    initialHandledToolRequestId: Long? = null,
+    initialHandledReplyRequestId: Long? = null,
+    initialSavedWeightId: String? = null,
+    initialVoiceMessage: String? = null,
+    initialMessages: List<PrivateChatMessage> = initialPrivateChatMessages(),
+) {
+    private var hydrated = false
+    private var loadedConversationUpdatedAt: Instant? = null
+    val input = mutableStateOf(initialInput)
+    val submittedQuestion = mutableStateOf(initialSubmittedQuestion)
+    val submittedContext = mutableStateOf(initialSubmittedContext)
+    val activeRequestId = mutableStateOf(initialActiveRequestId)
+    val handledToolRequestId = mutableStateOf(initialHandledToolRequestId)
+    val handledReplyRequestId = mutableStateOf(initialHandledReplyRequestId)
+    val savedWeightId = mutableStateOf(initialSavedWeightId)
+    val voiceMessage = mutableStateOf(initialVoiceMessage)
+    val messages = mutableStateOf(initialMessages)
+
+    fun reset() {
+        input.value = ""
+        submittedQuestion.value = ""
+        submittedContext.value = ""
+        activeRequestId.value = null
+        handledToolRequestId.value = null
+        handledReplyRequestId.value = null
+        savedWeightId.value = null
+        voiceMessage.value = null
+        messages.value = initialPrivateChatMessages()
+        hydrated = true
+        loadedConversationUpdatedAt = null
+    }
+
+    fun clearForLock() {
+        reset()
+        hydrated = false
+    }
+
+    fun synchronize(record: PrivateConversationRecord?, expired: Boolean) {
+        if (expired) {
+            reset()
+            messages.value = initialPrivateChatMessages() + PrivateChatMessage(
+                "Your previous private conversation expired after 24 hours of inactivity. This is a new conversation.",
+                false,
+            )
+            return
+        }
+        if (hydrated && loadedConversationUpdatedAt == record?.updatedAt) return
+        val restored = record?.messages?.map { message ->
+            PrivateChatMessage(message.text, message.fromMember, message.localEvidence)
+        }
+        if (!hydrated || (restored != null && restored != messages.value)) {
+            input.value = ""
+            submittedQuestion.value = ""
+            submittedContext.value = ""
+            activeRequestId.value = null
+            handledToolRequestId.value = null
+            handledReplyRequestId.value = null
+            savedWeightId.value = null
+            voiceMessage.value = null
+            messages.value = restored?.ifEmpty(::initialPrivateChatMessages) ?: initialPrivateChatMessages()
+        }
+        hydrated = true
+        loadedConversationUpdatedAt = record?.updatedAt
+    }
 }
 
 @Composable
+private fun rememberPrivateAssistantConversationSession(): PrivateAssistantConversationSession =
+    remember { PrivateAssistantConversationSession() }
+
+@Composable
 private fun PrivateAssistantChat(
+    conversationSession: PrivateAssistantConversationSession,
+    onConversationChanged: (List<PrivateConversationMessage>) -> Unit,
+    onNewConversation: () -> Unit,
     modelStatus: ModelStatus,
     entries: List<WeightEntry>,
     meals: List<MealEntry>,
@@ -996,11 +1020,12 @@ private fun PrivateAssistantChat(
     onVoiceListeningChanged: (Boolean) -> Unit,
     startVoiceImmediately: Boolean = false,
     onVoiceStartHandled: () -> Unit = {},
-    onWeightDraft: (VoiceWeightDraft) -> Unit,
-    askMeal: (String) -> Unit,
-    askCoach: (String, PrivateCoachSnapshot) -> Unit,
-    understandCoach: (String) -> Unit,
-    understandCoachAudio: (java.io.File) -> Unit,
+    askMeal: (String) -> ModelStatus,
+    askCoach: (String, PrivateCoachSnapshot, String) -> ModelStatus,
+    startAgent: (String, List<PrivateConversationMessage>) -> ModelStatus,
+    continueAgentTool: (String, Map<String, Any?>) -> ModelStatus,
+    understandCoach: (String, String) -> ModelStatus,
+    understandCoachAudio: (java.io.File, String) -> ModelStatus,
     cancelAssistant: () -> Unit,
     saveWeightDirect: (Double, Instant) -> WeightEntry?,
     editSavedWeight: (WeightEntry) -> Unit,
@@ -1008,25 +1033,29 @@ private fun PrivateAssistantChat(
     reviewMeal: (MealProposal) -> Unit,
 ) {
     val context = LocalContext.current
-    var input by remember { mutableStateOf("") }
-    var submittedQuestion by remember { mutableStateOf("") }
-    var handledTool by remember { mutableStateOf<PrivateCoachToolCall?>(null) }
-    var handledCoachReply by remember { mutableStateOf<String?>(null) }
-    var savedWeight by remember { mutableStateOf<WeightEntry?>(null) }
+    var input by conversationSession.input
+    var submittedQuestion by conversationSession.submittedQuestion
+    var submittedConversationContext by conversationSession.submittedContext
+    var activeAssistantRequestId by conversationSession.activeRequestId
+    var handledToolRequestId by conversationSession.handledToolRequestId
+    var handledReplyRequestId by conversationSession.handledReplyRequestId
+    var savedWeightId by conversationSession.savedWeightId
     var recordingVoice by remember { mutableStateOf(false) }
-    var voiceMessage by remember { mutableStateOf<String?>(null) }
-    var messages by remember { mutableStateOf(listOf(PrivateChatMessage("Ask about a meal, add a weight, or ask what you logged today. Nothing is saved without your review.", false))) }
-    val voiceRobotTransition = rememberInfiniteTransition(label = "metria-sheet-listening")
-    val voiceRobotScale by voiceRobotTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = 1.18f,
-        animationSpec = infiniteRepeatable(tween(680, easing = LinearEasing)),
-        label = "metria-sheet-robot-pulse",
-    )
+    var voiceMessage by conversationSession.voiceMessage
+    var messages by conversationSession.messages
+    LaunchedEffect(messages) {
+        if (messages.any(PrivateChatMessage::fromMember)) {
+            onConversationChanged(messages.map { message ->
+                PrivateConversationMessage(message.text, message.fromMember, message.localEvidence)
+            })
+        }
+    }
     val today = LocalDate.now()
-    val todayMeals = remember(meals, today) { meals.filter { it.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate() == today } }
-    val todaySummary = remember(meals, today) { MealNutritionSummaries.between(meals, today, today) }
     val snapshot = remember(entries, meals, nutritionTargets, today) { PrivateCoachSnapshot.from(entries, meals, nutritionTargets, today) }
+    val savedWeight = savedWeightId?.let { id -> entries.firstOrNull { it.id == id } }
+    fun trackRequest(result: ModelStatus) {
+        activeAssistantRequestId = result.assistantRequestId
+    }
     fun setVoiceRecording(value: Boolean) {
         recordingVoice = value
         onVoiceListeningChanged(value)
@@ -1038,9 +1067,10 @@ private fun PrivateAssistantChat(
             voiceMessage = "Metria could not hear speech. Try again or type your request."
             return
         }
+        submittedConversationContext = privateConversationContext(messages)
         messages = messages + PrivateChatMessage("Voice request received locally.", true)
         submittedQuestion = "Voice request"
-        understandCoachAudio(clip.file)
+        trackRequest(understandCoachAudio(clip.file, submittedConversationContext))
     }
     val audioRecorder = remember(context) { GemmaAudioRecorder(context) }
     val microphonePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -1070,34 +1100,76 @@ private fun PrivateAssistantChat(
             }
         }
     }
-    LaunchedEffect(modelStatus.coachToolCall, submittedQuestion) {
+    LaunchedEffect(modelStatus.assistantRequestId, modelStatus.coachToolCall, submittedQuestion) {
+        val requestId = modelStatus.assistantRequestId ?: return@LaunchedEffect
         val call = modelStatus.coachToolCall ?: return@LaunchedEffect
-        if (call == handledTool) return@LaunchedEffect
-        handledTool = call
+        if (!shouldConsumeAssistantResult(activeAssistantRequestId, handledToolRequestId, requestId)) return@LaunchedEffect
+        handledToolRequestId = requestId
         call.spokenText?.let { spoken ->
             submittedQuestion = spoken
             messages = messages + PrivateChatMessage("Voice: $spoken", true)
         }
-        val action = AssistantActionDispatcher.resolve(call)
+        val validatedCall = AssistantActionGuard.validate(call, submittedQuestion, submittedConversationContext)
+        val action = AssistantActionDispatcher.resolve(validatedCall)
+        val nativeAgentTool = modelStatus.assistantOperation == "agent_waiting_tool"
         if (action is AssistantAction.QueryWeightHistory && call.spokenText?.let(::soundsLikeMealHistoryQuestion) == true) {
             messages = messages + PrivateChatMessage("I heard a meal-history question, but could not safely match the action. Please try again or type it.", false)
             return@LaunchedEffect
         }
         when (action) {
+            is AssistantAction.QueryProgressOverview -> {
+                val overview = MemberProgressOverview.from(
+                    entries = entries,
+                    meals = meals,
+                    targets = nutritionTargets,
+                    today = today,
+                    period = action.period,
+                )
+                messages = messages + PrivateChatMessage(overview.localEvidence(), false, localEvidence = true)
+                if (nativeAgentTool) {
+                    trackRequest(continueAgentTool(call.intent, overview.toolResponse()))
+                } else {
+                    trackRequest(askCoach(
+                        """MEMBER_LANGUAGE: ${coachReplyLanguage(submittedQuestion, submittedConversationContext)}
+                            MEMBER_QUESTION: $submittedQuestion
+                            [LOCAL_FACTS]
+                            ${overview.localEvidence()}
+                            [/LOCAL_FACTS]
+                            Give one concise grounded progress insight and one gentle optional focus.
+                        """.trimIndent(),
+                        snapshot,
+                        submittedConversationContext,
+                    ))
+                }
+            }
             is AssistantAction.QueryNutrition -> {
                 val scopedSnapshot = snapshot
-                val label = if (action.period == "week") "Last 7 days" else "Today"
-                messages = messages + PrivateChatMessage("$label. ${scopedSnapshot.goalProgressFacts(action.period)}", false, localEvidence = true)
-                val language = coachReplyLanguage(submittedQuestion)
-                askCoach("""MEMBER_LANGUAGE: $language
-                    REQUESTED_PERIOD: $label
-                    Respond in MEMBER_LANGUAGE. Use only the selected-period week fields and their week goals.
-                    Never mention today or daily goals. Write recognition, factual comparison, and a gentle next focus.""".trimIndent(), scopedSnapshot)
+                val evidence = scopedSnapshot.goalProgressFacts(action.period)
+                val facts = scopedSnapshot.selectedNutritionFacts(action.period)
+                messages = messages + PrivateChatMessage(evidence, false, localEvidence = true)
+                if (nativeAgentTool) {
+                    trackRequest(continueAgentTool(call.intent, mapOf(
+                        "source" to "metria_local_vault",
+                        "as_of" to today.toString(),
+                        "period" to (action.period ?: "today"),
+                        "facts" to facts,
+                    )))
+                } else {
+                    val language = coachReplyLanguage(submittedQuestion, submittedConversationContext)
+                    trackRequest(askCoach("""MEMBER_LANGUAGE: $language
+                        MEMBER_QUESTION: $submittedQuestion
+                        [LOCAL_FACTS]
+                        $facts
+                        [/LOCAL_FACTS]
+                        Respond in MEMBER_LANGUAGE about only the selected period. A nonzero logged_meals value means meals were recorded.
+                        Write recognition, factual comparison, and one gentle optional next focus.""".trimIndent(), scopedSnapshot, submittedConversationContext))
+                }
             }
             is AssistantAction.QueryWeightHistory -> {
                 val oldest = today.minusDays(action.fromDaysAgo.toLong())
                 val newest = today.minusDays(action.toDaysAgo.toLong())
                 val ordered = entries.filter { date -> date.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate() in oldest..newest }.sortedBy(WeightEntry::recordedAt)
+                val boundedWeights = MetriaAgentResultBounds.latest(ordered)
                 val first = ordered.firstOrNull()
                 val latest = ordered.lastOrNull()
                 val trend = if (first == null || latest == null) "No weight entries were saved from $oldest to $newest." else if (first.id == latest.id) "One weight entry from $oldest to $newest: ${"%.1f".format(first.kilograms)} kg." else {
@@ -1106,12 +1178,29 @@ private fun PrivateAssistantChat(
                     "${ordered.size} weight entries from ${first.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate()} to ${latest.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate()}: ${"%.1f".format(first.kilograms)} kg to ${"%.1f".format(latest.kilograms)} kg (${"%+.1f".format(change)} kg over $days days)."
                 }
                 messages = messages + PrivateChatMessage(trend, false, localEvidence = true)
-                askCoach("""MEMBER_LANGUAGE: ${coachReplyLanguage(submittedQuestion)}
-                    MEMBER_QUESTION: $submittedQuestion
-                    [LOCAL_FACTS]
-                    $trend
-                    [/LOCAL_FACTS]
-                    Explain only these facts in three short supportive sentences. Do not mention nutrition goals or give medical advice.""".trimIndent(), snapshot)
+                if (nativeAgentTool) {
+                    trackRequest(continueAgentTool(call.intent, mapOf(
+                        "source" to "metria_local_vault",
+                        "from" to oldest.toString(),
+                        "to" to newest.toString(),
+                        "total_count" to boundedWeights.totalCount,
+                        "returned_count" to boundedWeights.records.size,
+                        "omitted_count" to boundedWeights.omittedCount,
+                        "coverage" to boundedWeights.coverage,
+                        "entries" to boundedWeights.records.map { entry -> mapOf(
+                            "date" to entry.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate().toString(),
+                            "kilograms" to entry.kilograms,
+                        ) },
+                        "summary" to trend,
+                    )))
+                } else {
+                    trackRequest(askCoach("""MEMBER_LANGUAGE: ${coachReplyLanguage(submittedQuestion, submittedConversationContext)}
+                        MEMBER_QUESTION: $submittedQuestion
+                        [LOCAL_FACTS]
+                        $trend
+                        [/LOCAL_FACTS]
+                        Explain only these facts in three short supportive sentences. Do not mention nutrition goals or give medical advice.""".trimIndent(), snapshot, submittedConversationContext))
+                }
             }
             is AssistantAction.QueryMealHistory -> {
                 val oldest = today.minusDays(action.fromDaysAgo.toLong())
@@ -1119,12 +1208,13 @@ private fun PrivateAssistantChat(
                 val saved = meals.filter {
                     it.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate() in oldest..newest &&
                         (action.mealSlot == null || MealSlots.matches(it, action.mealSlot))
-                }
+                }.sortedBy(MealEntry::recordedAt)
+                val boundedMeals = MetriaAgentResultBounds.latest(saved)
                 val typeLabel = action.mealSlot?.let(MealSlots::label)?.lowercase()
                 val facts = if (saved.isEmpty()) {
                     "No ${typeLabel ?: ""} meals were saved from $oldest to $newest.".replace("No  meals", "No meals")
                 } else {
-                    "${typeLabel?.replaceFirstChar(Char::uppercase) ?: "Meals"} from $oldest to $newest: ${saved.joinToString { meal ->
+                    val visibleMeals = boundedMeals.records.joinToString { meal ->
                         val local = meal.recordedAt.atZone(ZoneId.systemDefault())
                         val timing = when {
                             meal.mealSlot != null -> MealSlots.label(meal.mealSlot).lowercase()
@@ -1132,195 +1222,188 @@ private fun PrivateAssistantChat(
                             else -> "time not recorded"
                         }
                         "${local.toLocalDate()}: ${MealIdentity.displayTitle(meal)} ($timing)"
-                    }}."
+                    }
+                    val omitted = boundedMeals.omittedCount.takeIf { it > 0 }
+                        ?.let { " $it earlier matching ${if (it == 1) "meal was" else "meals were"} omitted from the model context." }
+                        .orEmpty()
+                    "${typeLabel?.replaceFirstChar(Char::uppercase) ?: "Meals"} from $oldest to $newest: $visibleMeals.$omitted"
                 }
                 messages = messages + PrivateChatMessage(facts, false, localEvidence = true)
-                askCoach("""MEMBER_LANGUAGE: ${coachReplyLanguage(submittedQuestion)}
-                    MEMBER_QUESTION: $submittedQuestion
-                    [LOCAL_FACTS]
-                    $facts
-                    [/LOCAL_FACTS]
-                    Answer only from these local facts in no more than three short sentences.""".trimIndent(), snapshot)
+                if (nativeAgentTool) {
+                    trackRequest(continueAgentTool(call.intent, mapOf(
+                        "source" to "metria_local_vault",
+                        "from" to oldest.toString(),
+                        "to" to newest.toString(),
+                        "meal_slot" to action.mealSlot,
+                        "total_count" to boundedMeals.totalCount,
+                        "returned_count" to boundedMeals.records.size,
+                        "omitted_count" to boundedMeals.omittedCount,
+                        "coverage" to boundedMeals.coverage,
+                        "meals" to boundedMeals.records.map { meal -> mapOf(
+                            "date" to meal.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate().toString(),
+                            "title" to MealIdentity.displayTitle(meal),
+                            "slot" to meal.mealSlot,
+                        ) },
+                        "summary" to facts,
+                    )))
+                } else {
+                    trackRequest(askCoach("""MEMBER_LANGUAGE: ${coachReplyLanguage(submittedQuestion, submittedConversationContext)}
+                        MEMBER_QUESTION: $submittedQuestion
+                        [LOCAL_FACTS]
+                        $facts
+                        [/LOCAL_FACTS]
+                        Answer only from these local facts in no more than three short sentences.""".trimIndent(), snapshot, submittedConversationContext))
+                }
             }
             is AssistantAction.SearchSavedDishes -> {
                 val matches = PersonalDishMatcher.search(PersonalDishQuery(name = action.query), personalDishes)
+                val boundedMatches = MetriaAgentResultBounds.latest(matches)
                 val facts = if (matches.isEmpty()) {
                     "No saved private dish matched '${action.query}'."
                 } else {
-                    "Saved private dish matches for '${action.query}': ${matches.joinToString { match ->
-                        "${match.dish.name} (${match.dish.items.joinToString { it.name }}; confirmed ${match.dish.confirmationCount} ${if (match.dish.confirmationCount == 1) "time" else "times"})"
-                    }}."
+                    "Saved private dish matches for '${action.query}': ${boundedMatches.records.joinToString { match ->
+                        "${match.dish.name} (${PersonalDishStructure.componentItems(match.dish).joinToString { it.name }}; confirmed ${match.dish.confirmationCount} ${if (match.dish.confirmationCount == 1) "time" else "times"})"
+                    }}.${boundedMatches.omittedCount.takeIf { it > 0 }?.let { " $it additional matches were omitted." }.orEmpty()}"
                 }
                 messages = messages + PrivateChatMessage(facts, false, localEvidence = true)
-                askCoach("""MEMBER_LANGUAGE: ${coachReplyLanguage(submittedQuestion)}
-                    MEMBER_QUESTION: $submittedQuestion
-                    [LOCAL_FACTS]
-                    $facts
-                    [/LOCAL_FACTS]
-                    Answer only from these bounded saved-dish results. Say that the member can review or remove saved dishes in Privacy when useful.""".trimIndent(), snapshot)
+                if (nativeAgentTool) {
+                    trackRequest(continueAgentTool(call.intent, mapOf(
+                        "source" to "metria_local_vault",
+                        "query" to action.query,
+                        "total_count" to boundedMatches.totalCount,
+                        "returned_count" to boundedMatches.records.size,
+                        "omitted_count" to boundedMatches.omittedCount,
+                        "coverage" to boundedMatches.coverage,
+                        "matches" to boundedMatches.records.map { match -> mapOf(
+                            "name" to match.dish.name,
+                            "ingredients" to PersonalDishStructure.componentItems(match.dish).map { it.name },
+                            "confirmation_count" to match.dish.confirmationCount,
+                        ) },
+                        "summary" to facts,
+                    )))
+                } else {
+                    trackRequest(askCoach("""MEMBER_LANGUAGE: ${coachReplyLanguage(submittedQuestion, submittedConversationContext)}
+                        MEMBER_QUESTION: $submittedQuestion
+                        [LOCAL_FACTS]
+                        $facts
+                        [/LOCAL_FACTS]
+                        Answer only from these bounded saved-dish results. Say that the member can review or remove saved dishes in Privacy when useful.""".trimIndent(), snapshot, submittedConversationContext))
+                }
             }
             is AssistantAction.DraftWeight -> {
-                savedWeight = saveWeightDirect(action.kilograms, Instant.now())
-                messages = messages + PrivateChatMessage(if (savedWeight != null) "${"%.1f".format(action.kilograms)} kg saved locally." else "Weight could not be saved. Try again.", false)
+                val entry = saveWeightDirect(action.kilograms, Instant.now())
+                savedWeightId = entry?.id
+                messages = messages + PrivateChatMessage(if (entry != null) "${"%.1f".format(action.kilograms)} kg saved locally." else "Weight could not be saved. Try again.", false)
             }
-            AssistantAction.DraftMeal -> askMeal(submittedQuestion)
-            is AssistantAction.Respond -> messages = messages + PrivateChatMessage(action.message, false)
-            AssistantAction.Clarify -> messages = messages + PrivateChatMessage("I can help with meals, weights, and your progress. Try asking in another way.", false)
+            AssistantAction.DraftMeal -> trackRequest(askMeal(submittedQuestion))
+            is AssistantAction.Respond -> trackRequest(askCoach("""MEMBER_LANGUAGE: ${coachReplyLanguage(submittedQuestion, submittedConversationContext)}
+                MEMBER_QUESTION: $submittedQuestion
+                [LOCAL_FACTS]
+                No personal record facts were requested or provided.
+                [/LOCAL_FACTS]
+                Continue the conversation naturally in MEMBER_LANGUAGE. Do not claim to have read meals, weights, goals, or progress.""".trimIndent(), snapshot, submittedConversationContext))
+            AssistantAction.Clarify -> {
+                if (nativeAgentTool) {
+                    trackRequest(continueAgentTool(call.intent, mapOf(
+                        "error" to "invalid_arguments",
+                        "message" to "The requested local read was outside Metria's allowed bounds.",
+                    )))
+                } else {
+                    messages = messages + PrivateChatMessage("I can help with meals, weights, and your progress. Try asking in another way.", false)
+                }
+            }
         }
     }
-    LaunchedEffect(modelStatus.coachReply) {
+    LaunchedEffect(modelStatus.assistantRequestId, modelStatus.coachReply) {
+        val requestId = modelStatus.assistantRequestId ?: return@LaunchedEffect
         val reply = modelStatus.coachReply ?: return@LaunchedEffect
-        if (reply != handledCoachReply) {
-            handledCoachReply = reply
-            messages = messages + PrivateChatMessage(reply, false)
+        if (!shouldConsumeAssistantResult(activeAssistantRequestId, handledReplyRequestId, requestId)) return@LaunchedEffect
+        handledReplyRequestId = requestId
+        messages = messages + PrivateChatMessage(reply, false)
+    }
+    fun submitText() {
+        val text = input.trim()
+        if (text.isBlank()) return
+        submittedConversationContext = privateConversationContext(messages)
+        val nativeHistory = messages.map { message ->
+            PrivateConversationMessage(message.text, message.fromMember, message.localEvidence)
+        }
+        messages = messages + PrivateChatMessage(text, true)
+        input = ""
+        submittedQuestion = text
+        if (MetriaAgentMigrationPolicy.useLegacyWriteRoute(text)) {
+            trackRequest(understandCoach(text, submittedConversationContext))
+        } else {
+            trackRequest(startAgent(text, nativeHistory))
         }
     }
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text("Private assistant", style = MaterialTheme.typography.headlineMedium)
-            Button(onClick = onBack) { Text("Back") }
+    fun toggleVoice() {
+        if (recordingVoice) {
+            setVoiceRecording(false)
+            audioRecorder.stop()?.let(::submitVoiceClip)
+                ?: run { voiceMessage = "No local voice clip was captured. Try again." }
+        } else {
+            startVoiceCapture()
         }
-        Text("This conversation stays only while Metria is open and unlocked.", color = Color(0xFF655D6E), style = MaterialTheme.typography.bodySmall)
-        messages.forEach { message ->
-            Card(colors = CardDefaults.cardColors(containerColor = when {
-                message.fromMember -> PlumSoft
-                message.localEvidence -> Color(0xFFF2F5F3)
-                else -> Color.White
-            })) {
-                if (message.fromMember) Text(message.text, modifier = Modifier.padding(14.dp), color = Ink)
-                else if (message.localEvidence) {
-                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                        Text("LOCAL RECORDS", color = Sage, style = MaterialTheme.typography.labelSmall)
-                        SafeMarkdownText(message.text, Color(0xFF3F4A45))
-                    }
-                } else androidx.compose.foundation.layout.Box(Modifier.padding(14.dp)) { SafeMarkdownText(message.text, Color(0xFF4E4655)) }
-            }
-        }
-        if (modelStatus.state == "thinking" && modelStatus.assistantOperation?.startsWith("coach") == true) {
-            Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
-                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    modelStatus.coachStreamingReply?.let { SafeMarkdownText(it, Color(0xFF4E4655)) } ?: TypingAssistantText()
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Text(if (modelStatus.coachStreamingReply == null) "Metria is considering your question" else "Metria is finishing this reply", color = Color(0xFF655D6E), style = MaterialTheme.typography.bodySmall)
-                        Button(onClick = cancelAssistant) { Text("Cancel") }
-                    }
-                }
-            }
-        }
-        savedWeight?.let { entry ->
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Button(onClick = { editSavedWeight(entry) }, modifier = Modifier.weight(1f)) { Text("Edit saved weight") }
-                Button(onClick = {
-                    undoSavedWeight(entry)
-                    savedWeight = null
-                    messages = messages + PrivateChatMessage("${"%.1f".format(entry.kilograms)} kg entry removed.", false)
-                }, modifier = Modifier.weight(1f)) { Text("Undo") }
-            }
-        }
-        if (modelStatus.state == "thinking" && modelStatus.assistantOperation?.startsWith("coach") != true) {
-            Card(colors = CardDefaults.cardColors(containerColor = PlumSoft)) {
-                Text("Metria is preparing an editable meal draft locally…", modifier = Modifier.padding(14.dp), color = Plum)
-            }
-        }
-        modelStatus.assistantDiagnostic?.let { Text(it, color = Color(0xFFB3261E)) }
-        modelStatus.coachDiagnostic?.let { Text(it, color = Color(0xFFB3261E)) }
-        modelStatus.assistantProposal?.let { proposal ->
-            Card(colors = CardDefaults.cardColors(containerColor = PlumSoft)) {
-                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Meal draft ready", style = MaterialTheme.typography.titleMedium)
-                    Text(proposal.items.joinToString { it.name }, color = Color(0xFF655D6E))
-                    Text("Nothing has been saved.", color = Plum, style = MaterialTheme.typography.bodySmall)
-                    Button(onClick = { reviewMeal(proposal) }, modifier = Modifier.fillMaxWidth()) { Text("Review meal draft") }
-                }
-            }
-        }
-        if (startVoiceImmediately && !recordingVoice) Text("Getting Metria ready…", color = Plum, style = MaterialTheme.typography.bodySmall)
-        if (recordingVoice) Text("Listening locally… tap the robot to stop early.", color = Plum, style = MaterialTheme.typography.bodySmall)
-        voiceMessage?.let { Text(it, color = Color(0xFFB3261E), style = MaterialTheme.typography.bodySmall) }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(input, { input = it }, label = { Text("Message") }, modifier = Modifier.weight(1f))
-            IconButton(onClick = {
-                if (recordingVoice) {
-                    setVoiceRecording(false)
-                    audioRecorder.stop()?.let(::submitVoiceClip) ?: run { voiceMessage = "No local voice clip was captured. Try again." }
-                } else startVoiceCapture()
-            }, enabled = modelStatus.state == "loaded") {
-                Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-                    if (recordingVoice) {
-                        Canvas(Modifier.fillMaxSize()) {
-                            drawCircle(Sage.copy(alpha = 0.18f), radius = size.minDimension * 0.44f * voiceRobotScale)
-                        }
-                    }
-                    Icon(
-                        Icons.Filled.SmartToy,
-                        contentDescription = if (recordingVoice) "Metria is listening; tap to stop" else "Speak to Metria",
-                        tint = if (recordingVoice) Sage else Plum,
-                        modifier = Modifier.graphicsLayer {
-                            val scale = if (recordingVoice) voiceRobotScale else 1f
-                            scaleX = scale; scaleY = scale
-                        },
-                    )
-                }
-            }
-        }
-        Button(onClick = {
-            val text = input.trim()
-            if (text.isBlank()) return@Button
-            messages = messages + PrivateChatMessage(text, true)
-            input = ""
-            submittedQuestion = text
-            if (isWeightTrendQuestion(text)) {
-                val trend = weightTrendFacts(entries, cycleContext)
-                messages = messages + PrivateChatMessage(trend, false)
-                askCoach("""MEMBER_LANGUAGE: ${coachReplyLanguage(text)}
-                    MEMBER_QUESTION: $text
-                    [LOCAL_FACTS]
-                    $trend
-                    [/LOCAL_FACTS]
-                    Explain only these facts in three short supportive sentences. Do not mention nutrition goals or give medical advice.""".trimIndent(), snapshot)
-                return@Button
-            }
-            understandCoach(text)
-            return@Button
-            val kilograms = parseChatWeight(text)
-            when {
-                kilograms != null -> {
-                messages = messages + PrivateChatMessage("Weight draft: ${"%.1f".format(kilograms)} kg. Review it before saving.", false)
-                onWeightDraft(VoiceWeightDraft(kilograms, Instant.now()))
-            }
-                PrivateCoachQuestions.asksYesterdayWeight(text) -> {
-                val entry = entries.filter { it.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate() == today.minusDays(1) }.maxByOrNull(WeightEntry::recordedAt)
-                messages = messages + PrivateChatMessage(entry?.let { "Yesterday you recorded ${"%.1f".format(it.kilograms)} kg. Read locally from your encrypted vault." } ?: "You did not record a weight yesterday.", false)
-            }
-                PrivateCoachQuestions.asksTodaySummary(text) -> {
-                val calories = (todaySummary.caloriesKcal ?: 0.0) + (todaySummary.partialCaloriesKcal ?: 0.0)
-                val protein = (todaySummary.proteinGrams ?: 0.0) + (todaySummary.partialProteinGrams ?: 0.0)
-                messages = messages + PrivateChatMessage(
-                    if (todayMeals.isEmpty()) "You have not recorded a meal today."
-                    else "Today: ${todayMeals.size} meals · ${"%.0f".format(calories)} kcal · ${"%.0f".format(protein)} g protein.",
-                    false,
-                )
-            }
-                PrivateCoachQuestions.asksProgress(text) -> {
-                messages = messages + PrivateChatMessage("Metria is using the on-device model with a minimal private progress summary.", false)
-                askCoach(text, snapshot)
-            }
-                else -> {
-                messages = messages + PrivateChatMessage("I’m preparing an editable meal draft locally.", false)
-                askMeal(text)
-            }
-            }
-        }, modifier = Modifier.fillMaxWidth(), enabled = input.trim().isNotBlank() && modelStatus.state == "loaded") { Text("Send") }
     }
+    val modelResultIsCurrent = modelStatus.assistantRequestId != null &&
+        modelStatus.assistantRequestId == activeAssistantRequestId
+
+    MetriaAssistantConversationScreen(
+        messages = messages.map { MetriaChatMessage(it.text, it.fromMember, it.localEvidence) },
+        input = input,
+        onInputChange = { input = it },
+        assistantThinking = modelResultIsCurrent && modelStatus.state == "thinking" &&
+            modelStatus.assistantOperation?.let { it.startsWith("coach") || it.startsWith("agent") } == true,
+        mealDraftThinking = modelResultIsCurrent && modelStatus.state == "thinking" &&
+            modelStatus.assistantOperation?.let { !it.startsWith("coach") && !it.startsWith("agent") } == true,
+        streamingReply = modelStatus.coachStreamingReply.takeIf { modelResultIsCurrent },
+        assistantDiagnostic = modelStatus.assistantDiagnostic.takeIf { modelResultIsCurrent },
+        coachDiagnostic = modelStatus.coachDiagnostic.takeIf { modelResultIsCurrent },
+        savedWeight = savedWeight,
+        mealProposal = modelStatus.assistantProposal.takeIf { modelResultIsCurrent },
+        recordingVoice = recordingVoice,
+        preparingVoice = startVoiceImmediately && !recordingVoice,
+        voiceMessage = voiceMessage,
+        modelReady = modelStatus.state == "loaded",
+        onBack = onBack,
+        onNewConversation = {
+            cancelAssistant()
+            onNewConversation()
+        },
+        onCancelAssistant = {
+            cancelAssistant()
+            activeAssistantRequestId = null
+        },
+        onEditSavedWeight = editSavedWeight,
+        onUndoSavedWeight = { entry ->
+            undoSavedWeight(entry)
+            savedWeightId = null
+            messages = messages + PrivateChatMessage("${"%.1f".format(entry.kilograms)} kg entry removed.", false)
+        },
+        onReviewMeal = reviewMeal,
+        onToggleVoice = ::toggleVoice,
+        onSend = ::submitText,
+    )
 }
 
-private fun parseChatWeight(text: String): Double? {
-    val match = Regex("(?i)(?:weigh|weight|peso|pes[oó])?\\s*(\\d{2,3}(?:[.,]\\d+)?)\\s*(?:kg|kilos?|kilograms?|kilogramos?)").find(text) ?: return null
-    return match.groupValues[1].replace(',', '.').toDoubleOrNull()?.takeIf(WeightUnits::isValidKilograms)
-}
+private fun privateConversationContext(messages: List<PrivateChatMessage>): String =
+    PrivateConversationContext.build(messages.map { message ->
+        PrivateConversationTurn(
+            role = when {
+                message.fromMember -> PrivateConversationRole.Member
+                message.localEvidence -> PrivateConversationRole.LocalEvidence
+                else -> PrivateConversationRole.Assistant
+            },
+            text = message.text,
+        )
+    })
 
-private fun coachReplyLanguage(text: String): String {
-    val normalized = text.lowercase()
+internal fun shouldConsumeAssistantResult(activeRequestId: Long?, handledRequestId: Long?, resultRequestId: Long?): Boolean =
+    resultRequestId != null && resultRequestId == activeRequestId && resultRequestId != handledRequestId
+
+private fun coachReplyLanguage(text: String, conversationContext: String = ""): String {
+    val normalized = "$text $conversationContext".lowercase()
     return if (listOf("qué", "como", "cómo", "comí", "peso", "semana", "meta", "progreso").any { it in normalized }) "Spanish" else "the member's language"
 }
 
@@ -1345,8 +1428,6 @@ private fun weightTrendFacts(entries: List<WeightEntry>, cycleContext: CycleCont
     }.orEmpty()
     return base + cycleNote
 }
-
-private fun isDirectChatRequest(text: String) = parseChatWeight(text) != null || PrivateCoachQuestions.asksYesterdayWeight(text) || PrivateCoachQuestions.asksTodaySummary(text)
 
 @Composable
 private fun TodayScreen(
