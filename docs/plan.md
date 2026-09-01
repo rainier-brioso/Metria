@@ -223,6 +223,46 @@ database for the expected personal collection size.
 recover only through the stated archive route, and submit feedback without
 exposing their health data.
 
+## Milestone 7 — Optional external assistant integrations
+
+**Outcome:** a member may deliberately connect Metria to ChatGPT or another
+compatible assistant without making cloud sharing a requirement for the core
+offline product.
+
+**Prerequisites:** M6 release readiness is complete, and optional account,
+subscription, and integration-service identity have separate approved product
+and threat-model decisions. This milestone must not change the initial
+release's no-account, local-only default.
+
+- [ ] Choose and document the integration transport: either a minimized,
+  revocable derived-data cache or a live phone relay. State availability,
+  retention, and disclosure trade-offs; do not describe server-readable data
+  as end-to-end encrypted.
+- [ ] Add an explicit, default-off `Privacy and integrations` flow that names
+  the external processor and lets the member select data categories and a
+  bounded date range before anything leaves the device.
+- [ ] Define a Metria-owned authenticated MCP server with narrow typed tools
+  such as `get_goals`, `get_weight_progress`, `get_nutrition_summary`, and
+  bounded `list_meals`; never expose arbitrary vault queries.
+- [ ] Exclude photos, chat history, biometric or vault keys, diagnostic logs,
+  raw model responses, and free-form notes unless a later threat-model review
+  approves a separate one-time disclosure flow.
+- [ ] Make the first integration read-only. Any later write tool must create a
+  visible proposal for Metria to validate and confirm on the phone; it must not
+  write directly to the vault.
+- [ ] Add OAuth-based authorization, least-privilege scopes, short-lived access,
+  token rotation, replay protection, and a member-visible access log.
+- [ ] Let the member revoke an assistant, expire every active session, and
+  delete all integration-side data without deleting the local vault.
+- [ ] Test expired and revoked authorization, scope violations, bounded-result
+  enforcement, repeated requests, phone offline behavior, deletion, and clear
+  Spanish/English consent and error states.
+
+**Acceptance:** with integration disabled, Metria behaves exactly as the
+offline product. After explicit authorization, ChatGPT can retrieve only the
+selected bounded summaries; the member can inspect the access, revoke it, and
+delete the shared copy. No external assistant can mutate the vault directly.
+
 ## Delivery order
 
 ### Recovery archive decision (M6)
@@ -246,3 +286,5 @@ replacement confirmation before writing the receiving vault.
 6. M5 persisted image/OCR assistance.
 7. M5.5 private dish memory and retrieval.
 8. M6 private alpha and store readiness.
+9. M7 optional external assistant integrations, only after its cloud identity
+   and privacy prerequisites are approved.
