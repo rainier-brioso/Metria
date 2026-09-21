@@ -84,7 +84,8 @@ These are prototype contracts for the first redesign pass. Visual mockups must b
 - Compact action menu: Speak, Chat, Analyse meal, Scan label, Manual entry.
 - Listening state replaces the central action with visible motion, “Listening”, and Stop.
 - Chat opens as a large sheet or full screen with a familiar message timeline, persistent composer, and cancel-generation control.
-- Tool results appear as compact structured cards; model prose stays short and conversational.
+- Tool results appear as compact structured cards collapsed by default; the member can expand the
+  exact local facts on demand while model prose stays short and conversational.
 - Reopening the conversation never resubmits the previous message.
 - Header exposes a labelled **New conversation** action with destructive confirmation.
 

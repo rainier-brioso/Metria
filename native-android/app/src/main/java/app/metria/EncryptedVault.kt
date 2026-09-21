@@ -61,6 +61,7 @@ class EncryptedVault(context: Context) {
     private var displayUnit = "kg"
     private var pendingArchiveRestore: LoadedPayload? = null
 
+    @Synchronized
     fun status(): Status = when {
         sessionKey != null -> unlockedStatus()
         envelopeFile.isFile && dataFile.isFile -> Status.Locked
@@ -70,11 +71,13 @@ class EncryptedVault(context: Context) {
         else -> Status.Missing
     }
 
+    @Synchronized
     fun createCipherForSetup(): Cipher {
         require(!envelopeFile.exists() && !dataFile.exists()) { "A vault already exists." }
         return cipher(Cipher.ENCRYPT_MODE, keystoreKey(createIfMissing = true))
     }
 
+    @Synchronized
     fun createAfterAuthentication(authenticatedCipher: Cipher): Status {
         val dataKey = ByteArray(32).also(SecureRandom()::nextBytes)
         return try {
@@ -103,6 +106,7 @@ class EncryptedVault(context: Context) {
         }
     }
 
+    @Synchronized
     fun createCipherForUnlock(): Cipher {
         val envelope = readEnvelope()
         return cipher(
@@ -112,6 +116,7 @@ class EncryptedVault(context: Context) {
         )
     }
 
+    @Synchronized
     fun unlockAfterAuthentication(authenticatedCipher: Cipher): Status {
         return try {
             val envelope = readEnvelope()
@@ -144,6 +149,7 @@ class EncryptedVault(context: Context) {
         }
     }
 
+    @Synchronized
     fun addWeight(kilograms: Double, note: String?, recordedAt: Instant = Instant.now()): Status {
         if (!WeightUnits.isValidKilograms(kilograms)) {
             return Status.Failed("Enter a weight between 15 and 500 kg.")
@@ -157,6 +163,7 @@ class EncryptedVault(context: Context) {
         return addWeightEntry(entry)
     }
 
+    @Synchronized
     fun addWeightEntry(entry: WeightEntry): Status {
         if (!WeightUnits.isValidKilograms(entry.kilograms)) return Status.Failed("Enter a weight between 15 and 500 kg.")
         if (sessionKey == null) return Status.Locked
@@ -170,6 +177,7 @@ class EncryptedVault(context: Context) {
         }
     }
 
+    @Synchronized
     fun updateWeight(id: String, kilograms: Double, note: String?, recordedAt: Instant): Status {
         if (!WeightUnits.isValidKilograms(kilograms)) {
             return Status.Failed("Enter a weight between 15 and 500 kg.")
@@ -192,6 +200,7 @@ class EncryptedVault(context: Context) {
         }
     }
 
+    @Synchronized
     fun deleteWeight(id: String): Status {
         if (sessionKey == null) return Status.Locked
         val index = entries.indexOfFirst { it.id == id }
@@ -206,6 +215,7 @@ class EncryptedVault(context: Context) {
         }
     }
 
+    @Synchronized
     fun setDisplayUnit(unit: String): Status {
         if (unit !in setOf("kg", "lb")) return Status.Failed("Unsupported weight unit.")
         if (sessionKey == null) return Status.Locked
@@ -220,6 +230,7 @@ class EncryptedVault(context: Context) {
         }
     }
 
+    @Synchronized
     fun setCycleContext(context: CycleContext): Status {
         if (sessionKey == null) return Status.Locked
         val normalized = CycleContextValidation.normalized(context)
@@ -235,6 +246,7 @@ class EncryptedVault(context: Context) {
         }
     }
 
+    @Synchronized
     fun lock() {
         sessionKey?.fill(0)
         sessionKey = null
@@ -252,6 +264,7 @@ class EncryptedVault(context: Context) {
     }
 
     /** Export contains member records only, never device keys, model files, temporary images, chat, diagnostics, or audits. */
+    @Synchronized
     fun exportRecoveryArchive(passphrase: CharArray): Result<ByteArray> {
         if (sessionKey == null) return Result.failure(IllegalStateException("Unlock your vault before exporting."))
         return runCatching {
@@ -263,6 +276,7 @@ class EncryptedVault(context: Context) {
     }
 
     /** Authenticates and fully validates an archive without changing current member data. */
+    @Synchronized
     fun inspectRecoveryArchive(archive: ByteArray, passphrase: CharArray): Result<ArchiveSummary> {
         if (sessionKey == null) return Result.failure(IllegalStateException("Unlock or create a vault before restoring."))
         return runCatching {
@@ -273,6 +287,7 @@ class EncryptedVault(context: Context) {
     }
 
     /** Replaces current data only after a successful inspection and an explicit member confirmation. */
+    @Synchronized
     fun confirmRecoveryRestore(): Result<ArchiveSummary> {
         if (sessionKey == null) return Result.failure(IllegalStateException("Unlock or create a vault before restoring."))
         return runCatching {
@@ -564,7 +579,7 @@ class EncryptedVault(context: Context) {
             carbohydrateGrams = values.optNullableDouble("carbohydrateGrams"),
             fatGrams = values.optNullableDouble("fatGrams"),
         ).also { require(NutritionTargetValidation.valid(it)) { "Invalid nutrition targets." } }
-        } ?: null
+        }
         val loadedCycleContext = root.optJSONObject("cycleContext")?.let { values ->
             CycleContext(
                 enabled = values.optBoolean("enabled", false),
@@ -595,6 +610,7 @@ class EncryptedVault(context: Context) {
         return LoadedPayload(loadedDisplayUnit, loadedEntries, loadedMeals, loadedCorrections, loadedPersonalDishes, loadedAudits, loadedTargets, loadedCycleContext, loadedConversation)
     }
 
+    @Synchronized
     fun saveActiveConversation(
         messages: List<PrivateConversationMessage>,
         updatedAt: Instant = Instant.now(),
@@ -614,6 +630,7 @@ class EncryptedVault(context: Context) {
         }
     }
 
+    @Synchronized
     fun clearActiveConversation(): Status {
         if (sessionKey == null) return Status.Locked
         val previous = activeConversation
@@ -630,12 +647,14 @@ class EncryptedVault(context: Context) {
         }
     }
 
+    @Synchronized
     fun acknowledgeConversationExpiry(): Status {
         if (sessionKey == null) return Status.Locked
         conversationExpired = false
         return unlockedStatus()
     }
 
+    @Synchronized
     fun refreshConversationRetention(now: Instant = Instant.now()): Status {
         if (sessionKey == null) return Status.Locked
         val previous = activeConversation ?: return unlockedStatus()
@@ -653,6 +672,7 @@ class EncryptedVault(context: Context) {
         }
     }
 
+    @Synchronized
     fun recordFoodCorrections(corrections: List<FoodCorrection>): Status {
         if (sessionKey == null) return Status.Locked
         val previous = foodCorrections.toList()
@@ -667,6 +687,7 @@ class EncryptedVault(context: Context) {
     }
 
     /** Stores a member-confirmed personal dish for bounded local assistant retrieval. */
+    @Synchronized
     fun savePersonalDish(dish: PersonalDish): Status {
         if (sessionKey == null) return Status.Locked
         if (!PersonalDishValidation.valid(dish)) return Status.Failed("That personal dish was not valid.")
@@ -685,6 +706,7 @@ class EncryptedVault(context: Context) {
      * One durable member action: either the meal and all accepted learning are
      * encrypted together, or the in-memory state is restored unchanged.
      */
+    @Synchronized
     fun saveReviewedMeal(
         entry: MealEntry,
         corrections: List<FoodCorrection>,
@@ -720,6 +742,7 @@ class EncryptedVault(context: Context) {
         }
     }
 
+    @Synchronized
     fun deletePersonalDish(id: String): Status {
         if (sessionKey == null) return Status.Locked
         val index = personalDishes.indexOfFirst { it.id == id }
@@ -777,6 +800,7 @@ class EncryptedVault(context: Context) {
     }
 
     /** Stores bounded, non-content audit metadata only while the private vault is unlocked. */
+    @Synchronized
     fun recordAnalysisAudit(audit: LocalAnalysisAudit): Status {
         if (sessionKey == null) return Status.Locked
         if (!LocalAnalysisAuditValidation.valid(audit)) return Status.Failed("The local analysis audit was invalid.")
@@ -793,6 +817,7 @@ class EncryptedVault(context: Context) {
         }
     }
 
+    @Synchronized
     fun setNutritionTargets(targets: NutritionTargets?): Status {
         if (sessionKey == null) return Status.Locked
         val normalized = targets?.takeUnless(NutritionTargetValidation::empty)
@@ -810,6 +835,7 @@ class EncryptedVault(context: Context) {
         }
     }
 
+    @Synchronized
     fun addMeal(entry: MealEntry): Status {
         if (sessionKey == null) return Status.Locked
         if (!MealEntryValidation.valid(entry)) return Status.Failed("This meal draft contains invalid values.")
@@ -823,6 +849,7 @@ class EncryptedVault(context: Context) {
         }
     }
 
+    @Synchronized
     fun updateMeal(entry: MealEntry): Status {
         if (sessionKey == null) return Status.Locked
         if (!MealEntryValidation.valid(entry)) return Status.Failed("This meal contains invalid values.")
@@ -839,6 +866,7 @@ class EncryptedVault(context: Context) {
         }
     }
 
+    @Synchronized
     fun deleteMeal(id: String): Status {
         if (sessionKey == null) return Status.Locked
         val index = meals.indexOfFirst { it.id == id }

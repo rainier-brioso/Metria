@@ -57,5 +57,7 @@ class MemberProgressOverviewTest {
             "recorded_meals_only_not_total_intake",
             (overview.toolResponse()["coverage"] as Map<*, *>)["interpretation"],
         )
+        assertEquals(6, (overview.toolResponse()["progress"] as Map<*, *>)["calorie_goal_percent"])
+        assertEquals(8, (overview.toolResponse()["progress"] as Map<*, *>)["protein_goal_percent"])
     }
 }

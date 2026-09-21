@@ -36,6 +36,8 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DocumentScanner
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Search
@@ -57,6 +59,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -65,6 +68,7 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import app.metria.MealProposal
 import app.metria.ModelStatus
@@ -344,16 +348,35 @@ private fun ChatBubble(message: MetriaChatMessage) {
 
 @Composable
 private fun EvidenceCard(text: String) {
-    Card(colors = CardDefaults.cardColors(containerColor = MetriaColors.Surface), modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+    var expanded by rememberSaveable(text) { mutableStateOf(false) }
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MetriaColors.Surface),
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics { stateDescription = evidenceStateDescription(expanded) }
+            .clickable { expanded = !expanded },
+    ) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(7.dp),
+            ) {
                 Icon(Icons.Rounded.Lock, contentDescription = null, tint = MetriaColors.Verified, modifier = Modifier.size(17.dp))
-                Text("From your records", color = MetriaColors.Verified, style = MaterialTheme.typography.labelLarge)
+                Text("From your records", color = MetriaColors.Verified, style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
+                Icon(
+                    if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                    contentDescription = if (expanded) "Hide record details" else "Show record details",
+                    tint = MetriaColors.InkMuted,
+                )
             }
-            SafeMarkdownText(text, MetriaColors.Ink)
+            if (expanded) SafeMarkdownText(text, MetriaColors.Ink)
         }
     }
 }
+
+internal fun evidenceStateDescription(expanded: Boolean): String =
+    if (expanded) "Record details expanded" else "Record details collapsed"
 
 @Composable
 private fun ThinkingBubble(streamingReply: String?, onCancel: () -> Unit) {

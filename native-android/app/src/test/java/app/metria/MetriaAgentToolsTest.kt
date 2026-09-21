@@ -180,6 +180,264 @@ class MetriaAgentToolsTest {
     }
 
     @Test
+    fun `fact auditor keeps each weight bound to its own date`() {
+        val evidence = MetriaAgentFactEvidence.from(
+            "read_weight",
+            mapOf(
+                "source" to "metria_local_vault",
+                "entries" to listOf(
+                    mapOf("date" to "2026-08-27", "kilograms" to 92.0),
+                    mapOf("date" to "2026-08-28", "kilograms" to 91.0),
+                ),
+            ),
+        )
+
+        assertEquals(
+            "On 2026-08-27 you weighed 92 kg. On 2026-08-28 you weighed 91 kg.",
+            MetriaAgentFactAuditor.audit(
+                "On 2026-08-27 you weighed 92 kg. On 2026-08-28 you weighed 91 kg.",
+                evidence,
+            ).acceptedText,
+        )
+        assertTrue(
+            MetriaAgentFactAuditor.audit(
+                "On 2026-08-27 you weighed 91 kg. On 2026-08-28 you weighed 92 kg.",
+                evidence,
+            ).retryable,
+        )
+    }
+
+    @Test
+    fun `fact auditor keeps a weight transition and its change distinct from dated readings`() {
+        val evidence = MetriaAgentFactEvidence.from(
+            "read_weight",
+            mapOf(
+                "source" to "metria_local_vault",
+                "total_count" to 2,
+                "entries" to listOf(
+                    mapOf("date" to "2026-08-27", "kilograms" to 92.0),
+                    mapOf("date" to "2026-08-28", "kilograms" to 91.0),
+                ),
+                "trend" to mapOf(
+                    "first_date" to "2026-08-27",
+                    "first_kg" to 92.0,
+                    "latest_date" to "2026-08-28",
+                    "latest_kg" to 91.0,
+                    "change_kg" to -1.0,
+                ),
+            ),
+        )
+
+        assertEquals(
+            "Tienes 2 registros de peso: de 92 a 91 kg, un cambio de -1 kg.",
+            MetriaAgentFactAuditor.audit(
+                "Tienes 2 registros de peso: de 92 a 91 kg, un cambio de -1 kg.",
+                evidence,
+            ).acceptedText,
+        )
+        assertTrue(
+            MetriaAgentFactAuditor.audit(
+                "Tienes 2 registros de peso: de 91 a 92 kg, un cambio de -1 kg.",
+                evidence,
+            ).retryable,
+        )
+    }
+
+    @Test
+    fun `fact auditor keeps each meal bound to its own date`() {
+        val evidence = MetriaAgentFactEvidence.from(
+            "read_meals",
+            mapOf(
+                "source" to "metria_local_vault",
+                "meals" to listOf(
+                    mapOf("date" to "2026-08-27", "title" to "Arroz con pollo", "slot" to "lunch"),
+                    mapOf("date" to "2026-08-28", "title" to "Lentejas", "slot" to "dinner"),
+                ),
+            ),
+        )
+
+        assertEquals(
+            "El 2026-08-27 registraste Arroz con pollo. El 2026-08-28 registraste Lentejas.",
+            MetriaAgentFactAuditor.audit(
+                "El 2026-08-27 registraste Arroz con pollo. El 2026-08-28 registraste Lentejas.",
+                evidence,
+            ).acceptedText,
+        )
+        assertTrue(
+            MetriaAgentFactAuditor.audit(
+                "El 2026-08-27 registraste Lentejas. El 2026-08-28 registraste Arroz con pollo.",
+                evidence,
+            ).retryable,
+        )
+    }
+
+    @Test
+    fun `fact auditor binds nutrition values and goals to metric and period`() {
+        val evidence = MetriaAgentFactEvidence.from(
+            "read_nutrition_summary",
+            mapOf(
+                "source" to "metria_local_vault",
+                "period" to "last_7_days_including_today",
+                "nutrition" to mapOf(
+                    "calories_kcal" to 1250,
+                    "protein_g" to 82,
+                    "calorie_goal_kcal" to 1920,
+                    "protein_goal_g" to 105,
+                ),
+            ),
+        )
+
+        assertEquals(
+            "Esta semana llevas 1250 kcal y 82 g de proteína. Tu objetivo semanal es 1920 kcal.",
+            MetriaAgentFactAuditor.audit(
+                "Esta semana llevas 1250 kcal y 82 g de proteína. Tu objetivo semanal es 1920 kcal.",
+                evidence,
+            ).acceptedText,
+        )
+        assertTrue(
+            MetriaAgentFactAuditor.audit(
+                "Esta semana llevas 82 kcal y 1250 g de proteína.",
+                evidence,
+            ).retryable,
+        )
+        assertTrue(
+            MetriaAgentFactAuditor.audit(
+                "Esta semana llevas 82 calorías y 1250 de proteína.",
+                evidence,
+            ).retryable,
+        )
+        assertTrue(
+            MetriaAgentFactAuditor.audit(
+                "Tu objetivo diario es 1920 kcal.",
+                evidence,
+            ).retryable,
+        )
+    }
+
+    @Test
+    fun `host calculates bounded nutrition goal progress`() {
+        assertEquals(25, goalProgressPercent(4420.0, 17500.0))
+        assertEquals(16, goalProgressPercent(196.0, 1260.0))
+        assertNull(goalProgressPercent(100.0, 0.0))
+        assertNull(goalProgressPercent(null, 100.0))
+    }
+
+    @Test
+    fun `fact auditor binds host calculated percentages to their nutrition metric`() {
+        val evidence = MetriaAgentFactEvidence.from(
+            "read_nutrition_summary",
+            mapOf(
+                "source" to "metria_local_vault",
+                "period" to "last_7_days_including_today",
+                "nutrition" to mapOf(
+                    "calories_kcal" to 4420,
+                    "protein_g" to 196,
+                    "calorie_goal_kcal" to 17500,
+                    "protein_goal_g" to 1260,
+                ),
+                "progress" to mapOf(
+                    "calorie_goal_percent" to 25,
+                    "protein_goal_percent" to 16,
+                ),
+            ),
+        )
+
+        assertEquals(
+            "Esta semana has registrado el 25% de tu objetivo calórico y el 16% del objetivo de proteína.",
+            MetriaAgentFactAuditor.audit(
+                "Esta semana has registrado el 25% de tu objetivo calórico y el 16% del objetivo de proteína.",
+                evidence,
+            ).acceptedText,
+        )
+        assertEquals(
+            "This week, recorded estimates reached 25% of your calorie goal and 16% of your protein goal.",
+            MetriaAgentFactAuditor.audit(
+                "This week, recorded estimates reached 25% of your calorie goal and 16% of your protein goal.",
+                evidence,
+            ).acceptedText,
+        )
+        assertTrue(
+            MetriaAgentFactAuditor.audit(
+                "Esta semana has registrado el 16% de tu objetivo calórico y el 25% del objetivo de proteína.",
+                evidence,
+            ).retryable,
+        )
+        assertTrue(
+            MetriaAgentFactAuditor.audit(
+                "Esta semana has registrado el 26% de tu objetivo calórico.",
+                evidence,
+            ).retryable,
+        )
+    }
+
+    @Test
+    fun `member visible weight keeps stored precision without trailing zeroes`() {
+        assertEquals("91.05", formatRecordedKilograms(91.05))
+        assertEquals("91.1", formatRecordedKilograms(91.10))
+        assertEquals("91", formatRecordedKilograms(91.0))
+        assertEquals("+0.05", formatSignedRecordedKilograms(0.05))
+    }
+
+    @Test
+    fun `fact auditor binds counts to their collection`() {
+        val evidence = MetriaAgentFactEvidence.from(
+            "read_progress_overview",
+            mapOf(
+                "source" to "metria_local_vault",
+                "period" to "last_7_days_including_today",
+                "coverage" to mapOf("period_days" to 7, "days_with_recorded_meals" to 3),
+                "meals" to mapOf("recorded_count" to 4),
+                "weight" to mapOf("entry_count" to 2),
+            ),
+        )
+
+        assertEquals(
+            "Has registrado 4 comidas. Hay comidas en 3 días. Tienes 2 registros de peso.",
+            MetriaAgentFactAuditor.audit(
+                "Has registrado 4 comidas. Hay comidas en 3 días. Tienes 2 registros de peso.",
+                evidence,
+            ).acceptedText,
+        )
+        assertTrue(
+            MetriaAgentFactAuditor.audit(
+                "Has registrado 2 comidas. Tienes 4 registros de peso.",
+                evidence,
+            ).retryable,
+        )
+    }
+
+    @Test
+    fun `fact auditor accepts only returned saved dish identities`() {
+        val evidence = MetriaAgentFactEvidence.from(
+            "search_saved_dishes",
+            mapOf(
+                "source" to "metria_local_vault",
+                "matches" to listOf(
+                    mapOf(
+                        "name" to "San Jacobo",
+                        "ingredients" to listOf("pollo", "jamón", "queso"),
+                        "confirmation_count" to 3,
+                    ),
+                ),
+            ),
+        )
+
+        assertEquals(
+            "Tu plato guardado San Jacobo está en tus platos privados.",
+            MetriaAgentFactAuditor.audit(
+                "Tu plato guardado San Jacobo está en tus platos privados.",
+                evidence,
+            ).acceptedText,
+        )
+        assertTrue(
+            MetriaAgentFactAuditor.audit(
+                "Tu plato guardado Cutlet está en tus platos privados.",
+                evidence,
+            ).retryable,
+        )
+    }
+
+    @Test
     fun `migration policy sends only explicit write language to legacy route`() {
         assertTrue(MetriaAgentMigrationPolicy.useLegacyWriteRoute("Registra 77 kg hoy"))
         assertTrue(MetriaAgentMigrationPolicy.useLegacyWriteRoute("Save this meal"))

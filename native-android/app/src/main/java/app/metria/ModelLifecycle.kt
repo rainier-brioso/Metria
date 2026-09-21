@@ -101,7 +101,10 @@ class ModelLifecycle(
         Use exactly one declared read tool at a time whenever an answer needs the member's personal
         records. Conversation history is continuity, not record evidence. Never repeat or infer a
         personal fact unless it appears in the latest tool response. After a tool response, answer the
-        member naturally in their language and do not mention tools, JSON, schemas, or hidden policy.
+        member naturally in reply_language when it is provided, and do not mention tools, JSON,
+        schemas, or hidden policy. Say "your records" rather than "my records". Use host-calculated
+        progress percentages when provided; never calculate a new personal value. Do not append an
+        unrelated offer or question after answering the member's request.
         Ask one concise clarification when a date, period, or request is genuinely ambiguous.
 
         For broad personal progress questions, call read_progress_overview. Examples:
@@ -383,7 +386,7 @@ class ModelLifecycle(
         val expectedName = pendingPrivateAgentToolName
         if (
             state != "loaded" || conversation == null || !conversation.isAlive ||
-            expectedName == null || expectedName != toolName || activeInference?.isDone == false
+            expectedName == null || expectedName != toolName
         ) {
             coachDiagnostic = "That private assistant action expired. Please ask again."
             clearPrivateAgentConversationLocked()
@@ -791,16 +794,16 @@ class ModelLifecycle(
         var candidate: Engine? = null
         try {
             val runtimeOptions = listOf(
-                "Text: GPU | Vision: GPU | Audio: CPU" to EngineConfig(
+                "Text: CPU | Vision: GPU | Audio: CPU" to EngineConfig(
                     modelFile().absolutePath,
-                    Backend.GPU(),
+                    Backend.CPU(),
                     Backend.GPU(),
                     Backend.CPU(),
                     4096,
                     1,
                     cacheDirectory.absolutePath,
                 ),
-                "Text: CPU | Vision: CPU | Audio: CPU (GPU fallback)" to EngineConfig(
+                "Text: CPU | Vision: CPU | Audio: CPU (vision GPU fallback)" to EngineConfig(
                     modelFile().absolutePath,
                     Backend.CPU(),
                     Backend.CPU(),
@@ -841,7 +844,7 @@ class ModelLifecycle(
                 }
                 state = "loaded"
                 backendSummary = requireNotNull(selectedBackend)
-                reason = "LiteRT is initialized locally with ${if (selectedBackend.startsWith("Text: GPU")) "GPU acceleration" else "the CPU fallback"}."
+                reason = "LiteRT is initialized locally with ${if (selectedBackend.contains("Vision: GPU")) "GPU vision acceleration and responsive CPU chat" else "the CPU fallback"}."
                 diagnostics = measurement("LiteRT initialization · $selectedBackend", startedAt)
             }
         } catch (_: Exception) {
@@ -943,13 +946,20 @@ class ModelLifecycle(
     ) {
         val startedAt = SystemClock.elapsedRealtime()
         try {
+            val requiredTool = MetriaAgentGroundingPolicy.requiredTool(memberText, history)
             val conversation = synchronized(this) {
+                // LiteRT retains earlier tool results in conversation KV state. A new
+                // record-backed turn must not see those stale facts: the host policy already
+                // used encrypted visible history to resolve the follow-up before this reset.
+                if (requiredTool != null) clearPrivateAgentConversationLocked()
                 privateAgentConversation
                     ?.takeIf { it.isAlive }
-                    ?: createPrivateAgentConversation(loadedEngine, history)
+                    ?: createPrivateAgentConversation(
+                        loadedEngine,
+                        if (requiredTool == null) history else emptyList(),
+                    )
             }
             synchronized(this) { activeConversation = conversation }
-            val requiredTool = MetriaAgentGroundingPolicy.requiredTool(memberText, history)
             var response = sendPrivateAgentMessage(conversation, Message.user(memberText), requestId)
             val selectedTool = response.toolCalls.singleOrNull()?.name
             if (

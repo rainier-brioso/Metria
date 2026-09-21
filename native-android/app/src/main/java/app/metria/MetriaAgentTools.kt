@@ -159,30 +159,172 @@ data class MetriaAgentFactAudit(
     val retryable: Boolean = rejection == "unsupported_personal_fact"
 }
 
+internal data class MetriaWeightRecordFact(val date: String, val kilograms: Set<String>)
+internal data class MetriaWeightTransitionFact(val firstKilograms: Set<String>, val latestKilograms: Set<String>)
+internal data class MetriaMealRecordFact(val date: String, val title: String, val slot: String?)
+internal data class MetriaNutritionFact(
+    val period: String,
+    val metric: String,
+    val role: String,
+    val values: Set<String>,
+)
+internal data class MetriaCountFact(
+    val collection: String,
+    val qualifier: String,
+    val values: Set<String>,
+)
+internal data class MetriaSavedDishFact(
+    val name: String,
+    val ingredients: Set<String>,
+    val confirmationCount: Set<String>,
+)
+
 /**
  * Immutable evidence for exactly one host-executed tool response.
  *
- * Design decision: the model may phrase grounded facts naturally, but every Arabic number and
- * weight direction in the visible answer must be recoverable from this latest bounded response.
- * Conversation history is deliberately never added to this allowlist.
+ * Values are retained in complete typed relationships instead of a global numeric allowlist:
+ * dates stay attached to their record, nutrition values to metric/role/period, and counts to
+ * their collection. The numeric allowlist remains only the first coarse fail-closed gate.
+ * Conversation history is deliberately never added to this evidence.
  */
 class MetriaAgentFactEvidence private constructor(
     val toolName: String,
     internal val allowedNumbers: Set<String>,
     internal val weightDirection: Int?,
+    internal val weightChangeValues: Set<String>,
     internal val containsVaultFacts: Boolean,
+    internal val period: String?,
+    internal val weightRecords: List<MetriaWeightRecordFact>,
+    internal val weightTransition: MetriaWeightTransitionFact?,
+    internal val mealRecords: List<MetriaMealRecordFact>,
+    internal val nutritionFacts: List<MetriaNutritionFact>,
+    internal val countFacts: List<MetriaCountFact>,
+    internal val savedDishes: List<MetriaSavedDishFact>,
 ) {
     companion object {
         fun from(toolName: String, response: Map<String, Any?>): MetriaAgentFactEvidence {
             val numbers = linkedSetOf<String>()
             collectNumbers(response, numbers)
+            val normalizedToolName = toolName.trim().lowercase()
+            val period = response.string("period")?.let(::canonicalPeriod)
+            val entryWeights = response.listOfMaps("entries").mapNotNull { entry ->
+                val date = entry.string("date") ?: return@mapNotNull null
+                val kilograms = entry.numberValues("kilograms")
+                kilograms.takeIf(Set<String>::isNotEmpty)?.let { MetriaWeightRecordFact(date, it) }
+            }
+            val trend = response.map("trend")
+            val trendWeights = listOf(
+                "first_date" to "first_kg",
+                "latest_date" to "latest_kg",
+            ).mapNotNull { (dateKey, weightKey) ->
+                val date = trend.string(dateKey) ?: return@mapNotNull null
+                val kilograms = trend.numberValues(weightKey)
+                kilograms.takeIf(Set<String>::isNotEmpty)?.let { MetriaWeightRecordFact(date, it) }
+            }
+            val weights = (entryWeights + trendWeights).distinct()
+            val weightTransition = when {
+                trend.numberValues("first_kg").isNotEmpty() && trend.numberValues("latest_kg").isNotEmpty() ->
+                    MetriaWeightTransitionFact(trend.numberValues("first_kg"), trend.numberValues("latest_kg"))
+                entryWeights.size >= 2 -> MetriaWeightTransitionFact(
+                    entryWeights.first().kilograms,
+                    entryWeights.last().kilograms,
+                )
+                else -> null
+            }
+            val meals = response.listOfMaps("meals").mapNotNull { meal ->
+                val date = meal.string("date") ?: return@mapNotNull null
+                val title = meal.string("title")?.let(::normalizeWords)?.takeIf(String::isNotEmpty)
+                    ?: return@mapNotNull null
+                MetriaMealRecordFact(date, title, meal.string("slot")?.let(::normalizeWords))
+            }
+            val nutrition = response.map("nutrition")
+            val progress = response.map("progress")
+            val nutritionFacts = buildList {
+                val selectedPeriod = period ?: return@buildList
+                addNutritionFact(nutrition, selectedPeriod, "calories", "actual", "calories_kcal")
+                addNutritionFact(nutrition, selectedPeriod, "protein", "actual", "protein_g")
+                addNutritionFact(nutrition, selectedPeriod, "calories", "goal", "calorie_goal_kcal")
+                addNutritionFact(nutrition, selectedPeriod, "protein", "goal", "protein_goal_g")
+                addNutritionFact(progress, selectedPeriod, "calories", "progress", "calorie_goal_percent")
+                addNutritionFact(progress, selectedPeriod, "protein", "progress", "protein_goal_percent")
+            }
+            val counts = buildList {
+                val primaryCollection = when (normalizedToolName) {
+                    "read_weight" -> "weight_entries"
+                    "read_meals" -> "meals"
+                    "search_saved_dishes" -> "saved_dishes"
+                    else -> null
+                }
+                primaryCollection?.let { collection ->
+                    addCountFact(response, collection, "total", "total_count")
+                    addCountFact(response, collection, "returned", "returned_count")
+                    addCountFact(response, collection, "omitted", "omitted_count")
+                }
+                response.map("meals").let { mealCounts ->
+                    addCountFact(mealCounts, "meals", "recorded", "recorded_count")
+                    addCountFact(mealCounts, "meals", "complete", "complete_nutrition_count")
+                    addCountFact(mealCounts, "meals", "partial", "partial_estimate_count")
+                    addCountFact(mealCounts, "meals", "missing", "missing_nutrition_count")
+                }
+                response.map("coverage").let { coverage ->
+                    addCountFact(coverage, "days", "period", "period_days")
+                    addCountFact(coverage, "days", "with_meals", "days_with_recorded_meals")
+                }
+                response.map("weight").let { weight ->
+                    addCountFact(weight, "weight_entries", "recorded", "entry_count")
+                }
+            }
+            val savedDishes = response.listOfMaps("matches").mapNotNull { match ->
+                val name = match.string("name")?.let(::normalizeWords)?.takeIf(String::isNotEmpty)
+                    ?: return@mapNotNull null
+                MetriaSavedDishFact(
+                    name = name,
+                    ingredients = (match["ingredients"] as? Iterable<*>)
+                        ?.mapNotNull { ingredient ->
+                            ingredient?.toString()?.let(::normalizeWords)?.takeIf(String::isNotEmpty)
+                        }
+                        ?.toSet()
+                        .orEmpty(),
+                    confirmationCount = match.numberValues("confirmation_count"),
+                )
+            }
+            val explicitChange = explicitWeightChange(response)
+                ?: entryWeightChangeValue(response)
             return MetriaAgentFactEvidence(
-                toolName = toolName,
+                toolName = normalizedToolName,
                 allowedNumbers = numbers,
-                weightDirection = explicitWeightChange(response)?.compareTo(0.0)
-                    ?: weightEntryChange(response)?.compareTo(0.0),
+                weightDirection = explicitChange?.compareTo(0.0),
+                weightChangeValues = explicitChange?.let(::signedNumericCandidates).orEmpty(),
                 containsVaultFacts = response["source"] == "metria_local_vault",
+                period = period,
+                weightRecords = weights,
+                weightTransition = weightTransition,
+                mealRecords = meals,
+                nutritionFacts = nutritionFacts,
+                countFacts = counts,
+                savedDishes = savedDishes,
             )
+        }
+
+        private fun MutableList<MetriaNutritionFact>.addNutritionFact(
+            source: Map<*, *>,
+            period: String,
+            metric: String,
+            role: String,
+            key: String,
+        ) {
+            val values = source.numberValues(key)
+            if (values.isNotEmpty()) add(MetriaNutritionFact(period, metric, role, values))
+        }
+
+        private fun MutableList<MetriaCountFact>.addCountFact(
+            source: Map<*, *>,
+            collection: String,
+            qualifier: String,
+            key: String,
+        ) {
+            val values = source.numberValues(key)
+            if (values.isNotEmpty()) add(MetriaCountFact(collection, qualifier, values))
         }
 
         private fun collectNumbers(value: Any?, destination: MutableSet<String>) {
@@ -190,7 +332,14 @@ class MetriaAgentFactEvidence private constructor(
                 is Map<*, *> -> value.values.forEach { collectNumbers(it, destination) }
                 is Iterable<*> -> value.forEach { collectNumbers(it, destination) }
                 is Array<*> -> value.forEach { collectNumbers(it, destination) }
-                is Number -> numericCandidates(value.toString()).forEach(destination::add)
+                is Number -> {
+                    numericCandidates(value.toString()).forEach(destination::add)
+                    value.toDouble().takeIf { it < 0.0 }
+                        ?.let { negative -> kotlin.math.abs(negative) }
+                        ?.let(Double::toString)
+                        ?.let(::numericCandidates)
+                        ?.forEach(destination::add)
+                }
                 is String -> numberToken.findAll(value).forEach { match ->
                     numericCandidates(match.value).forEach(destination::add)
                 }
@@ -199,17 +348,45 @@ class MetriaAgentFactEvidence private constructor(
 
         private fun explicitWeightChange(response: Map<String, Any?>): Double? =
             (response["weight"] as? Map<*, *>)?.get("change_kg").asDouble()
+                ?: (response["trend"] as? Map<*, *>)?.get("change_kg").asDouble()
 
-        private fun weightEntryChange(response: Map<String, Any?>): Double? {
+        private fun entryWeightChangeValue(response: Map<String, Any?>): Double? {
             val entries = response["entries"] as? List<*> ?: return null
             val first = (entries.firstOrNull() as? Map<*, *>)?.get("kilograms").asDouble() ?: return null
             val latest = (entries.lastOrNull() as? Map<*, *>)?.get("kilograms").asDouble() ?: return null
             return if (entries.size >= 2) latest - first else null
         }
 
+        private fun signedNumericCandidates(value: Double): Set<String> = buildSet {
+            addAll(numericCandidates(value.toString()))
+            addAll(numericCandidates(kotlin.math.abs(value).toString()))
+        }
+
         private fun Any?.asDouble(): Double? = when (this) {
             is Number -> toDouble()
             is String -> replace(',', '.').toDoubleOrNull()
+            else -> null
+        }
+
+        private fun Map<String, Any?>.map(key: String): Map<*, *> = this[key] as? Map<*, *> ?: emptyMap<Any?, Any?>()
+
+        private fun Map<String, Any?>.listOfMaps(key: String): List<Map<*, *>> =
+            (this[key] as? Iterable<*>)?.mapNotNull { it as? Map<*, *> }.orEmpty()
+
+        private fun Map<*, *>.string(key: String): String? = this[key]
+            ?.toString()
+            ?.trim()
+            ?.takeIf(String::isNotEmpty)
+
+        private fun Map<*, *>.numberValues(key: String): Set<String> = when (val value = this[key]) {
+            is Number -> numericCandidates(value.toString())
+            is String -> numericCandidates(value)
+            else -> emptySet()
+        }
+
+        private fun canonicalPeriod(raw: String): String? = when (normalizeWords(raw)) {
+            "today" -> "today"
+            "week", "last_7_days", "last_7_days_including_today" -> "week"
             else -> null
         }
     }
@@ -237,6 +414,62 @@ object MetriaAgentFactAuditor {
         """\b(?:baj[oó]|ha\s+bajado|disminuy[oó]|perdiste|decreased|lost|went\s+down)\b""",
         RegexOption.IGNORE_CASE,
     )
+    private val isoDate = Regex("""\b\d{4}-\d{2}-\d{2}\b""")
+    private val weightValue = Regex(
+        """(?<![\p{L}\p{N}])(\d+(?:[.,]\d+)?)\s*(?:kg|kilogramos?|kilograms?)\b""",
+        RegexOption.IGNORE_CASE,
+    )
+    private val weightTransitionValue = Regex(
+        """(?<![\p{L}\p{N}])(\d+(?:[.,]\d+)?)\s*(?:kg|kilogramos?|kilograms?)?\s+(?:a|to)\s+(\d+(?:[.,]\d+)?)\s*(?:kg|kilogramos?|kilograms?)\b""",
+        RegexOption.IGNORE_CASE,
+    )
+    private val weightChangeWords = Regex(
+        """\b(?:change|changed|difference|cambio|variaci[oó]n|diferencia)\b""",
+        RegexOption.IGNORE_CASE,
+    )
+    private val calorieValue = Regex(
+        """(?<![\p{L}\p{N}])(\d+(?:[.,]\d+)?)\s*(?:kcal|calor(?:ia|ias|ie|ies))\b""",
+        RegexOption.IGNORE_CASE,
+    )
+    private val proteinValue = Regex(
+        """(?<![\p{L}\p{N}])(\d+(?:[.,]\d+)?)\s*(?:g(?:ramos?|rams?)?\s+(?:de\s+)?prote[ií]na|g\s+protein|protein\s+g)\b""",
+        RegexOption.IGNORE_CASE,
+    )
+    private val calorieRatio = Regex(
+        """(\d+(?:[.,]\d+)?)\s*/\s*(\d+(?:[.,]\d+)?)\s*(?:kcal|calor(?:ia|ias|ie|ies))\b""",
+        RegexOption.IGNORE_CASE,
+    )
+    private val proteinRatio = Regex(
+        """(\d+(?:[.,]\d+)?)\s*/\s*(\d+(?:[.,]\d+)?)\s*(?:g(?:ramos?|rams?)?\s+(?:de\s+)?prote[ií]na|g\s+protein)\b""",
+        RegexOption.IGNORE_CASE,
+    )
+    private val percentValue = Regex("""(?<![\p{L}\p{N}])(\d+(?:[.,]\d+)?)\s*%""")
+    private val calorieMetricWord = Regex(
+        """\b(?:kcal|calor(?:ia|ias|ie|ies)|cal[oó]ric[oa]s?)\b""",
+        RegexOption.IGNORE_CASE,
+    )
+    private val proteinMetricWord = Regex("""\b(?:prote[ií]na|protein)\b""", RegexOption.IGNORE_CASE)
+    private val goalWords = Regex("""\b(?:goal|target|objetivo|meta)\b""", RegexOption.IGNORE_CASE)
+    private val todayWords = Regex("""\b(?:today|hoy|daily|diari[oa])\b""", RegexOption.IGNORE_CASE)
+    private val weekWords = Regex("""\b(?:week|weekly|semana|semanal|7\s+d[ií]as|7\s+days)\b""", RegexOption.IGNORE_CASE)
+    private val negativeResult = Regex("""\b(?:no|none|ningun[oa]?|sin)\b""", RegexOption.IGNORE_CASE)
+    private val mealCountValue = Regex(
+        """\b(\d+)\s+(?:recorded\s+)?(?:meals?|comidas?)\b""",
+        RegexOption.IGNORE_CASE,
+    )
+    private val weightCountValue = Regex(
+        """\b(\d+)\s+(?:weight\s+entries|registros?\s+de\s+peso)\b""",
+        RegexOption.IGNORE_CASE,
+    )
+    private val dayCountValue = Regex("""\b(\d+)\s+(?:days?|d[ií]as)\b""", RegexOption.IGNORE_CASE)
+    private val dishCountValue = Regex(
+        """\b(\d+)\s+(?:saved\s+dishes?|platos?\s+guardados?)\b""",
+        RegexOption.IGNORE_CASE,
+    )
+    private val confirmationCountValue = Regex(
+        """\b(?:confirmed|confirmad[oa])\s+(\d+)\s+(?:times?|veces)\b""",
+        RegexOption.IGNORE_CASE,
+    )
 
     fun audit(message: com.google.ai.edge.litertlm.Message, evidence: MetriaAgentFactEvidence?): MetriaAgentFactAudit {
         val accepted = MetriaAgentReplyPolicy.acceptedText(message)
@@ -251,9 +484,11 @@ object MetriaAgentFactAuditor {
     }
 
     fun retryInstruction(hasLatestToolEvidence: Boolean): String = if (hasLatestToolEvidence) {
-        "Grounding correction: rewrite the final member-facing answer using only personal values, " +
-            "dates, counts, names, and trends explicitly present in the latest tool response. " +
-            "Do not calculate or add facts. Return only the answer, with no tool or policy commentary."
+        "Grounding correction: rewrite the final member-facing answer using only complete facts " +
+            "from the latest tool response. Keep each date with its own weight or meal, each value " +
+            "with its metric and goal role, and each count with its collection. Use one short factual " +
+            "statement per sentence. Use reply_language and any host-calculated progress percentages " +
+            "exactly as provided. Do not calculate or add facts. Return only the answer."
     } else {
         "Grounding correction: the previous draft made an unsupported personal-record claim. " +
             "Call exactly one approved read tool if the member needs their records; otherwise rewrite " +
@@ -276,6 +511,10 @@ object MetriaAgentFactAuditor {
             .firstOrNull { token -> numericCandidates(token).none(evidence.allowedNumbers::contains) }
         if (unsupportedNumber != null) return MetriaAgentFactAudit(null, "unsupported_personal_fact")
 
+        if (!typedBindingsAreValid(withoutListOrdinals, evidence)) {
+            return MetriaAgentFactAudit(null, "unsupported_personal_fact")
+        }
+
         if (weightContext.containsMatchIn(normalized)) {
             val contradictsTrend = when (evidence.weightDirection) {
                 -1 -> weightUp.containsMatchIn(normalized)
@@ -286,6 +525,268 @@ object MetriaAgentFactAuditor {
             if (contradictsTrend) return MetriaAgentFactAudit(null, "unsupported_personal_fact")
         }
         return MetriaAgentFactAudit(text)
+    }
+
+    private fun typedBindingsAreValid(text: String, evidence: MetriaAgentFactEvidence): Boolean {
+        val clauses = factClauses(text)
+        return clauses.all { clause ->
+            weightRecordBindingsAreValid(clause, evidence) &&
+                mealRecordBindingsAreValid(clause, evidence) &&
+                nutritionBindingsAreValid(clause, evidence) &&
+                countBindingsAreValid(clause, evidence) &&
+                savedDishBindingsAreValid(clause, evidence) &&
+                typedNumbersAreExplicit(clause, evidence)
+        }
+    }
+
+    private fun weightRecordBindingsAreValid(clause: String, evidence: MetriaAgentFactEvidence): Boolean {
+        if (evidence.toolName != "read_weight" || evidence.weightRecords.isEmpty()) return true
+        if (!weightTransitionValue.findAll(clause).all { match ->
+                evidence.weightTransition?.let { transition ->
+                    numericCandidates(match.groupValues[1]).any(transition.firstKilograms::contains) &&
+                        numericCandidates(match.groupValues[2]).any(transition.latestKilograms::contains)
+                } == true
+            }
+        ) return false
+        val dates = isoDate.findAll(clause).toList()
+        val weights = weightValue.findAll(clause)
+            .filterNot { match -> isWeightChange(clause, match) }
+            .toList()
+        val changes = weightValue.findAll(clause)
+            .filter { match -> isWeightChange(clause, match) }
+            .toList()
+        if (changes.any { match ->
+                numericCandidates(match.groupValues[1]).none(evidence.weightChangeValues::contains)
+            }
+        ) return false
+        if (dates.isEmpty() || weights.isEmpty()) return true
+        return dates.all { dateMatch ->
+            val nearestWeight = weights.minByOrNull { weightMatch ->
+                kotlin.math.abs(weightMatch.range.first - dateMatch.range.first)
+            } ?: return@all false
+            evidence.weightRecords.any { fact ->
+                fact.date == dateMatch.value && numericCandidates(nearestWeight.groupValues[1]).any(fact.kilograms::contains)
+            }
+        } && weights.all { weightMatch ->
+            val nearestDate = dates.minByOrNull { dateMatch ->
+                kotlin.math.abs(dateMatch.range.first - weightMatch.range.first)
+            } ?: return@all false
+            evidence.weightRecords.any { fact ->
+                fact.date == nearestDate.value && numericCandidates(weightMatch.groupValues[1]).any(fact.kilograms::contains)
+            }
+        }
+    }
+
+    private fun isWeightChange(clause: String, match: MatchResult): Boolean {
+        val preceding = clause.substring((match.range.first - 28).coerceAtLeast(0), match.range.first)
+        val hasExplicitSign = clause.getOrNull(match.range.first - 1) in setOf('+', '-')
+        return hasExplicitSign || weightChangeWords.containsMatchIn(preceding)
+    }
+
+    private fun mealRecordBindingsAreValid(clause: String, evidence: MetriaAgentFactEvidence): Boolean {
+        if (evidence.toolName != "read_meals") return true
+        val normalized = normalizeWords(clause)
+        val titleOccurrences = evidence.mealRecords.flatMap { meal ->
+            generateSequence(normalized.indexOf(meal.title).takeIf { it >= 0 }) { previous ->
+                normalized.indexOf(meal.title, previous + meal.title.length).takeIf { it >= 0 }
+            }.map { index -> meal to index }.toList()
+        }
+        val namedMeals = titleOccurrences.map { it.first }.distinct()
+        val dates = isoDate.findAll(clause).toList()
+        if (dates.isNotEmpty() && namedMeals.isNotEmpty()) {
+            return dates.all { date ->
+                titleOccurrences.minByOrNull { (_, index) -> kotlin.math.abs(index - date.range.first) }
+                    ?.first
+                    ?.date == date.value
+            } && titleOccurrences.all { (meal, index) ->
+                dates.minByOrNull { date -> kotlin.math.abs(date.range.first - index) }
+                    ?.value == meal.date
+            }
+        }
+        if (!personalRecordClaim.containsMatchIn(normalized) || hasCollectionCountLanguage(normalized)) return true
+        if (negativeResult.containsMatchIn(normalized) && evidence.mealRecords.isEmpty()) return true
+        return namedMeals.isNotEmpty() || evidence.mealRecords.any { meal ->
+            meal.slot?.let(normalized::contains) == true
+        }
+    }
+
+    private fun nutritionBindingsAreValid(clause: String, evidence: MetriaAgentFactEvidence): Boolean {
+        if (evidence.nutritionFacts.isEmpty()) return true
+        if (!ratioBindingsAreValid(clause, calorieRatio, "calories", evidence)) return false
+        if (!ratioBindingsAreValid(clause, proteinRatio, "protein", evidence)) return false
+        if (!metricBindingsAreValid(calorieRatio.replace(clause, ""), calorieValue, "calories", evidence)) return false
+        if (!metricBindingsAreValid(proteinRatio.replace(clause, ""), proteinValue, "protein", evidence)) return false
+        if (!progressBindingsAreValid(clause, evidence)) return false
+        return true
+    }
+
+    private fun progressBindingsAreValid(clause: String, evidence: MetriaAgentFactEvidence): Boolean {
+        val percentages = percentValue.findAll(clause).toList()
+        return percentages.indices.all { index ->
+            val match = percentages[index]
+            val (context, localRange) = progressContext(clause, percentages, index)
+            val metric = nearestNutritionMetric(context, localRange) ?: return@all false
+            periodMatches(clause, evidence.period) &&
+                evidence.hasNutrition(metric, "progress", match.groupValues[1])
+        }
+    }
+
+    private fun progressContext(
+        clause: String,
+        percentages: List<MatchResult>,
+        index: Int,
+    ): Pair<String, IntRange> {
+        val current = percentages[index]
+        val left = percentages.getOrNull(index - 1)?.let { previous ->
+            val searchStart = previous.range.last + 1
+            val between = clause.substring(searchStart, current.range.first)
+            listSeparator.findAll(between).lastOrNull()?.let { searchStart + it.range.last + 1 }
+        } ?: 0
+        val right = percentages.getOrNull(index + 1)?.let { next ->
+            val searchStart = current.range.last + 1
+            val between = clause.substring(searchStart, next.range.first)
+            listSeparator.find(between)?.let { searchStart + it.range.first }
+        } ?: clause.length
+        return clause.substring(left, right) to
+            ((current.range.first - left)..(current.range.last - left))
+    }
+
+    private val listSeparator = Regex("""\b(?:and|y)\b""", RegexOption.IGNORE_CASE)
+
+    private fun nearestNutritionMetric(clause: String, valueRange: IntRange): String? {
+        val candidates = buildList {
+            calorieMetricWord.findAll(clause).forEach { add("calories" to distance(valueRange, it.range)) }
+            proteinMetricWord.findAll(clause).forEach { add("protein" to distance(valueRange, it.range)) }
+        }
+        val nearestDistance = candidates.minOfOrNull { it.second } ?: return null
+        return candidates.filter { it.second == nearestDistance }.map { it.first }.distinct().singleOrNull()
+    }
+
+    private fun distance(first: IntRange, second: IntRange): Int = when {
+        first.last < second.first -> second.first - first.last
+        second.last < first.first -> first.first - second.last
+        else -> 0
+    }
+
+    private fun ratioBindingsAreValid(
+        clause: String,
+        pattern: Regex,
+        metric: String,
+        evidence: MetriaAgentFactEvidence,
+    ): Boolean = pattern.findAll(clause).all { match ->
+        periodMatches(clause, evidence.period) &&
+            evidence.hasNutrition(metric, "actual", match.groupValues[1]) &&
+            evidence.hasNutrition(metric, "goal", match.groupValues[2])
+    }
+
+    private fun metricBindingsAreValid(
+        clause: String,
+        pattern: Regex,
+        metric: String,
+        evidence: MetriaAgentFactEvidence,
+    ): Boolean = pattern.findAll(clause).all { match ->
+        val contextStart = (match.range.first - 28).coerceAtLeast(0)
+        val contextEnd = (match.range.last + 28).coerceAtMost(clause.lastIndex)
+        val localContext = clause.substring(contextStart, contextEnd + 1)
+        val role = if (goalWords.containsMatchIn(localContext)) "goal" else "actual"
+        periodMatches(localContext, evidence.period) && evidence.hasNutrition(metric, role, match.groupValues[1])
+    }
+
+    private fun periodMatches(clause: String, evidencePeriod: String?): Boolean = when {
+        evidencePeriod == null -> true
+        weekWords.containsMatchIn(clause) -> evidencePeriod == "week"
+        todayWords.containsMatchIn(clause) -> evidencePeriod == "today"
+        else -> true
+    }
+
+    private fun countBindingsAreValid(clause: String, evidence: MetriaAgentFactEvidence): Boolean {
+        if (evidence.countFacts.isEmpty()) return true
+        val normalized = normalizeWords(clause)
+        val countClaims = listOf(
+            Triple(mealCountValue, "meals", countQualifier(normalized)),
+            Triple(weightCountValue, "weight_entries", countQualifier(normalized)),
+            Triple(dayCountValue, "days", if (normalized.contains("con comidas") || normalized.contains("comidas en") || normalized.contains("with meals")) "with_meals" else "period"),
+            Triple(dishCountValue, "saved_dishes", countQualifier(normalized)),
+        )
+        return countClaims.all { (pattern, collection, qualifier) ->
+            evidence.countFacts.none { it.collection == collection } ||
+                pattern.findAll(clause).all { match -> evidence.hasCount(collection, qualifier, match.groupValues[1]) }
+        }
+    }
+
+    private fun countQualifier(normalized: String): String = when {
+        "omit" in normalized -> "omitted"
+        "devuelt" in normalized || "returned" in normalized || "mostrad" in normalized -> "returned"
+        "parcial" in normalized || "partial" in normalized -> "partial"
+        "complet" in normalized || "complete" in normalized -> "complete"
+        "sin nutricion" in normalized || "missing nutrition" in normalized -> "missing"
+        else -> "recorded"
+    }
+
+    private fun savedDishBindingsAreValid(clause: String, evidence: MetriaAgentFactEvidence): Boolean {
+        if (evidence.toolName != "search_saved_dishes") return true
+        val normalized = normalizeWords(clause)
+        val claimsSavedDish = Regex(
+            """\b(?:saved|remembered|guardad[oa]|recuerd[oa]|plato\s+privado|private\s+dish)\b""",
+            RegexOption.IGNORE_CASE,
+        ).containsMatchIn(normalized)
+        if (!claimsSavedDish) return true
+        if (negativeResult.containsMatchIn(normalized) && evidence.savedDishes.isEmpty()) return true
+        val namedDishes = evidence.savedDishes.filter { fact -> normalized.contains(fact.name) }
+        if (namedDishes.isEmpty()) return false
+        return confirmationCountValue.findAll(clause).all { match ->
+            namedDishes.any { fact -> numericCandidates(match.groupValues[1]).any(fact.confirmationCount::contains) }
+        }
+    }
+
+    private fun typedNumbersAreExplicit(clause: String, evidence: MetriaAgentFactEvidence): Boolean {
+        if (
+            evidence.weightRecords.isEmpty() && evidence.mealRecords.isEmpty() &&
+            evidence.nutritionFacts.isEmpty() && evidence.countFacts.isEmpty() && evidence.savedDishes.isEmpty()
+        ) return true
+        val recognizedRanges = listOf(
+            isoDate,
+            weightValue,
+            weightTransitionValue,
+            calorieValue,
+            proteinValue,
+            calorieRatio,
+            proteinRatio,
+            percentValue,
+            mealCountValue,
+            weightCountValue,
+            dayCountValue,
+            dishCountValue,
+            confirmationCountValue,
+        ).flatMap { pattern -> pattern.findAll(clause).map { it.range }.toList() }
+        return numberToken.findAll(clause).all { number ->
+            recognizedRanges.any { range -> number.range.first >= range.first && number.range.last <= range.last }
+        }
+    }
+
+    private fun hasCollectionCountLanguage(normalized: String): Boolean =
+        Regex("""\b\d+\s+(?:meals?|comidas?)\b""", RegexOption.IGNORE_CASE).containsMatchIn(normalized)
+
+    private fun factClauses(text: String): List<String> = text
+        .split(Regex("""(?<!\d)[.;\n](?!\d)|\s+(?:and|y)\s+(?=(?:(?:on|el)\s+)?\d{4}-\d{2}-\d{2})""", RegexOption.IGNORE_CASE))
+        .map(String::trim)
+        .filter(String::isNotEmpty)
+
+    private fun MetriaAgentFactEvidence.hasNutrition(metric: String, role: String, raw: String): Boolean =
+        nutritionFacts.any { fact ->
+            fact.metric == metric && fact.role == role && fact.period == period &&
+                numericCandidates(raw).any(fact.values::contains)
+        }
+
+    private fun MetriaAgentFactEvidence.hasCount(collection: String, qualifier: String, raw: String): Boolean {
+        val acceptableQualifiers = when (qualifier) {
+            "recorded" -> setOf("recorded", "total")
+            else -> setOf(qualifier)
+        }
+        return countFacts.any { fact ->
+            fact.collection == collection && fact.qualifier in acceptableQualifiers &&
+                numericCandidates(raw).any(fact.values::contains)
+        }
     }
 }
 

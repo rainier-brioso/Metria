@@ -61,8 +61,10 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -77,7 +79,12 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withContext
 import androidx.core.content.ContextCompat
 import app.metria.ui.navigation.MetriaBottomNavigation
 import app.metria.ui.components.MetriaActionSheet
@@ -268,7 +275,9 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                                     quickAssistantOpen = true
                                 },
                                 assistantConversationSession = assistantConversationSession,
-                                onConversationChanged = { conversation -> status = vault.saveActiveConversation(conversation) },
+                                onConversationChanged = { conversation ->
+                                    withContext(Dispatchers.IO) { vault.saveActiveConversation(conversation) }
+                                },
                                 onNewConversation = {
                                     assistantConversationSession.reset()
                                     status = vault.clearActiveConversation()
@@ -286,8 +295,8 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                                 cancelAssistantDownload = { modelStatus = activity.cancelLocalAssistantDownload() },
                                 askMeal = { text -> activity.askLocalMealAssistant(text).also { modelStatus = it } },
                                 askCoach = { question, snapshot, conversationContext -> activity.askPrivateCoach(question, snapshot, conversationContext).also { modelStatus = it } },
-                                startAgent = { question, history -> activity.startPrivateAgentTurn(question, history).also { modelStatus = it } },
-                                continueAgentTool = { name, response -> activity.continuePrivateAgentTool(name, response).also { modelStatus = it } },
+                                startAgent = activity::startPrivateAgentTurn,
+                                continueAgentTool = activity::continuePrivateAgentTool,
                                 understandCoach = { question, conversationContext -> activity.understandPrivateCoach(question, conversationContext).also { modelStatus = it } },
                                 understandCoachAudio = { audio, conversationContext -> activity.understandPrivateCoachAudio(audio, conversationContext).also { modelStatus = it } },
                                 cancelAssistant = { modelStatus = activity.cancelPrivateAssistant() },
@@ -374,7 +383,9 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                 if (quickAssistantOpen) {
                     PrivateAssistantChat(
                         conversationSession = assistantConversationSession,
-                        onConversationChanged = { conversation -> status = vault.saveActiveConversation(conversation) },
+                        onConversationChanged = { conversation ->
+                            withContext(Dispatchers.IO) { vault.saveActiveConversation(conversation) }
+                        },
                         onNewConversation = {
                             assistantConversationSession.reset()
                             status = vault.clearActiveConversation()
@@ -395,8 +406,8 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                         onVoiceStartHandled = { quickAssistantStartVoice = false },
                         askMeal = { text -> activity.askLocalMealAssistant(text).also { modelStatus = it } },
                         askCoach = { question, snapshot, conversationContext -> activity.askPrivateCoach(question, snapshot, conversationContext).also { modelStatus = it } },
-                        startAgent = { question, history -> activity.startPrivateAgentTurn(question, history).also { modelStatus = it } },
-                        continueAgentTool = { name, response -> activity.continuePrivateAgentTool(name, response).also { modelStatus = it } },
+                        startAgent = activity::startPrivateAgentTurn,
+                        continueAgentTool = activity::continuePrivateAgentTool,
                         understandCoach = { question, conversationContext -> activity.understandPrivateCoach(question, conversationContext).also { modelStatus = it } },
                         understandCoachAudio = { audio, conversationContext -> activity.understandPrivateCoachAudio(audio, conversationContext).also { modelStatus = it } },
                         cancelAssistant = { modelStatus = activity.cancelPrivateAssistant() },
@@ -719,7 +730,7 @@ private fun CoolingDownLoading(secondsLeft: Int) {
 private fun AssistantScreen(
     onOpenConversation: () -> Unit,
     assistantConversationSession: PrivateAssistantConversationSession,
-    onConversationChanged: (List<PrivateConversationMessage>) -> Unit,
+    onConversationChanged: suspend (List<PrivateConversationMessage>) -> Unit,
     onNewConversation: () -> Unit,
     modelStatus: ModelStatus,
     showLoadingPreview: Boolean,
@@ -929,6 +940,69 @@ private fun initialPrivateChatMessages() = listOf(
     PrivateChatMessage("Ask about a meal, add a weight, or ask what you logged today. Any saved action stays visible and reversible.", false),
 )
 
+/** Small, non-Compose gate for the optimistic typed-send lifecycle. */
+internal class AssistantPendingSubmissionGate {
+    private var nextToken = 0L
+    private var activeToken: Long? = null
+    private var lifecycleRequestId: Long? = null
+
+    @Synchronized
+    fun begin(): Long? {
+        if (activeToken != null) return null
+        val token = ++nextToken
+        activeToken = token
+        return token
+    }
+
+    @Synchronized
+    fun isActive(token: Long): Boolean = activeToken == token
+
+    @Synchronized
+    fun reconcile(
+        token: Long,
+        requestId: Long?,
+        previousRequestId: Long?,
+        state: String,
+        operation: String?,
+    ): Long? {
+        if (activeToken != token) return null
+        val accepted = requestId != null && requestId != previousRequestId && state == "thinking" &&
+            operation?.let { it.startsWith("coach") || it.startsWith("agent") } == true
+        if (!accepted) {
+            activeToken = null
+            lifecycleRequestId = null
+            return null
+        }
+        lifecycleRequestId = requestId
+        return requestId
+    }
+
+    @Synchronized
+    fun observeLifecycle(requestId: Long?, state: String): Boolean {
+        if (
+            activeToken == null || lifecycleRequestId == null || requestId != lifecycleRequestId ||
+            state !in setOf("thinking", "loaded")
+        ) return false
+        activeToken = null
+        lifecycleRequestId = null
+        return true
+    }
+
+    @Synchronized
+    fun cancel(token: Long? = activeToken): Boolean {
+        if (token == null || activeToken != token) return false
+        activeToken = null
+        lifecycleRequestId = null
+        return true
+    }
+}
+
+internal data class PendingAssistantSubmission(
+    val token: Long,
+    val text: String,
+    val previousRequestId: Long?,
+)
+
 @Stable
 private class PrivateAssistantConversationSession(
     initialInput: String = "",
@@ -952,6 +1026,92 @@ private class PrivateAssistantConversationSession(
     val savedWeightId = mutableStateOf(initialSavedWeightId)
     val voiceMessage = mutableStateOf(initialVoiceMessage)
     val messages = mutableStateOf(initialMessages)
+    val pendingSubmission = mutableStateOf<PendingAssistantSubmission?>(null)
+    private val pendingSubmissionGate = AssistantPendingSubmissionGate()
+    private var pendingSubmissionJob: Job? = null
+    val pendingContinuation = mutableStateOf(false)
+    private val pendingContinuationGate = AssistantPendingSubmissionGate()
+    private var pendingContinuationToken: Long? = null
+
+    fun beginPendingSubmission(text: String, previousRequestId: Long?): PendingAssistantSubmission? {
+        val token = pendingSubmissionGate.begin() ?: return null
+        return PendingAssistantSubmission(token, text, previousRequestId).also { pendingSubmission.value = it }
+    }
+
+    fun isPendingSubmission(token: Long): Boolean = pendingSubmissionGate.isActive(token)
+
+    fun reconcilePendingSubmission(token: Long, result: ModelStatus): Long? {
+        val requestId = pendingSubmissionGate.reconcile(
+            token = token,
+            requestId = result.assistantRequestId,
+            previousRequestId = pendingSubmission.value?.takeIf { it.token == token }?.previousRequestId,
+            state = result.state,
+            operation = result.assistantOperation,
+        )
+        if (requestId == null && !pendingSubmissionGate.isActive(token)) pendingSubmission.value = null
+        return requestId
+    }
+
+    fun observePendingLifecycle(requestId: Long?, state: String): Boolean {
+        val submissionObserved = pendingSubmissionGate.observeLifecycle(requestId, state)
+        if (submissionObserved) pendingSubmission.value = null
+        val continuationObserved = pendingContinuationGate.observeLifecycle(requestId, state)
+        if (continuationObserved) {
+            pendingContinuation.value = false
+            pendingContinuationToken = null
+        }
+        return submissionObserved || continuationObserved
+    }
+
+    fun failPendingSubmission(token: Long) {
+        if (pendingSubmissionGate.cancel(token)) pendingSubmission.value = null
+    }
+
+    fun beginPendingContinuation(): Long? {
+        val token = pendingContinuationGate.begin() ?: return null
+        pendingContinuationToken = token
+        pendingContinuation.value = true
+        return token
+    }
+
+    fun reconcilePendingContinuation(token: Long, previousRequestId: Long?, result: ModelStatus): Long? {
+        val requestId = pendingContinuationGate.reconcile(
+            token = token,
+            requestId = result.assistantRequestId,
+            previousRequestId = previousRequestId,
+            state = result.state,
+            operation = result.assistantOperation,
+        )
+        if (requestId == null && !pendingContinuationGate.isActive(token)) {
+            pendingContinuation.value = false
+            pendingContinuationToken = null
+        }
+        return requestId
+    }
+
+    fun failPendingContinuation(token: Long) {
+        if (pendingContinuationGate.cancel(token)) {
+            pendingContinuation.value = false
+            pendingContinuationToken = null
+        }
+    }
+
+    fun cancelPendingContinuation() {
+        pendingContinuationToken?.let(::failPendingContinuation)
+    }
+
+    fun cancelPendingSubmission() {
+        val token = pendingSubmission.value?.token
+        pendingSubmissionGate.cancel(token)
+        pendingSubmission.value = null
+        pendingSubmissionJob?.cancel()
+        pendingSubmissionJob = null
+    }
+
+    fun setPendingSubmissionJob(job: Job) {
+        pendingSubmissionJob?.cancel()
+        pendingSubmissionJob = job
+    }
 
     fun reset() {
         input.value = ""
@@ -962,6 +1122,13 @@ private class PrivateAssistantConversationSession(
         handledReplyRequestId.value = null
         savedWeightId.value = null
         voiceMessage.value = null
+        pendingSubmissionGate.cancel()
+        pendingSubmission.value = null
+        pendingSubmissionJob?.cancel()
+        pendingSubmissionJob = null
+        pendingContinuationGate.cancel(pendingContinuationToken)
+        pendingContinuation.value = false
+        pendingContinuationToken = null
         messages.value = initialPrivateChatMessages()
         hydrated = true
         loadedConversationUpdatedAt = null
@@ -994,6 +1161,13 @@ private class PrivateAssistantConversationSession(
             handledReplyRequestId.value = null
             savedWeightId.value = null
             voiceMessage.value = null
+            pendingSubmissionGate.cancel()
+            pendingSubmission.value = null
+            pendingSubmissionJob?.cancel()
+            pendingSubmissionJob = null
+            pendingContinuationGate.cancel(pendingContinuationToken)
+            pendingContinuation.value = false
+            pendingContinuationToken = null
             messages.value = restored?.ifEmpty(::initialPrivateChatMessages) ?: initialPrivateChatMessages()
         }
         hydrated = true
@@ -1008,7 +1182,7 @@ private fun rememberPrivateAssistantConversationSession(): PrivateAssistantConve
 @Composable
 private fun PrivateAssistantChat(
     conversationSession: PrivateAssistantConversationSession,
-    onConversationChanged: (List<PrivateConversationMessage>) -> Unit,
+    onConversationChanged: suspend (List<PrivateConversationMessage>) -> Unit,
     onNewConversation: () -> Unit,
     modelStatus: ModelStatus,
     entries: List<WeightEntry>,
@@ -1043,8 +1217,12 @@ private fun PrivateAssistantChat(
     var recordingVoice by remember { mutableStateOf(false) }
     var voiceMessage by conversationSession.voiceMessage
     var messages by conversationSession.messages
+    val assistantScope = rememberCoroutineScope()
     LaunchedEffect(messages) {
         if (messages.any(PrivateChatMessage::fromMember)) {
+            // Coalesce nearby member, evidence, and reply updates. The encrypted write stays
+            // off-main and must not replace the whole unlocked shell state after each message.
+            delay(300)
             onConversationChanged(messages.map { message ->
                 PrivateConversationMessage(message.text, message.fromMember, message.localEvidence)
             })
@@ -1055,6 +1233,27 @@ private fun PrivateAssistantChat(
     val savedWeight = savedWeightId?.let { id -> entries.firstOrNull { it.id == id } }
     fun trackRequest(result: ModelStatus) {
         activeAssistantRequestId = result.assistantRequestId
+    }
+    fun trackPendingRequest(token: Long, result: ModelStatus) {
+        activeAssistantRequestId = conversationSession.reconcilePendingSubmission(token, result)
+    }
+    suspend fun trackNativeRequest(block: () -> ModelStatus) {
+        val previousRequestId = activeAssistantRequestId
+        val token = conversationSession.beginPendingContinuation() ?: return
+        try {
+            val result = withContext(Dispatchers.Default) { block() }
+            activeAssistantRequestId = conversationSession.reconcilePendingContinuation(
+                token,
+                previousRequestId,
+                result,
+            )
+        } catch (error: CancellationException) {
+            conversationSession.failPendingContinuation(token)
+            throw error
+        } catch (error: Exception) {
+            conversationSession.failPendingContinuation(token)
+            throw error
+        }
     }
     fun setVoiceRecording(value: Boolean) {
         recordingVoice = value
@@ -1118,6 +1317,7 @@ private fun PrivateAssistantChat(
         }
         when (action) {
             is AssistantAction.QueryProgressOverview -> {
+                val replyLanguage = coachReplyLanguage(submittedQuestion, submittedConversationContext)
                 val overview = MemberProgressOverview.from(
                     entries = entries,
                     meals = meals,
@@ -1127,7 +1327,7 @@ private fun PrivateAssistantChat(
                 )
                 messages = messages + PrivateChatMessage(overview.localEvidence(), false, localEvidence = true)
                 if (nativeAgentTool) {
-                    trackRequest(continueAgentTool(call.intent, overview.toolResponse()))
+                    trackNativeRequest { continueAgentTool(call.intent, overview.toolResponse() + ("reply_language" to replyLanguage)) }
                 } else {
                     trackRequest(askCoach(
                         """MEMBER_LANGUAGE: ${coachReplyLanguage(submittedQuestion, submittedConversationContext)}
@@ -1143,17 +1343,40 @@ private fun PrivateAssistantChat(
                 }
             }
             is AssistantAction.QueryNutrition -> {
+                val replyLanguage = coachReplyLanguage(submittedQuestion, submittedConversationContext)
                 val scopedSnapshot = snapshot
                 val evidence = scopedSnapshot.goalProgressFacts(action.period)
                 val facts = scopedSnapshot.selectedNutritionFacts(action.period)
                 messages = messages + PrivateChatMessage(evidence, false, localEvidence = true)
                 if (nativeAgentTool) {
-                    trackRequest(continueAgentTool(call.intent, mapOf(
+                    val weekly = action.period == "week"
+                    val goalMultiplier = if (weekly) 7 else 1
+                    trackNativeRequest { continueAgentTool(call.intent, mapOf(
                         "source" to "metria_local_vault",
                         "as_of" to today.toString(),
-                        "period" to (action.period ?: "today"),
-                        "facts" to facts,
-                    )))
+                        "reply_language" to replyLanguage,
+                        "period" to if (weekly) "last_7_days_including_today" else "today",
+                        "meals" to mapOf(
+                            "recorded_count" to if (weekly) scopedSnapshot.weekMeals else scopedSnapshot.todayMeals,
+                        ),
+                        "nutrition" to mapOf(
+                            "calories_kcal" to if (weekly) scopedSnapshot.weekCalories else scopedSnapshot.todayCalories,
+                            "protein_g" to if (weekly) scopedSnapshot.weekProtein else scopedSnapshot.todayProtein,
+                            "calorie_goal_kcal" to scopedSnapshot.calorieGoal?.times(goalMultiplier),
+                            "protein_goal_g" to scopedSnapshot.proteinGoal?.times(goalMultiplier),
+                        ),
+                        "progress" to mapOf(
+                            "calorie_goal_percent" to goalProgressPercent(
+                                if (weekly) scopedSnapshot.weekCalories else scopedSnapshot.todayCalories,
+                                scopedSnapshot.calorieGoal?.times(goalMultiplier),
+                            ),
+                            "protein_goal_percent" to goalProgressPercent(
+                                if (weekly) scopedSnapshot.weekProtein else scopedSnapshot.todayProtein,
+                                scopedSnapshot.proteinGoal?.times(goalMultiplier),
+                            ),
+                        ),
+                        "summary" to facts,
+                    )) }
                 } else {
                     val language = coachReplyLanguage(submittedQuestion, submittedConversationContext)
                     trackRequest(askCoach("""MEMBER_LANGUAGE: $language
@@ -1166,21 +1389,23 @@ private fun PrivateAssistantChat(
                 }
             }
             is AssistantAction.QueryWeightHistory -> {
+                val replyLanguage = coachReplyLanguage(submittedQuestion, submittedConversationContext)
                 val oldest = today.minusDays(action.fromDaysAgo.toLong())
                 val newest = today.minusDays(action.toDaysAgo.toLong())
                 val ordered = entries.filter { date -> date.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate() in oldest..newest }.sortedBy(WeightEntry::recordedAt)
                 val boundedWeights = MetriaAgentResultBounds.latest(ordered)
                 val first = ordered.firstOrNull()
                 val latest = ordered.lastOrNull()
-                val trend = if (first == null || latest == null) "No weight entries were saved from $oldest to $newest." else if (first.id == latest.id) "One weight entry from $oldest to $newest: ${"%.1f".format(first.kilograms)} kg." else {
+                val trend = if (first == null || latest == null) "No weight entries were saved from $oldest to $newest." else if (first.id == latest.id) "One weight entry from $oldest to $newest: ${formatRecordedKilograms(first.kilograms)} kg." else {
                     val days = java.time.Duration.between(first.recordedAt, latest.recordedAt).toDays().coerceAtLeast(1)
                     val change = latest.kilograms - first.kilograms
-                    "${ordered.size} weight entries from ${first.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate()} to ${latest.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate()}: ${"%.1f".format(first.kilograms)} kg to ${"%.1f".format(latest.kilograms)} kg (${"%+.1f".format(change)} kg over $days days)."
+                    "${ordered.size} weight entries from ${first.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate()} to ${latest.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate()}: ${formatRecordedKilograms(first.kilograms)} kg to ${formatRecordedKilograms(latest.kilograms)} kg (${formatSignedRecordedKilograms(change)} kg over $days days)."
                 }
                 messages = messages + PrivateChatMessage(trend, false, localEvidence = true)
                 if (nativeAgentTool) {
-                    trackRequest(continueAgentTool(call.intent, mapOf(
+                    trackNativeRequest { continueAgentTool(call.intent, mapOf(
                         "source" to "metria_local_vault",
+                        "reply_language" to replyLanguage,
                         "from" to oldest.toString(),
                         "to" to newest.toString(),
                         "total_count" to boundedWeights.totalCount,
@@ -1191,8 +1416,15 @@ private fun PrivateAssistantChat(
                             "date" to entry.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate().toString(),
                             "kilograms" to entry.kilograms,
                         ) },
+                        "trend" to if (first != null && latest != null) mapOf(
+                            "first_date" to first.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate().toString(),
+                            "first_kg" to first.kilograms,
+                            "latest_date" to latest.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate().toString(),
+                            "latest_kg" to latest.kilograms,
+                            "change_kg" to latest.kilograms - first.kilograms,
+                        ) else null,
                         "summary" to trend,
-                    )))
+                    )) }
                 } else {
                     trackRequest(askCoach("""MEMBER_LANGUAGE: ${coachReplyLanguage(submittedQuestion, submittedConversationContext)}
                         MEMBER_QUESTION: $submittedQuestion
@@ -1203,6 +1435,7 @@ private fun PrivateAssistantChat(
                 }
             }
             is AssistantAction.QueryMealHistory -> {
+                val replyLanguage = coachReplyLanguage(submittedQuestion, submittedConversationContext)
                 val oldest = today.minusDays(action.fromDaysAgo.toLong())
                 val newest = today.minusDays(action.toDaysAgo.toLong())
                 val saved = meals.filter {
@@ -1230,8 +1463,9 @@ private fun PrivateAssistantChat(
                 }
                 messages = messages + PrivateChatMessage(facts, false, localEvidence = true)
                 if (nativeAgentTool) {
-                    trackRequest(continueAgentTool(call.intent, mapOf(
+                    trackNativeRequest { continueAgentTool(call.intent, mapOf(
                         "source" to "metria_local_vault",
+                        "reply_language" to replyLanguage,
                         "from" to oldest.toString(),
                         "to" to newest.toString(),
                         "meal_slot" to action.mealSlot,
@@ -1245,7 +1479,7 @@ private fun PrivateAssistantChat(
                             "slot" to meal.mealSlot,
                         ) },
                         "summary" to facts,
-                    )))
+                    )) }
                 } else {
                     trackRequest(askCoach("""MEMBER_LANGUAGE: ${coachReplyLanguage(submittedQuestion, submittedConversationContext)}
                         MEMBER_QUESTION: $submittedQuestion
@@ -1256,6 +1490,7 @@ private fun PrivateAssistantChat(
                 }
             }
             is AssistantAction.SearchSavedDishes -> {
+                val replyLanguage = coachReplyLanguage(submittedQuestion, submittedConversationContext)
                 val matches = PersonalDishMatcher.search(PersonalDishQuery(name = action.query), personalDishes)
                 val boundedMatches = MetriaAgentResultBounds.latest(matches)
                 val facts = if (matches.isEmpty()) {
@@ -1267,8 +1502,9 @@ private fun PrivateAssistantChat(
                 }
                 messages = messages + PrivateChatMessage(facts, false, localEvidence = true)
                 if (nativeAgentTool) {
-                    trackRequest(continueAgentTool(call.intent, mapOf(
+                    trackNativeRequest { continueAgentTool(call.intent, mapOf(
                         "source" to "metria_local_vault",
+                        "reply_language" to replyLanguage,
                         "query" to action.query,
                         "total_count" to boundedMatches.totalCount,
                         "returned_count" to boundedMatches.records.size,
@@ -1280,7 +1516,7 @@ private fun PrivateAssistantChat(
                             "confirmation_count" to match.dish.confirmationCount,
                         ) },
                         "summary" to facts,
-                    )))
+                    )) }
                 } else {
                     trackRequest(askCoach("""MEMBER_LANGUAGE: ${coachReplyLanguage(submittedQuestion, submittedConversationContext)}
                         MEMBER_QUESTION: $submittedQuestion
@@ -1304,10 +1540,10 @@ private fun PrivateAssistantChat(
                 Continue the conversation naturally in MEMBER_LANGUAGE. Do not claim to have read meals, weights, goals, or progress.""".trimIndent(), snapshot, submittedConversationContext))
             AssistantAction.Clarify -> {
                 if (nativeAgentTool) {
-                    trackRequest(continueAgentTool(call.intent, mapOf(
+                    trackNativeRequest { continueAgentTool(call.intent, mapOf(
                         "error" to "invalid_arguments",
                         "message" to "The requested local read was outside Metria's allowed bounds.",
-                    )))
+                    )) }
                 } else {
                     messages = messages + PrivateChatMessage("I can help with meals, weights, and your progress. Try asking in another way.", false)
                 }
@@ -1321,21 +1557,55 @@ private fun PrivateAssistantChat(
         handledReplyRequestId = requestId
         messages = messages + PrivateChatMessage(reply, false)
     }
+    LaunchedEffect(modelStatus.assistantRequestId, modelStatus.state) {
+        conversationSession.observePendingLifecycle(modelStatus.assistantRequestId, modelStatus.state)
+    }
     fun submitText() {
         val text = input.trim()
-        if (text.isBlank()) return
-        submittedConversationContext = privateConversationContext(messages)
-        val nativeHistory = messages.map { message ->
-            PrivateConversationMessage(message.text, message.fromMember, message.localEvidence)
+        val modelBusy = shouldPresentAssistantThinking(
+            localPending = conversationSession.pendingSubmission.value != null ||
+                conversationSession.pendingContinuation.value,
+            modelResultIsCurrent = modelStatus.assistantRequestId != null &&
+                modelStatus.assistantRequestId == activeAssistantRequestId,
+            modelState = modelStatus.state,
+            operation = modelStatus.assistantOperation,
+        )
+        val pending = if (text.isBlank() || modelBusy) null else {
+            conversationSession.beginPendingSubmission(text, activeAssistantRequestId)
         }
+        if (pending == null) return
+        val messageSnapshot = messages
         messages = messages + PrivateChatMessage(text, true)
         input = ""
         submittedQuestion = text
-        if (MetriaAgentMigrationPolicy.useLegacyWriteRoute(text)) {
-            trackRequest(understandCoach(text, submittedConversationContext))
-        } else {
-            trackRequest(startAgent(text, nativeHistory))
-        }
+        conversationSession.setPendingSubmissionJob(assistantScope.launch {
+            try {
+                // Let Compose commit the optimistic member bubble and thinking state before
+                // building context or entering LiteRT's native startup path.
+                withFrameNanos { }
+                if (!conversationSession.isPendingSubmission(pending.token)) return@launch
+                val (context, history, useLegacyRoute) = withContext(Dispatchers.Default) {
+                    Triple(
+                        privateConversationContext(messageSnapshot),
+                        messageSnapshot.map { message ->
+                            PrivateConversationMessage(message.text, message.fromMember, message.localEvidence)
+                        },
+                        MetriaAgentMigrationPolicy.useLegacyWriteRoute(text),
+                    )
+                }
+                if (!conversationSession.isPendingSubmission(pending.token)) return@launch
+                submittedConversationContext = context
+                val result = withContext(Dispatchers.Default) {
+                    if (useLegacyRoute) understandCoach(text, context) else startAgent(text, history)
+                }
+                trackPendingRequest(pending.token, result)
+            } catch (_: CancellationException) {
+                conversationSession.failPendingSubmission(pending.token)
+            } catch (_: Exception) {
+                conversationSession.failPendingSubmission(pending.token)
+                voiceMessage = "Metria could not start that local request. Try again."
+            }
+        })
     }
     fun toggleVoice() {
         if (recordingVoice) {
@@ -1353,8 +1623,13 @@ private fun PrivateAssistantChat(
         messages = messages.map { MetriaChatMessage(it.text, it.fromMember, it.localEvidence) },
         input = input,
         onInputChange = { input = it },
-        assistantThinking = modelResultIsCurrent && modelStatus.state == "thinking" &&
-            modelStatus.assistantOperation?.let { it.startsWith("coach") || it.startsWith("agent") } == true,
+        assistantThinking = shouldPresentAssistantThinking(
+            localPending = conversationSession.pendingSubmission.value != null ||
+                conversationSession.pendingContinuation.value,
+            modelResultIsCurrent = modelResultIsCurrent,
+            modelState = modelStatus.state,
+            operation = modelStatus.assistantOperation,
+        ),
         mealDraftThinking = modelResultIsCurrent && modelStatus.state == "thinking" &&
             modelStatus.assistantOperation?.let { !it.startsWith("coach") && !it.startsWith("agent") } == true,
         streamingReply = modelStatus.coachStreamingReply.takeIf { modelResultIsCurrent },
@@ -1372,6 +1647,8 @@ private fun PrivateAssistantChat(
             onNewConversation()
         },
         onCancelAssistant = {
+            conversationSession.cancelPendingSubmission()
+            conversationSession.cancelPendingContinuation()
             cancelAssistant()
             activeAssistantRequestId = null
         },
@@ -1401,6 +1678,17 @@ private fun privateConversationContext(messages: List<PrivateChatMessage>): Stri
 
 internal fun shouldConsumeAssistantResult(activeRequestId: Long?, handledRequestId: Long?, resultRequestId: Long?): Boolean =
     resultRequestId != null && resultRequestId == activeRequestId && resultRequestId != handledRequestId
+
+internal fun shouldPresentAssistantThinking(
+    localPending: Boolean,
+    modelResultIsCurrent: Boolean,
+    modelState: String,
+    operation: String?,
+): Boolean = localPending || (modelResultIsCurrent && (
+    operation == "agent_waiting_tool" ||
+        (modelState == "thinking" &&
+            operation?.let { it.startsWith("coach") || it.startsWith("agent") } == true)
+    ))
 
 private fun coachReplyLanguage(text: String, conversationContext: String = ""): String {
     val normalized = "$text $conversationContext".lowercase()

@@ -28,6 +28,8 @@
 
 ## Verification
 
+- Use `docs/TESTING.md` as the canonical automated, installation, physical-device,
+  performance, privacy, evidence, and handoff runbook.
 - From `native-android/`, run `.\gradlew.bat :app:testDebugUnitTest :app:assembleDebug --no-daemon` after Android changes.
 - Add Compose semantics/UI tests for materially changed flows when the test infrastructure supports them. Do not substitute unit tests for physical interaction checks.
 - For every material screen change, verify the relevant checklist in `docs/design/QUALITY-GATES.md` on the target Android phone and capture before/after evidence.

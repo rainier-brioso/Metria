@@ -2,7 +2,24 @@ package app.metria
 
 import java.time.LocalDate
 import java.time.ZoneId
-import java.util.Locale
+import java.math.BigDecimal
+import java.math.RoundingMode
+import kotlin.math.roundToInt
+
+/** Member-visible weight keeps the recorded precision up to two decimal places. */
+internal fun formatRecordedKilograms(value: Double): String = BigDecimal.valueOf(value)
+    .setScale(2, RoundingMode.HALF_UP)
+    .stripTrailingZeros()
+    .toPlainString()
+
+internal fun formatSignedRecordedKilograms(value: Double): String =
+    if (value > 0.0) "+${formatRecordedKilograms(value)}" else formatRecordedKilograms(value)
+
+/** Goal comparisons are host-calculated so the model never performs personal-data arithmetic. */
+internal fun goalProgressPercent(actual: Double?, goal: Double?): Int? = when {
+    actual == null || goal == null || !actual.isFinite() || !goal.isFinite() || goal <= 0.0 -> null
+    else -> ((actual / goal) * 100.0).roundToInt().coerceAtLeast(0)
+}
 
 /**
  * Product decision: the coach receives this deliberately small, ephemeral snapshot rather
@@ -173,6 +190,10 @@ data class MemberProgressOverview(
             "calorie_goal_kcal" to calorieGoalKcal,
             "protein_goal_g" to proteinGoalGrams,
         ),
+        "progress" to mapOf(
+            "calorie_goal_percent" to goalProgressPercent(caloriesKcal, calorieGoalKcal),
+            "protein_goal_percent" to goalProgressPercent(proteinGrams, proteinGoalGrams),
+        ),
         "weight" to mapOf(
             "entry_count" to weightEntryCount,
             "first_kg" to firstWeightKg,
@@ -229,9 +250,9 @@ data class MemberProgressOverview(
             else -> (complete ?: 0.0) + (partial ?: 0.0)
         }
 
-        private fun formatKg(value: Double): String = "%.1f".format(Locale.ROOT, value)
+        private fun formatKg(value: Double): String = formatRecordedKilograms(value)
 
-        private fun formatSignedKg(value: Double): String = "%+.1f".format(Locale.ROOT, value)
+        private fun formatSignedKg(value: Double): String = formatSignedRecordedKilograms(value)
     }
 }
 

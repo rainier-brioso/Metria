@@ -129,8 +129,12 @@ deletions, goals, privacy, recovery, and model management stay explicit UI flows
 - [x] Complete `docs/assistant-agent-spec.md` Gate A using LiteRT's native persistent
   conversation, manual tool calls, and five read-only tools. See
   [M4 assistant checkpoints](m4-assistant-checkpoints.md).
-- [ ] Bind factual output as typed atomic facts so valid dates, weights, meals,
+- [x] Bind factual output as typed atomic facts so valid dates, weights, meals,
   totals, goals, periods, and counts cannot be reassociated incorrectly.
+- [x] Keep exact record evidence available behind collapsed chat cards and persist
+  conversation updates outside the Compose UI thread.
+- [ ] Physically verify host-calculated nutrition progress, exact weight precision,
+  reply language, expandable evidence, and send responsiveness on the target phone.
 - [ ] Complete Gate B multi-turn/restart/token-budget physical acceptance.
 - [ ] Complete Gate C bilingual guardrail, scope, prompt-injection, AI disclosure,
   and member-initiated reporting acceptance.
