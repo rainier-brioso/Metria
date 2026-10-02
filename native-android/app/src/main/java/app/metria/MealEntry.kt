@@ -4,6 +4,8 @@ import java.time.Instant
 import java.time.LocalTime
 import java.time.ZoneId
 import java.util.UUID
+import java.text.Normalizer
+import java.util.Locale
 
 /**
  * M3 decision: confirmed meals live in the same encrypted vault as weight.
@@ -42,8 +44,65 @@ data class MealEntryItem(
     val role: String = "main_food",
 )
 
-/** Encrypted, member-confirmed ranking hint; never a model training example. */
-data class FoodCorrection(val observedName: String, val confirmedFoodId: Long, val count: Int = 1)
+/** Encrypted ranking hint; null provenance denotes a legacy hint that is retained but never ranked. */
+data class FoodCorrection(
+    val observedName: String,
+    val confirmedFoodId: Long,
+    val count: Int = 1,
+    val sourceMealId: String? = null,
+)
+
+object FoodCorrectionValidation {
+    const val MAX_STORED = 100
+    private val safeMealId = Regex("[A-Za-z0-9][A-Za-z0-9._:-]{0,79}")
+
+    fun valid(correction: FoodCorrection, mealIds: Set<String>): Boolean =
+        correction.observedName.trim().length in 1..120 &&
+            correction.observedName.none(Character::isISOControl) &&
+            correction.confirmedFoodId > 0L && correction.count in 1..10_000 &&
+            (correction.sourceMealId == null ||
+                (safeMealId.matches(correction.sourceMealId) && correction.sourceMealId in mealIds))
+
+    fun hasUniqueSources(corrections: List<FoodCorrection>): Boolean =
+        corrections.map(::identityKey).distinct().size == corrections.size
+
+    /** Coalesces old case/accent-equivalent hints while retaining their provenance and bounded count. */
+    fun normalized(corrections: List<FoodCorrection>): List<FoodCorrection> {
+        val merged = mutableListOf<FoodCorrection>()
+        corrections.forEach { correction ->
+            val index = merged.indexOfFirst { identityKey(it) == identityKey(correction) }
+            if (index < 0) merged += correction
+            else merged[index] = merged[index].copy(
+                count = (merged[index].count + correction.count).coerceAtMost(10_000),
+            )
+        }
+        return merged
+    }
+
+    fun identityKey(correction: FoodCorrection): String =
+        "${normalizeName(correction.observedName)}|${correction.confirmedFoodId}|${correction.sourceMealId.orEmpty()}"
+
+    fun hasValidSourceId(id: String): Boolean = safeMealId.matches(id)
+
+    private fun normalizeName(value: String): String = Normalizer.normalize(value.trim().lowercase(Locale.ROOT), Normalizer.Form.NFD)
+        .replace(Regex("\\p{Mn}+"), "")
+        .replace(Regex("[^a-z0-9]+"), " ")
+        .trim()
+}
+
+/** Meal mutations unlink only their own attributable hints; legacy hints remain recoverable. */
+object MealLearningLifecyclePolicy {
+    fun removesOnlyReferencePhoto(previous: MealEntry, updated: MealEntry): Boolean =
+        previous.referenceThumbnailBase64 != null &&
+            updated.referenceThumbnailBase64 == null &&
+            previous.copy(referenceThumbnailBase64 = null) == updated
+
+    fun afterMealMutation(
+        corrections: List<FoodCorrection>,
+        mealId: String,
+        preserveLearning: Boolean,
+    ): List<FoodCorrection> = if (preserveLearning) corrections else corrections.filterNot { it.sourceMealId == mealId }
+}
 
 data class MealNutrition(
     val caloriesKcal: Double?,

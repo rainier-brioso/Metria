@@ -24,6 +24,16 @@ import javax.crypto.spec.GCMParameterSpec
  * cleared on lock; encrypted files never contain a plaintext reusable key.
  */
 class EncryptedVault(context: Context) {
+    enum class AssistantStyle(val storageValue: String, val title: String, val description: String) {
+        BALANCED("balanced", "Balanced", "Warm and clear, with concise answers."),
+        COACH("coach", "Coach", "Encouraging and reflective, with one gentle next step."),
+        RECORDS("records", "Records assistant", "Direct and evidence-first, with less framing."),
+        ;
+        companion object {
+            fun fromStorage(value: String?): AssistantStyle = entries.firstOrNull { it.storageValue == value } ?: BALANCED
+        }
+    }
+
     data class ArchiveSummary(val weights: Int, val meals: Int)
 
     sealed interface Status {
@@ -34,10 +44,12 @@ class EncryptedVault(context: Context) {
             val displayUnit: String = "kg",
             val meals: List<MealEntry> = emptyList(),
             val foodCorrections: List<FoodCorrection> = emptyList(),
+            val mealCorrectionMemories: List<MealCorrectionMemory> = emptyList(),
             val personalDishes: List<PersonalDish> = emptyList(),
             val analysisAudits: List<LocalAnalysisAudit> = emptyList(),
             val nutritionTargets: NutritionTargets? = null,
             val cycleContext: CycleContext = CycleContext(),
+            val assistantStyle: AssistantStyle = AssistantStyle.BALANCED,
             val activeConversation: PrivateConversationRecord? = null,
             val conversationExpired: Boolean = false,
         ) : Status
@@ -52,10 +64,12 @@ class EncryptedVault(context: Context) {
     private var entries: MutableList<WeightEntry> = mutableListOf()
     private var meals: MutableList<MealEntry> = mutableListOf()
     private var foodCorrections: MutableList<FoodCorrection> = mutableListOf()
+    private var mealCorrectionMemories: MutableList<MealCorrectionMemory> = mutableListOf()
     private var personalDishes: MutableList<PersonalDish> = mutableListOf()
     private var analysisAudits: MutableList<LocalAnalysisAudit> = mutableListOf()
     private var nutritionTargets: NutritionTargets? = null
     private var cycleContext = CycleContext()
+    private var assistantStyle = AssistantStyle.BALANCED
     private var activeConversation: PrivateConversationRecord? = null
     private var conversationExpired = false
     private var displayUnit = "kg"
@@ -92,6 +106,7 @@ class EncryptedVault(context: Context) {
             entries = mutableListOf()
             meals = mutableListOf()
             foodCorrections = mutableListOf()
+            mealCorrectionMemories = mutableListOf()
             personalDishes = mutableListOf()
             analysisAudits = mutableListOf()
             nutritionTargets = null
@@ -129,10 +144,12 @@ class EncryptedVault(context: Context) {
             displayUnit = loaded.displayUnit
             meals = loaded.meals.toMutableList()
             foodCorrections = loaded.foodCorrections.toMutableList()
+            mealCorrectionMemories = loaded.mealCorrectionMemories.toMutableList()
             personalDishes = loaded.personalDishes.toMutableList()
             analysisAudits = loaded.analysisAudits.toMutableList()
             nutritionTargets = loaded.nutritionTargets
             cycleContext = loaded.cycleContext
+            assistantStyle = loaded.assistantStyle
             activeConversation = PrivateConversationPolicy.active(loaded.activeConversation)
             conversationExpired = loaded.activeConversation != null && activeConversation == null
             if (conversationExpired) persist()
@@ -247,16 +264,32 @@ class EncryptedVault(context: Context) {
     }
 
     @Synchronized
+    fun setAssistantStyle(style: AssistantStyle): Status {
+        if (sessionKey == null) return Status.Locked
+        val previous = assistantStyle
+        assistantStyle = style
+        return try {
+            persist()
+            unlockedStatus()
+        } catch (_: Exception) {
+            assistantStyle = previous
+            Status.Failed("Assistant style could not be saved locally.")
+        }
+    }
+
+    @Synchronized
     fun lock() {
         sessionKey?.fill(0)
         sessionKey = null
         entries = mutableListOf()
         meals = mutableListOf()
         foodCorrections = mutableListOf()
+        mealCorrectionMemories = mutableListOf()
         personalDishes = mutableListOf()
         analysisAudits = mutableListOf()
         nutritionTargets = null
         cycleContext = CycleContext()
+        assistantStyle = AssistantStyle.BALANCED
         activeConversation = null
         conversationExpired = false
         displayUnit = "kg"
@@ -292,17 +325,19 @@ class EncryptedVault(context: Context) {
         if (sessionKey == null) return Result.failure(IllegalStateException("Unlock or create a vault before restoring."))
         return runCatching {
             val restored = requireNotNull(pendingArchiveRestore) { "Review an encrypted archive before restoring." }
-            val previous = LoadedPayload(displayUnit, entries, meals, foodCorrections, personalDishes, analysisAudits, nutritionTargets, cycleContext, activeConversation)
+            val previous = LoadedPayload(displayUnit, entries, meals, foodCorrections, mealCorrectionMemories, personalDishes, analysisAudits, nutritionTargets, cycleContext, assistantStyle, activeConversation)
             val previousConversationExpired = conversationExpired
             try {
                 displayUnit = restored.displayUnit
                 entries = restored.entries.toMutableList()
                 meals = restored.meals.toMutableList()
                 foodCorrections = restored.foodCorrections.toMutableList()
+                mealCorrectionMemories = restored.mealCorrectionMemories.toMutableList()
                 personalDishes = restored.personalDishes.toMutableList()
                 analysisAudits = mutableListOf()
                 nutritionTargets = restored.nutritionTargets
                 cycleContext = restored.cycleContext
+                assistantStyle = restored.assistantStyle
                 activeConversation = null
                 conversationExpired = false
                 persist()
@@ -313,10 +348,12 @@ class EncryptedVault(context: Context) {
                 entries = previous.entries.toMutableList()
                 meals = previous.meals.toMutableList()
                 foodCorrections = previous.foodCorrections.toMutableList()
+                mealCorrectionMemories = previous.mealCorrectionMemories.toMutableList()
                 personalDishes = previous.personalDishes.toMutableList()
                 analysisAudits = previous.analysisAudits.toMutableList()
                 nutritionTargets = previous.nutritionTargets
                 cycleContext = previous.cycleContext
+                assistantStyle = previous.assistantStyle
                 activeConversation = previous.activeConversation
                 conversationExpired = previousConversationExpired
                 throw error
@@ -337,17 +374,19 @@ class EncryptedVault(context: Context) {
         displayUnit = displayUnit,
         meals = meals.toList(),
         foodCorrections = foodCorrections.toList(),
+        mealCorrectionMemories = mealCorrectionMemories.toList(),
         personalDishes = personalDishes.toList(),
         analysisAudits = analysisAudits.toList(),
         nutritionTargets = nutritionTargets,
         cycleContext = cycleContext,
+        assistantStyle = assistantStyle,
         activeConversation = activeConversation,
         conversationExpired = conversationExpired,
     )
 
     private fun persist() {
         val key = requireNotNull(sessionKey) { "Vault is locked." }
-        val payload = JSONObject().put("version", 1).put("displayUnit", displayUnit).put("entries", JSONArray().apply {
+        val payload = JSONObject().put("version", 1).put("displayUnit", displayUnit).put("assistantStyle", assistantStyle.storageValue).put("entries", JSONArray().apply {
             entries.forEach { entry ->
                 put(JSONObject()
                     .put("id", entry.id)
@@ -391,8 +430,10 @@ class EncryptedVault(context: Context) {
             foodCorrections.forEach { correction -> put(JSONObject()
                 .put("observedName", correction.observedName)
                 .put("confirmedFoodId", correction.confirmedFoodId)
-                .put("count", correction.count)) }
-        }).put("personalDishes", JSONArray().apply {
+                .put("count", correction.count)
+                .put("sourceMealId", correction.sourceMealId)) }
+        }).put(MealCorrectionMemoryCodec.PAYLOAD_FIELD, MealCorrectionMemoryCodec.encode(mealCorrectionMemories))
+        .put("personalDishes", JSONArray().apply {
             personalDishes.forEach { dish ->
                 put(JSONObject()
                     .put("id", dish.id)
@@ -453,10 +494,12 @@ class EncryptedVault(context: Context) {
         val entries: List<WeightEntry>,
         val meals: List<MealEntry>,
         val foodCorrections: List<FoodCorrection>,
+        val mealCorrectionMemories: List<MealCorrectionMemory>,
         val personalDishes: List<PersonalDish>,
         val analysisAudits: List<LocalAnalysisAudit>,
         val nutritionTargets: NutritionTargets?,
         val cycleContext: CycleContext,
+        val assistantStyle: AssistantStyle,
         val activeConversation: PrivateConversationRecord?,
     )
 
@@ -472,6 +515,7 @@ class EncryptedVault(context: Context) {
     private fun parsePayload(root: JSONObject): LoadedPayload {
         require(root.getInt("version") == 1) { "Unsupported archive data version." }
         val loadedDisplayUnit = root.optString("displayUnit", "kg").takeIf { it == "kg" || it == "lb" } ?: "kg"
+        val loadedAssistantStyle = AssistantStyle.fromStorage(root.optString("assistantStyle").takeIf(String::isNotEmpty))
         val items = root.getJSONArray("entries")
         val loadedEntries = buildList {
             for (index in 0 until items.length()) {
@@ -524,9 +568,23 @@ class EncryptedVault(context: Context) {
                 add(meal)
             }
         } } ?: emptyList()
-        val loadedCorrections = root.optJSONArray("foodCorrections")?.let { values -> List(values.length()) { index ->
-            values.getJSONObject(index).let { FoodCorrection(it.getString("observedName"), it.getLong("confirmedFoodId"), it.optInt("count", 1)) }
-        } } ?: emptyList()
+        val loadedCorrections = root.optJSONArray("foodCorrections")?.let { values ->
+            require(values.length() <= FoodCorrectionValidation.MAX_STORED) { "Too many food corrections." }
+            List(values.length()) { index -> values.getJSONObject(index).let { item -> FoodCorrection(
+                observedName = item.getString("observedName"),
+                confirmedFoodId = item.getLong("confirmedFoodId"),
+                count = item.optInt("count", 1),
+                sourceMealId = if (!item.has("sourceMealId") || item.isNull("sourceMealId")) null else {
+                    item.opt("sourceMealId") as? String
+                        ?: throw IllegalArgumentException("Invalid food correction source meal ID.")
+                },
+            ) }
+            }
+        } ?: emptyList()
+        val savedMealIds = loadedMeals.map(MealEntry::id).toSet()
+        require(loadedCorrections.all { FoodCorrectionValidation.valid(it, savedMealIds) }) { "Invalid food correction." }
+        val normalizedCorrections = FoodCorrectionValidation.normalized(loadedCorrections)
+        val loadedCorrectionMemories = MealCorrectionMemoryCodec.decode(root, loadedMeals)
         val loadedPersonalDishes = root.optJSONArray("personalDishes")?.let { dishes ->
             buildList {
                 for (index in 0 until dishes.length()) {
@@ -607,7 +665,7 @@ class EncryptedVault(context: Context) {
             }
             record
         }
-        return LoadedPayload(loadedDisplayUnit, loadedEntries, loadedMeals, loadedCorrections, loadedPersonalDishes, loadedAudits, loadedTargets, loadedCycleContext, loadedConversation)
+        return LoadedPayload(loadedDisplayUnit, loadedEntries, loadedMeals, normalizedCorrections, loadedCorrectionMemories, loadedPersonalDishes, loadedAudits, loadedTargets, loadedCycleContext, loadedAssistantStyle, loadedConversation)
     }
 
     @Synchronized
@@ -675,6 +733,10 @@ class EncryptedVault(context: Context) {
     @Synchronized
     fun recordFoodCorrections(corrections: List<FoodCorrection>): Status {
         if (sessionKey == null) return Status.Locked
+        val mealIds = meals.map(MealEntry::id).toSet()
+        if (corrections.any { !FoodCorrectionValidation.valid(it, mealIds) }) {
+            return Status.Failed("A private food correction was not valid.")
+        }
         val previous = foodCorrections.toList()
         applyFoodCorrections(corrections)
         return try {
@@ -683,6 +745,24 @@ class EncryptedVault(context: Context) {
         } catch (_: Exception) {
             foodCorrections = previous.toMutableList()
             Status.Failed("The private food memory could not be saved.")
+        }
+    }
+
+    /** Clears reusable food hints and per-meal correction memory, leaving meals and saved dishes intact. */
+    @Synchronized
+    fun clearLearning(): Status {
+        if (sessionKey == null) return Status.Locked
+        val previousCorrections = foodCorrections.toList()
+        val previousMemories = mealCorrectionMemories.toList()
+        foodCorrections.clear()
+        mealCorrectionMemories.clear()
+        return try {
+            persist()
+            unlockedStatus()
+        } catch (_: Exception) {
+            foodCorrections = previousCorrections.toMutableList()
+            mealCorrectionMemories = previousMemories.toMutableList()
+            Status.Failed("Private learning could not be cleared locally.")
         }
     }
 
@@ -711,26 +791,38 @@ class EncryptedVault(context: Context) {
         entry: MealEntry,
         corrections: List<FoodCorrection>,
         dishes: List<PersonalDish>,
+        correctionMemory: MealCorrectionMemory? = null,
     ): Status {
         if (sessionKey == null) return Status.Locked
         if (!MealEntryValidation.valid(entry)) return Status.Failed("This reviewed meal contains invalid values.")
-        if (corrections.any { it.observedName.trim().length !in 1..120 || it.confirmedFoodId <= 0 || it.count !in 1..10_000 }) {
+        if (corrections.any {
+                it.sourceMealId != null || !FoodCorrectionValidation.valid(it, emptySet())
+            } || (corrections.isNotEmpty() && !FoodCorrectionValidation.hasValidSourceId(entry.id))) {
             return Status.Failed("A reviewed food match was not valid.")
         }
         if (dishes.any { !PersonalDishValidation.valid(it) }) return Status.Failed("A remembered dish was not valid.")
+        val normalizedMemory = correctionMemory?.let(MealCorrectionMemoryPolicy::normalized)
+        if (correctionMemory != null && (normalizedMemory == null || entry.source !in setOf("ai_estimate", "member_confirmed_catalog") || correctionMemory.mealId != entry.id || correctionMemory.recordedAt != entry.recordedAt)) {
+            return Status.Failed("The meal correction memory did not match this reviewed meal.")
+        }
 
         val previousMeals = meals.toList()
         val previousCorrections = foodCorrections.toList()
+        val previousMemories = mealCorrectionMemories.toList()
         val previousDishes = personalDishes.toList()
         return try {
             meals.add(entry)
-            applyFoodCorrections(corrections)
+            applyFoodCorrections(corrections.map { it.copy(sourceMealId = entry.id) })
+            normalizedMemory?.let { memory ->
+                mealCorrectionMemories = MealCorrectionMemoryPolicy.withRecord(mealCorrectionMemories, memory).toMutableList()
+            }
             require(dishes.all(::mergePersonalDish)) { "Private dish memory is full." }
             persist()
             unlockedStatus()
         } catch (error: Exception) {
             meals = previousMeals.toMutableList()
             foodCorrections = previousCorrections.toMutableList()
+            mealCorrectionMemories = previousMemories.toMutableList()
             personalDishes = previousDishes.toMutableList()
             Status.Failed(
                 if (error.message == "Private dish memory is full.") {
@@ -759,15 +851,13 @@ class EncryptedVault(context: Context) {
 
     private fun applyFoodCorrections(corrections: List<FoodCorrection>) {
         corrections.forEach { correction ->
-            val index = foodCorrections.indexOfFirst {
-                it.observedName.equals(correction.observedName, ignoreCase = true) &&
-                    it.confirmedFoodId == correction.confirmedFoodId
-            }
+            val identity = FoodCorrectionValidation.identityKey(correction)
+            val index = foodCorrections.indexOfFirst { FoodCorrectionValidation.identityKey(it) == identity }
             if (index >= 0) {
                 foodCorrections[index] = foodCorrections[index].copy(
                     count = (foodCorrections[index].count + correction.count).coerceAtMost(10_000),
                 )
-            } else if (correction.observedName.trim().length in 1..120 && correction.confirmedFoodId > 0 && foodCorrections.size < 100) {
+            } else if (foodCorrections.size < FoodCorrectionValidation.MAX_STORED) {
                 foodCorrections.add(correction.copy(observedName = correction.observedName.trim()))
             }
         }
@@ -856,12 +946,26 @@ class EncryptedVault(context: Context) {
         val index = meals.indexOfFirst { it.id == entry.id }
         if (index < 0) return Status.Failed("This meal record is no longer available.")
         val previous = meals[index]
+        val previousCorrections = foodCorrections.toList()
+        val previousMemories = mealCorrectionMemories.toList()
+        val removingOnlyReferencePhoto = MealLearningLifecyclePolicy.removesOnlyReferencePhoto(previous, entry)
         meals[index] = entry
+        if (!removingOnlyReferencePhoto) {
+            // Legacy un-attributed hints remain recoverable, but FoodCatalog excludes them from ranking.
+            foodCorrections = MealLearningLifecyclePolicy.afterMealMutation(
+                foodCorrections,
+                entry.id,
+                preserveLearning = false,
+            ).toMutableList()
+            mealCorrectionMemories.removeAll { it.mealId == entry.id }
+        }
         return try {
             persist()
             unlockedStatus()
         } catch (_: Exception) {
             meals[index] = previous
+            foodCorrections = previousCorrections.toMutableList()
+            mealCorrectionMemories = previousMemories.toMutableList()
             Status.Failed("Meal changes could not be saved locally. Try again before locking the vault.")
         }
     }
@@ -872,11 +976,22 @@ class EncryptedVault(context: Context) {
         val index = meals.indexOfFirst { it.id == id }
         if (index < 0) return Status.Failed("This meal record is no longer available.")
         val removed = meals.removeAt(index)
+        val previousCorrections = foodCorrections.toList()
+        val previousMemories = mealCorrectionMemories.toList()
+        // Preserve legacy un-attributed hints in the archive; they cannot be safely linked to this meal.
+        foodCorrections = MealLearningLifecyclePolicy.afterMealMutation(
+            foodCorrections,
+            id,
+            preserveLearning = false,
+        ).toMutableList()
+        mealCorrectionMemories.removeAll { it.mealId == id }
         return try {
             persist()
             unlockedStatus()
         } catch (_: Exception) {
             meals.add(index, removed)
+            foodCorrections = previousCorrections.toMutableList()
+            mealCorrectionMemories = previousMemories.toMutableList()
             Status.Failed("Meal deletion could not be saved locally. Try again before locking the vault.")
         }
     }

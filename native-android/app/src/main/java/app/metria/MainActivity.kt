@@ -49,6 +49,8 @@ import java.time.ZoneId
 
 class MainActivity : FragmentActivity() {
     private lateinit var modelLifecycle: ModelLifecycle
+    private lateinit var assistantTraceStore: AssistantTraceStore
+    private lateinit var debugImageCaptureStore: DebugImageCaptureStore
     private lateinit var vault: EncryptedVault
     private lateinit var biometricPrompt: BiometricPrompt
     private var vaultCallback: ((EncryptedVault.Status) -> Unit)? = null
@@ -62,7 +64,9 @@ class MainActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        modelLifecycle = ModelLifecycle(applicationContext, filesDir, cacheDir)
+        assistantTraceStore = AssistantTraceStore(noBackupFilesDir, BuildConfig.DEBUG)
+        debugImageCaptureStore = DebugImageCaptureStore(noBackupFilesDir, BuildConfig.DEBUG)
+        modelLifecycle = ModelLifecycle(applicationContext, filesDir, cacheDir, assistantTraceStore, debugImageCaptureStore)
         vault = EncryptedVault(applicationContext)
         modelLifecycle.setAnalysisAuditSink { audit ->
             runOnUiThread {
@@ -99,6 +103,8 @@ class MainActivity : FragmentActivity() {
     override fun onDestroy() {
         vault.lock()
         modelLifecycle.close()
+        assistantTraceStore.close()
+        debugImageCaptureStore.close()
         super.onDestroy()
     }
 
@@ -107,6 +113,11 @@ class MainActivity : FragmentActivity() {
             vault.lock()
             modelLifecycle.lockPrivateAgentConversation()
             modelLifecycle.clearDeveloperResponse()
+            debugImageCaptureStore.clear()
+        } else {
+            // Keep the opt-in through the system picker, but never leave a previous
+            // raw capture on disk while another activity is in front of Metria.
+            debugImageCaptureStore.clear()
         }
         super.onStop()
     }
@@ -154,6 +165,18 @@ class MainActivity : FragmentActivity() {
 
     fun modelStatus(): ModelStatus = modelLifecycle.status()
 
+    fun assistantTraceStatus(): AssistantTraceStore.Status = assistantTraceStore.status()
+
+    fun debugImageCaptureStatus(): DebugImageCaptureStore.Status = debugImageCaptureStore.status()
+
+    fun setDebugImageCaptureEnabled(enabled: Boolean): Boolean = debugImageCaptureStore.setEnabled(enabled)
+
+    fun clearDebugImageCapture() = debugImageCaptureStore.clear()
+
+    fun setAssistantTraceEnabled(enabled: Boolean) = assistantTraceStore.setEnabled(enabled)
+
+    fun clearAssistantTrace() = assistantTraceStore.clear()
+
     fun downloadLocalAssistant(): ModelStatus = modelLifecycle.download()
 
     fun cancelLocalAssistantDownload(): ModelStatus = modelLifecycle.cancelDownload()
@@ -161,6 +184,14 @@ class MainActivity : FragmentActivity() {
     fun prepareLocalAssistant(): ModelStatus = modelLifecycle.initializeRuntime()
 
     fun askLocalMealAssistant(description: String): ModelStatus = modelLifecycle.proposeMealFromText(description)
+
+    fun suggestMealFoodName(currentName: String, correction: String): ModelStatus =
+        modelLifecycle.suggestMealFoodName(currentName, correction)
+
+    fun cancelMealFoodNameCorrection(requestId: Long): ModelStatus =
+        modelLifecycle.cancelMealFoodNameCorrection(requestId)
+
+    fun clearMealFoodNameCorrection(): ModelStatus = modelLifecycle.clearMealFoodNameCorrection()
 
     fun askPrivateCoach(question: String, snapshot: PrivateCoachSnapshot, conversationContext: String = ""): ModelStatus =
         modelLifecycle.proposeCoachInsight(question, snapshot, conversationContext)
@@ -176,6 +207,8 @@ class MainActivity : FragmentActivity() {
         history: List<PrivateConversationMessage>,
     ): ModelStatus = modelLifecycle.startPrivateAgentTurn(question, history)
 
+    fun setAssistantStyle(style: EncryptedVault.AssistantStyle): ModelStatus = modelLifecycle.setAssistantStyle(style)
+
     fun continuePrivateAgentTool(
         toolName: String,
         response: Map<String, Any?>,
@@ -184,6 +217,10 @@ class MainActivity : FragmentActivity() {
     fun cancelPrivateAssistant(): ModelStatus = modelLifecycle.cancelAssistantRequest()
 
     fun clearLocalMealDraft(): ModelStatus = modelLifecycle.clearMealDraft()
+
+    fun discardImageMealDraft(): ModelStatus = modelLifecycle.discardImageMealDraft()
+
+    fun discardAssistantMealDraft(): ModelStatus = modelLifecycle.discardAssistantMealDraft()
 
     fun prepareLocalMealImage(uri: Uri): ModelStatus {
         externalImageFlowInProgress = false
@@ -261,6 +298,7 @@ class MainActivity : FragmentActivity() {
         vault.lock()
         modelLifecycle.lockPrivateAgentConversation()
         modelLifecycle.clearDeveloperResponse()
+        debugImageCaptureStore.clear()
         vaultCallback?.invoke(vault.status())
     }
 

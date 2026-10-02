@@ -157,11 +157,32 @@ Verify:
 - the temporary image is discarded after analysis;
 - the proposal distinguishes visible foods, possible ingredients, and
   uncertainty;
+- a malformed food beside valid foods produces a visibly partial draft, never
+  silently drops a suggestion, and saves catalog nutrition with partial
+  coverage even when every retained food has a complete match;
+- an invalid root or no independently valid foods uses manual entry instead
+  of showing an empty AI review;
 - remembered dishes are suggestions, not silent replacements;
+- the review has a visible Leave without saving action; clean leave exits
+  directly, edited leave asks for confirmation, Keep reviewing retains edits,
+  and confirmed leave creates no meal or correction learning. Check footer,
+  header Back, Android Back, keyboard-visible Back, and rotation;
+- after leaving review, the original unsaved proposal remains available;
+  Discard draft asks for confirmation, Keep draft preserves it, and confirmed
+  discard removes only that proposal, not a saved meal or conversation;
 - the member can correct names, components, portions, catalog matches, and
   nutrition before saving;
+- from the expanded dish editor, ask the local text model to correct one
+  selected food name; verify the old/new preview, Apply and Discard, catalog
+  match invalidation on Apply, and no persisted change before final meal Save;
+- verify direct editing remains available when the model is busy/unavailable,
+  a malformed suggestion is rejected, cancellation or editor exit ignores late
+  output, and a result cannot transfer to another selected food;
 - partial catalog matches calculate only the supported portion and disclose
   incompleteness;
+- after saving a partial photo review, reopening and saving that meal without
+  filling the missing foods must not upgrade its estimate to complete; confirm
+  the partial label remains in Progress after the second save;
 - confirmed thumbnails are retained only when enabled and accepted.
 
 ### Nutrition-label OCR
@@ -187,6 +208,71 @@ When relevant to the change, verify:
 - offline use does not silently require or transmit over a network;
 - debug diagnostics never become part of the encrypted member record or a
   release UI.
+
+### Opt-in debug assistant trace
+
+On a debug build only, the member may enable **Assistant metadata trace** in
+Privacy/Settings → Developer diagnostics before reproducing an assistant issue.
+It records only fixed technical event, tool-category, period, and audit-outcome
+fields in app-private no-backup storage. It excludes prompts, model prose,
+tool payloads, record values, photos, and raw exceptions. Confirm the trace is
+off by default, bounded to 100 events / 64 KiB and a rolling 24-hour window
+(pruned on startup, new writes, and hourly while open), and that **Clear
+trace** removes the file while **Disable** stops capture and removes it.
+
+After selecting the exact current device with `adb devices -l`, read only the
+metadata file from the debuggable app sandbox:
+
+```powershell
+& $metriaAdb -s <device-serial> shell run-as app.metria cat no_backup/assistant-debug-trace.tsv
+```
+
+Do not redirect this output into the repository or attach raw device data to a
+commit. `run-as` is unavailable for release builds. Verify that release builds
+neither offer the control nor create the file. The trace remains outside the
+encrypted vault and recovery archive; its contents are technical diagnostics,
+not evidence that a physical assistant scenario passed.
+
+### Opt-in image development capture
+
+For a member-approved test image on a debug build, **Image development capture**
+in Developer diagnostics is a separate, off-by-default control. Enable it
+before a meal-image analysis. The enabled choice persists locally until the
+member taps **Disable**, including after lock, backgrounding, and process
+restart; a pre-existing installation first needs one new Enable after the
+build that introduces this behavior. Only that choice persists. The one
+bounded model response, reduced EXIF-free JPEG, duration, outcome, and fixed
+parser-rejection category are kept in app-private no-backup storage and
+replaced by the next run. This raw capture is **not** the metadata-only
+assistant trace. It expires within 30 minutes while Metria runs and is
+deleted on disable, clear, lock/background, process startup, or app
+destruction. **Clear image capture** removes only the payload and leaves the
+choice enabled. A hard process kill can leave a payload until restart; the
+ADB helper rejects and removes an expired capture before showing raw content.
+Release builds must not expose or write it and must ignore/remove the debug
+choice. The original temporary analysis image still must be discarded after
+the run. Persisted enablement is not standing permission for ADB inspection;
+obtain member authorization for the active test session.
+
+With the member's authorization for that active test session, keep Metria
+unlocked and foregrounded, select the exact currently connected device, and
+run from `native-android/`:
+
+```powershell
+.\tools\read-image-debug-capture.ps1
+```
+
+The helper reads only `no_backup/debug-image-capture/capture.bin` through
+`run-as`, prints the bounded model response and fixed metadata, and places a
+reduced JPEG in a random temporary directory outside the repository for visual
+inspection. It does not start the Android CLI phone helper. If multiple
+devices are connected, pass `-Serial` with the exact current `adb devices -l`
+identity without saving that identity in the repository. Remove the temporary
+JPEG after inspection and use **Clear image capture** or lock Metria to erase
+the app-private copy. Never commit, attach, or paste a raw capture into source
+control or an issue. Keep only sanitized outcome/category/timing conclusions
+in checkpoint notes. ADB inspection moves this opted-in test content to the
+development machine; it is not ordinary on-device-only app operation.
 
 Uninstall/reinstall and clean-device restoration are destructive test cases.
 Perform them only with explicit member approval and a verified recovery plan.

@@ -17,16 +17,59 @@ revised first.
 | Data | Default location | Who can access it |
 | --- | --- | --- |
 | Weight entries, notes, meals, and trends | Encrypted vault on the member's device | The member after vault unlock |
+| Corrections made while reviewing a locally analysed meal | Bounded, structured correction notes linked to the saved meal in the encrypted vault | The member after vault unlock; any later use must remain local and reviewable |
 | Chosen meal photo or label screenshot | Temporary private cache during local processing only | The member while processing; deleted after completion, failure, or cancellation |
 | Optional confirmed reference thumbnail | Reduced, metadata-free image encrypted inside the member's vault | The member after vault unlock; only when they leave the default-on option enabled while confirming |
 | Downloaded optional model | Private app storage | The operating-system app sandbox; not a member record |
-| Diagnostics | In-memory, redacted technical values only | The member while the app is open |
+| Diagnostics | Redacted technical values in memory; an explicitly enabled debug build may keep a short metadata-only trace in app-private no-backup storage | The member, and a developer using authorized local ADB access to that debug build |
+| Opt-in image-development capture | One short-lived, app-private no-backup copy of a reduced EXIF-free test photo, bounded model response, and technical outcome; debug build only | The member and a developer through member-authorized local ADB access during the active test session |
 
 Metria has no account, cloud sync, advertising SDK, analytics SDK, or default
 backup in the initial release. App uninstall deletes the vault and model unless
 an encrypted archive is explicitly introduced and exported later. Device
 biometrics are never read, copied, stored, or transmitted by Metria; Android
 only returns an unlock success or failure.
+
+**Meal-learning decision — 2026-09-28:** Saving a reviewed local meal may
+automatically retain bounded, structured correction signals in the encrypted
+vault. This is part of Metria's core private assistance, not a separate toggle
+or per-meal prompt. It records only the final changes needed for reviewable
+local suggestions, not the source photo, raw model response, or intermediate
+edit history. Correction-note capture is implemented; using these notes to rank
+future photo suggestions is not yet implemented. The member can inspect and clear learning without removing meals;
+deleting a linked meal removes its learning. Older food-match hints without
+meal provenance remain encrypted and clearable but are not used to rank
+suggestions. "Remember this dish" remains a
+separate choice for a reusable named dish. No correction may bypass member
+review, deterministic nutrition, or a final Save.
+
+**Debug diagnostic exception — 2026-09-22:** The assistant trace is off by
+default, opt-in from Developer diagnostics, and bounded to a rolling 24-hour
+window. Expired entries are pruned on startup, new writes, and hourly while
+the app is running. It may record only typed technical
+events such as request stage, approved tool category, bounded period, and audit
+outcome. It must not store prompts, model prose, tool arguments or results, record
+values, photos, chat history, keys, or raw exceptions. It is never included in
+the encrypted vault or a recovery archive and can be cleared by the member.
+
+**Image-development capture exception — 2026-09-27, opt-in revised
+2026-09-28:** For member-approved test images on a debug build only, a
+separate, explicit Developer diagnostics control may temporarily retain the
+latest reduced, metadata-free test image and bounded raw vision response
+alongside fixed parser-outcome and timing fields. This is intentionally *not*
+the metadata-only assistant trace. The control starts off for an existing or
+new installation until the member enables it; that choice then persists in
+app-private no-backup storage until explicit Disable. Only the choice persists:
+the one-capture payload expires within 30 minutes while the app runs and is
+deleted on disable, clear, lock/background, or process startup. Clear retains
+the enabled choice. A hard process kill can leave the payload until the next
+app launch or authorized ADB read, which rejects and removes an expired
+capture. Release builds must ignore and remove both the choice and any
+payload, and must never write a capture. The app must not transmit either or
+place a capture in the vault, recovery archive, logs, or repository.
+Authorized local ADB inspection on the member's development machine remains
+a deliberate, user-controlled exception to ordinary on-device-only operation;
+persisted enablement alone does not authorize reading a particular test run.
 
 ## Plain-language member disclosure
 

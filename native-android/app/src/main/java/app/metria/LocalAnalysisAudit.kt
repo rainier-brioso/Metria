@@ -20,7 +20,7 @@ data class LocalAnalysisAudit(
 )
 
 object LocalAnalysisAuditValidation {
-    private val outcomes = setOf("draft_ready", "draft_rejected", "runtime_failure", "cancelled")
+    private val outcomes = setOf("draft_ready", "draft_partial", "draft_rejected", "runtime_failure", "cancelled")
 
     fun valid(audit: LocalAnalysisAudit): Boolean =
         runCatching { UUID.fromString(audit.id) }.isSuccess &&

@@ -24,6 +24,30 @@ data class MealProposal(
     val assumptions: List<String>,
     val questions: List<String>,
     val overallConfidence: String,
+    val omittedItemCount: Int = 0,
+    val partialCategory: MealProposalOmissionCategory? = null,
+)
+
+/** Closed, non-sensitive reasons a usable proposal omitted one or more foods. */
+enum class MealProposalOmissionCategory(val auditCode: String) {
+    INVALID_GROUP("invalid_group"),
+    INVALID_ITEM("invalid_item"),
+    INVALID_RANGE("invalid_range"),
+    TOO_MANY_ITEMS("too_many_items"),
+    MULTIPLE("multiple_omissions"),
+}
+
+enum class MealProposalRejectionCategory(val auditCode: String, val diagnosticLabel: String) {
+    INVALID_JSON("invalid_json", "response was not valid JSON"),
+    INVALID_ROOT_SHAPE("invalid_root_shape", "proposal root did not match the expected shape"),
+    INVALID_GROUP("invalid_group", "a grouped dish did not match the expected shape"),
+    INVALID_ITEM("invalid_item", "an item did not match the expected shape"),
+    INVALID_RANGE("invalid_range", "an item portion range was invalid"),
+}
+
+data class MealProposalParseResult(
+    val proposal: MealProposal?,
+    val rejectionCategory: MealProposalRejectionCategory?,
 )
 
 /** Rejects any model shape outside the explicit M0 display-only proposal contract. */
@@ -36,7 +60,9 @@ object MealProposalParser {
     private val itemKeysWithGroup = itemKeys + "group_label"
     private val groupedItemKeys = setOf("name", "kind", "ingredients")
     private val groupedItemKeysWithConfidence = groupedItemKeys + "confidence"
-    private val groupKinds = setOf("dish", "drink", "other")
+    // A visible sauce can be proposed as its own group. Keep its explicit
+    // label and validate every ingredient; do not silently drop the group.
+    private val groupKinds = setOf("dish", "drink", "other", "sauce")
     private val ingredientRoles = setOf("main_food", "side", "drink", "sauce_oil", "dry_seasoning")
     // Vision models often use ordinary nutrition labels rather than the compact
     // app vocabulary. These are safe semantic aliases, not extra user-visible
@@ -63,48 +89,140 @@ object MealProposalParser {
     )
     private val rangeKeys = setOf("min", "max")
 
-    fun parse(raw: String): MealProposal? = runCatching { parseOrThrow(raw) }.getOrNull()
-
-    internal fun parseOrThrow(raw: String): MealProposal {
-        val json = normalizeProposal(JSONObject(unwrapSingleJsonFence(raw)))
-        require(keys(json) == proposalKeys)
-        require(json.getString("kind") == "meal_proposal")
-        val items = json.getJSONArray("items").parseItems()
-        val assumptions = json.getJSONArray("assumptions").parseStrings()
-        val questions = json.getJSONArray("questions").parseStrings()
-        val overallConfidence = normalizedConfidence(json.getString("overall_confidence"))
-        return MealProposal(items, assumptions, questions, overallConfidence)
-    }
+    fun parse(raw: String): MealProposal? = parseWithDiagnostic(raw).proposal
 
     /**
-     * Product decision: normalize only explicit, lossless model variations before
-     * validation. This is not best-effort parsing: unknown keys, inferred fields,
-     * and ambiguous values still fail closed and never become a meal draft.
+     * Returns only a fixed rejection category alongside a valid proposal. The
+     * category is safe for local diagnostics: it never includes model text,
+     * field values, parser messages, or exception details.
      */
-    private fun normalizeProposal(source: JSONObject): JSONObject {
-        val root = canonicalObject(source, mapOf("overallConfidence" to "overall_confidence"))
-        val items = root.get("items").asArray("items").let { sourceItems -> JSONArray().apply {
-            for (index in 0 until sourceItems.length()) {
-                normalizeItems(sourceItems.getJSONObject(index)).forEach(::put)
+    fun parseWithDiagnostic(raw: String): MealProposalParseResult {
+        val normalized = unwrapSingleJsonFence(raw)
+        val source = runCatching { JSONObject(normalized) }.getOrNull()
+        if (source == null) {
+            val isValidArray = runCatching { JSONArray(normalized) }.isSuccess
+            val isValidScalar = normalized.trim().let {
+                it == "true" || it == "false" || it == "null" ||
+                    it.matches(Regex("-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?"))
             }
-        } }
-        root.put("items", items)
-        root.put("assumptions", root.get("assumptions").asStringArray("assumptions").withoutLinks().take(1))
-        root.put("questions", root.get("questions").asStringArray("questions").take(1))
-        root.put("overall_confidence", normalizedConfidence(root.getString("overall_confidence")))
-        return root
+            return MealProposalParseResult(
+                null,
+                if (isValidArray || isValidScalar) MealProposalRejectionCategory.INVALID_ROOT_SHAPE
+                else MealProposalRejectionCategory.INVALID_JSON,
+            )
+        }
+
+        val root = try {
+            canonicalObject(source, mapOf("overallConfidence" to "overall_confidence"))
+                .also {
+                    require(keys(it) == proposalKeys)
+                    require(it.getString("kind") == "meal_proposal")
+                }
+        } catch (_: Exception) {
+            return MealProposalParseResult(null, MealProposalRejectionCategory.INVALID_ROOT_SHAPE)
+        }
+
+        val rawItems = try {
+            root.get("items").asArray("items")
+        } catch (_: Exception) {
+            return MealProposalParseResult(null, MealProposalRejectionCategory.INVALID_ROOT_SHAPE)
+        }
+        val parsedItems = mutableListOf<MealProposalItem>()
+        val omissionCategories = linkedSetOf<MealProposalOmissionCategory>()
+        var omittedCount = 0
+        for (index in 0 until rawItems.length()) {
+            val item = rawItems.optJSONObject(index)
+            if (item == null) {
+                omittedCount += 1
+                omissionCategories += MealProposalOmissionCategory.INVALID_ITEM
+                continue
+            }
+            val group = if (item.has("ingredients")) {
+                try {
+                    validateGroup(item)
+                } catch (_: Exception) {
+                    omittedCount += item.optJSONArray("ingredients")?.length()?.coerceAtLeast(1) ?: 1
+                    omissionCategories += MealProposalOmissionCategory.INVALID_GROUP
+                    continue
+                }
+            } else null
+            val ingredients: List<JSONObject?> = if (group == null) listOf(item) else {
+                val array = group.second
+                List(array.length()) { array.optJSONObject(it) }
+            }
+            for (ingredient in ingredients) {
+                if (ingredient == null) {
+                    omittedCount += 1
+                    omissionCategories += MealProposalOmissionCategory.INVALID_ITEM
+                    continue
+                }
+                val parsed = try {
+                    val normalized = normalizeIngredient(ingredient)
+                    if (group != null) normalized.put("group_label", group.first)
+                    JSONArray().put(normalized).parseItems().single()
+                } catch (_: InvalidRangeException) {
+                    omittedCount += 1
+                    omissionCategories += MealProposalOmissionCategory.INVALID_RANGE
+                    continue
+                } catch (_: Exception) {
+                    omittedCount += 1
+                    omissionCategories += MealProposalOmissionCategory.INVALID_ITEM
+                    continue
+                }
+                if (parsedItems.size < 12) parsedItems += parsed
+                else {
+                    omittedCount += 1
+                    omissionCategories += MealProposalOmissionCategory.TOO_MANY_ITEMS
+                }
+            }
+        }
+        if (parsedItems.isEmpty()) {
+            val soleCategory = omissionCategories.singleOrNull()
+            val rejection = when (soleCategory) {
+                MealProposalOmissionCategory.INVALID_GROUP -> MealProposalRejectionCategory.INVALID_GROUP
+                MealProposalOmissionCategory.INVALID_RANGE -> MealProposalRejectionCategory.INVALID_RANGE
+                else -> MealProposalRejectionCategory.INVALID_ITEM
+            }
+            return MealProposalParseResult(null, rejection)
+        }
+        val proposal = try {
+            root.put("assumptions", root.get("assumptions").asStringArray("assumptions").withoutLinks().take(1))
+            root.put("questions", root.get("questions").asStringArray("questions").take(1))
+            root.put("overall_confidence", normalizedConfidence(root.getString("overall_confidence")))
+            val assumptions = root.getJSONArray("assumptions").parseStrings()
+            val questions = root.getJSONArray("questions").parseStrings()
+            val partialCategory = when {
+                omissionCategories.isEmpty() -> null
+                omissionCategories.size == 1 -> omissionCategories.single()
+                else -> MealProposalOmissionCategory.MULTIPLE
+            }
+            MealProposal(
+                parsedItems,
+                assumptions,
+                questions,
+                if (omittedCount > 0) "low" else root.getString("overall_confidence"),
+                omittedCount,
+                partialCategory,
+            )
+        } catch (_: Exception) {
+            return MealProposalParseResult(null, MealProposalRejectionCategory.INVALID_ROOT_SHAPE)
+        }
+        return MealProposalParseResult(proposal, null)
     }
 
-    private fun normalizeItems(source: JSONObject): List<JSONObject> {
-        if (!source.has("ingredients")) return listOf(normalizeIngredient(source))
+    internal fun parseOrThrow(raw: String): MealProposal = parseWithDiagnostic(raw).proposal
+        ?: throw IllegalArgumentException("Meal proposal rejected.")
+
+    /** Normalize only explicit lossless variations; unknown fields still fail closed. */
+    private fun validateGroup(source: JSONObject): Pair<String, JSONArray> {
         val grouped = canonicalObject(source, emptyMap())
         require(keys(grouped) == groupedItemKeys || keys(grouped) == groupedItemKeysWithConfidence)
         val groupLabel = grouped.getString("name").boundedText(120)
-        require(grouped.getString("kind").trim().lowercase() in groupKinds)
+        val kind = grouped.getString("kind").trim().lowercase()
+        require((if (kind == "side") "dish" else kind) in groupKinds)
         val ingredients = grouped.get("ingredients").asArray("ingredients")
-        return List(ingredients.length()) { index ->
-            normalizeIngredient(ingredients.getJSONObject(index)).put("group_label", groupLabel)
-        }
+        require(ingredients.length() > 0)
+        return groupLabel to ingredients
     }
 
     private fun normalizeIngredient(source: JSONObject): JSONObject {
@@ -112,16 +230,21 @@ object MealProposalParser {
             "visiblePortion" to "visible_portion",
             "estimatedGramsRange" to "estimated_grams_range",
         ))
-        val range = item.get("estimated_grams_range").asRangeObject()
-        range.put("min", wholeNumber(range.get("min")))
-        range.put("max", wholeNumber(range.get("max")))
+        val range = try {
+            item.get("estimated_grams_range").asRangeObject().also {
+                it.put("min", wholeNumber(it.get("min")))
+                it.put("max", wholeNumber(it.get("max")))
+            }
+        } catch (_: Exception) {
+            throw InvalidRangeException()
+        }
         item.put("estimated_grams_range", range)
         if (!item.has("description")) item.put("description", "")
         if (!item.has("role")) item.put("role", "main_food")
         if (!item.has("evidence")) item.put("evidence", "seen")
         item.put("role", roleAliases[item.getString("role").trim().lowercase()] ?: item.getString("role").trim().lowercase())
         item.put("evidence", when (item.getString("evidence").trim().lowercase()) {
-            "visible", "observed" -> "seen"
+            "visible", "observed", "visible_portion" -> "seen"
             "inferred", "possible", "hidden", "likely_inside" -> "possible_inside"
             else -> item.getString("evidence").trim().lowercase()
         })
@@ -172,20 +295,10 @@ object MealProposalParser {
         require(it in confidences)
     }
 
-    /** A content-free diagnostic for development builds; never exposes model text. */
-    fun describeFormat(raw: String): String {
-        val normalized = unwrapSingleJsonFence(raw)
-        if (!normalized.startsWith("{")) {
-            return "response was not a JSON object (length ${raw.length})"
-        }
-        return runCatching {
-            val keys = keys(JSONObject(normalized)).sorted().joinToString(", ")
-            "JSON object keys: $keys"
-        }.getOrElse { "response started like JSON but could not be parsed (length ${raw.length})" }
-    }
+    private class InvalidRangeException : IllegalArgumentException()
 
     private fun JSONArray.parseItems(): List<MealProposalItem> = buildList {
-        require(length() <= 12)
+        require(length() in 1..12)
         for (index in 0 until length()) {
             val item = getJSONObject(index)
             require(keys(item) == itemKeys || keys(item) == itemKeysWithGroup)
@@ -196,11 +309,16 @@ object MealProposalParser {
             val confidence = normalizedConfidence(item.getString("confidence"))
             val role = item.getString("role").trim().lowercase().also { require(it in ingredientRoles) }
             val evidence = item.getString("evidence").trim().lowercase().also { require(it in setOf("seen", "possible_inside")) }
-            val range = item.getJSONObject("estimated_grams_range")
-            require(keys(range) == rangeKeys)
-            val min = range.getInt("min")
-            val max = range.getInt("max")
-            require(min in 1..2_000 && max in min..2_000)
+            val (min, max) = try {
+                val range = item.getJSONObject("estimated_grams_range")
+                require(keys(range) == rangeKeys)
+                val min = range.getInt("min")
+                val max = range.getInt("max")
+                require(min in 1..2_000 && max in min..2_000)
+                min to max
+            } catch (_: Exception) {
+                throw InvalidRangeException()
+            }
             val groupLabel = item.optString("group_label").takeIf(String::isNotEmpty)?.boundedText(120)
             add(MealProposalItem(name, description, visiblePortion, GramRange(min, max), preparation, confidence, evidence, groupLabel, role))
         }

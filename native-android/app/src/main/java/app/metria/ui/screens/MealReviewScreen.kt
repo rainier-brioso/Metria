@@ -40,6 +40,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -71,6 +72,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -87,10 +89,18 @@ import app.metria.GramRange
 import app.metria.MealEntry
 import app.metria.MealEntryItem
 import app.metria.MealEntryValidation
+import app.metria.MealFoodNameCorrectionPresentation
+import app.metria.MealFoodNameCorrectionStatus
+import app.metria.MealCorrectionDiff
+import app.metria.MealCorrectionDiffResult
+import app.metria.MealCorrectionMemory
+import app.metria.MealCorrectionMemoryPolicy
 import app.metria.MealIdentity
 import app.metria.MealNutrition
 import app.metria.MealProposal
 import app.metria.MealProposalItem
+import app.metria.MealReviewItemSnapshot
+import app.metria.MealReviewSnapshot
 import app.metria.MealSlots
 import app.metria.OfflineFoodCatalog
 import app.metria.PersonalDish
@@ -172,6 +182,11 @@ private val StringMapSaver = listSaver<Map<String, String>, String>(
     },
 )
 
+private val MealReviewDraftStateSaver = listSaver<MealReviewDraftState, String>(
+    save = { MealReviewExitPolicy.saveableFields(it) },
+    restore = { fields -> requireNotNull(MealReviewExitPolicy.restoreSaveableFields(fields)) },
+)
+
 private data class DishGroup(
     val id: String,
     val name: String,
@@ -183,11 +198,14 @@ private data class AppliedPersonalDish(
     val matchIds: Map<String, Long>,
 )
 
-private fun reviewProposalItems(proposal: MealProposal, catalog: OfflineFoodCatalog?): List<MealProposalItem> =
-    proposal.items.flatMap { item ->
+private fun reviewProposalItems(proposal: MealProposal, catalog: OfflineFoodCatalog?): List<MealProposalItem> = buildList {
+    proposal.items.forEachIndexed { index, item ->
         val names = catalog?.let { FoodCatalog.splitUnmatchedJoinedFood(it, item.name) } ?: listOf(item.name)
-        if (names.size == 1) listOf(item) else names.map { name ->
-            item.copy(
+        // Reserve one slot for every remaining validated food. A catalog hint
+        // must never make a later model food disappear at the 12-item limit.
+        val availableForThisItem = 12 - size - (proposal.items.size - index - 1)
+        if (names.size == 1 || names.size > availableForThisItem) add(item) else names.forEach { name ->
+            add(item.copy(
                 name = name,
                 visiblePortion = "part of ${item.visiblePortion}",
                 estimatedGramsRange = GramRange(
@@ -195,9 +213,10 @@ private fun reviewProposalItems(proposal: MealProposal, catalog: OfflineFoodCata
                     (item.estimatedGramsRange.max / names.size).coerceAtLeast(1),
                 ),
                 preparation = "",
-            )
+            ))
         }
-    }.take(12)
+    }
+}
 
 private fun initialDrafts(items: List<MealProposalItem>): List<MealReviewItemDraft> {
     val groupedDishIds = mutableMapOf<String, String>()
@@ -218,6 +237,57 @@ private fun initialDrafts(items: List<MealProposalItem>): List<MealReviewItemDra
         )
     }
 }
+
+private fun correctionSnapshot(
+    items: List<MealReviewItemDraft>,
+    matchIds: Map<String, Long>,
+    catalogRelease: String?,
+): MealReviewSnapshot = MealReviewSnapshot(items.map { item ->
+    val foodId = matchIds[item.id]
+    MealReviewItemSnapshot(
+        itemId = item.id,
+        name = item.name,
+        groupId = item.dishId,
+        groupName = item.dishName,
+        portionGrams = item.grams.replace(',', '.').toIntOrNull(),
+        catalogFoodId = foodId,
+        catalogRelease = catalogRelease.takeIf { foodId != null },
+    )
+})
+
+private fun reviewExitState(
+    items: List<MealReviewItemDraft>,
+    matchIds: Map<String, Long>,
+    includedPossibleIds: Set<String>,
+    title: String,
+    date: String,
+    mealSlot: String?,
+    keepReference: Boolean,
+    dishMemoryChoices: Map<String, Boolean>,
+    acceptedDishIds: Map<String, String>,
+) = MealReviewDraftState(
+    items = items.map { item ->
+        MealReviewItemState(
+            id = item.id,
+            dishId = item.dishId,
+            dishName = item.dishName,
+            name = item.name,
+            description = item.description,
+            grams = item.grams,
+            preparation = item.preparation,
+            role = item.role,
+            evidence = item.evidence,
+        )
+    },
+    matchIds = matchIds,
+    includedPossibleIds = includedPossibleIds,
+    title = title,
+    date = date,
+    mealSlot = mealSlot,
+    keepReference = keepReference,
+    dishMemoryChoices = dishMemoryChoices,
+    acceptedSuggestionIds = acceptedDishIds,
+)
 
 private fun List<MealReviewItemDraft>.dishGroups(): List<DishGroup> {
     val order = linkedSetOf<String>()
@@ -328,6 +398,7 @@ private fun nutritionLine(nutrition: CatalogNutrition): String = listOfNotNull(
 @Composable
 fun MetriaMealReviewSheet(
     proposal: MealProposal,
+    manualEntry: Boolean = false,
     catalog: OfflineFoodCatalog?,
     corrections: List<FoodCorrection>,
     referenceThumbnailBase64: String?,
@@ -335,15 +406,23 @@ fun MetriaMealReviewSheet(
     savedMeals: List<MealEntry>,
     savedPersonalDishes: List<PersonalDish>,
     findPersonalDishMatches: (PersonalDishQuery) -> List<PersonalDishMatch>,
+    foodNameCorrection: MealFoodNameCorrectionStatus,
+    onSuggestFoodName: (String, String) -> MealFoodNameCorrectionStatus,
+    onCancelFoodNameCorrection: (Long) -> Unit,
+    onClearFoodNameCorrection: () -> Unit,
     onDismiss: () -> Unit,
-    onSave: (MealEntry, List<FoodCorrection>, List<PersonalDish>) -> String?,
+    onSave: (MealEntry, List<FoodCorrection>, List<PersonalDish>, MealCorrectionMemory?) -> String?,
 ) {
     val proposalItems = remember(proposal, catalog) { reviewProposalItems(proposal, catalog) }
-    val initialItems = remember(proposalItems) { initialDrafts(proposalItems) }
+    // Keep the baseline IDs across configuration recreation; otherwise every
+    // restored item would look removed and re-added to the learning diff.
+    val initialItems = rememberSaveable(proposal.items.hashCode(), saver = MealReviewItemsSaver) {
+        initialDrafts(proposalItems)
+    }
     var items by rememberSaveable(proposal.items.hashCode(), stateSaver = MealReviewItemsSaver) {
         mutableStateOf(initialItems)
     }
-    val initialMatchIds = remember(initialItems, catalog, corrections) {
+    val initialMatchIds = rememberSaveable(proposal.items.hashCode(), saver = MatchIdsSaver) {
         initialItems.mapNotNull { item ->
             if (FoodCatalog.isAmbiguousModelFood(item.name)) null
             else catalog?.let { FoodCatalog.suggest(it, item.name, item.description, corrections) }?.let { item.id to it.fdcId }
@@ -359,10 +438,12 @@ fun MetriaMealReviewSheet(
         LocalTime.now().withSecond(0).withNano(0).toString()
     }
     val captureTime = remember(captureTimeText) { LocalTime.parse(captureTimeText) }
-    var date by rememberSaveable(proposal.items.hashCode()) { mutableStateOf(LocalDate.now().toString()) }
-    var title by rememberSaveable(proposal.items.hashCode()) {
-        mutableStateOf(MealIdentity.titleFor(proposalItems.map { MealEntryItem(it.name, null, null) }))
+    val initialDate = rememberSaveable(proposal.items.hashCode()) { LocalDate.now().toString() }
+    var date by rememberSaveable(proposal.items.hashCode()) { mutableStateOf(initialDate) }
+    val initialTitle = rememberSaveable(proposal.items.hashCode()) {
+        MealIdentity.titleFor(proposalItems.map { MealEntryItem(it.name, null, null) })
     }
+    var title by rememberSaveable(proposal.items.hashCode()) { mutableStateOf(initialTitle) }
     var titleEdited by rememberSaveable(proposal.items.hashCode()) { mutableStateOf(false) }
     var dishMemoryChoices by rememberSaveable(proposal.items.hashCode(), stateSaver = BooleanMapSaver) {
         mutableStateOf(emptyMap())
@@ -378,6 +459,35 @@ fun MetriaMealReviewSheet(
     var detailsExpanded by rememberSaveable(proposal.items.hashCode()) { mutableStateOf(false) }
     var editingDishId by rememberSaveable(proposal.items.hashCode()) { mutableStateOf<String?>(null) }
     var error by rememberSaveable(proposal.items.hashCode()) { mutableStateOf<String?>(null) }
+    var showLeaveConfirmation by rememberSaveable(proposal.items.hashCode()) { mutableStateOf(false) }
+
+    val initialExitState by rememberSaveable(proposal.items.hashCode(), stateSaver = MealReviewDraftStateSaver) {
+        mutableStateOf(
+            reviewExitState(
+                items = initialItems,
+                matchIds = initialMatchIds,
+                includedPossibleIds = emptySet(),
+                title = initialTitle,
+                date = initialDate,
+                mealSlot = null,
+                keepReference = referenceThumbnailBase64 != null,
+                dishMemoryChoices = emptyMap(),
+                acceptedDishIds = emptyMap(),
+            ),
+        )
+    }
+    val currentExitState = reviewExitState(
+        items = items,
+        matchIds = matchIds,
+        includedPossibleIds = includedPossibleIds,
+        title = title,
+        date = date,
+        mealSlot = mealSlot,
+        keepReference = keepReference,
+        dishMemoryChoices = dishMemoryChoices,
+        acceptedDishIds = acceptedDishIds,
+    )
+    val hasSaveRelevantChanges = MealReviewExitPolicy.requiresConfirmation(initialExitState, currentExitState)
 
     val foodsById = remember(catalog) { catalog?.foods?.associateBy(CatalogFood::fdcId).orEmpty() }
     val catalogMatches = items.associate { item -> item.id to matchIds[item.id]?.let(foodsById::get) }
@@ -410,7 +520,8 @@ fun MetriaMealReviewSheet(
                 nutrition.carbohydrateGrams == null || nutrition.fatGrams == null
             )
     }.mapTo(linkedSetOf()) { it.id }
-    val isPartialEstimate = totals != null && includedIds.size != items.size
+    val estimateCoverage = MealReviewMode.estimateCoverage(proposal, includedIds.size, items.size)
+    val isPartialEstimate = totals != null && estimateCoverage == "partial"
     val comparableItems = items.map { item ->
         MealEntryItem(
             name = item.name.trim(),
@@ -464,12 +575,19 @@ fun MetriaMealReviewSheet(
         dish.id to matches.take(3)
     }
     val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    fun closeDishEditor() {
+        onClearFoodNameCorrection()
+        editingDishId = null
+    }
+    fun requestLeaveReview() {
+        if (hasSaveRelevantChanges) showLeaveConfirmation = true else onDismiss()
+    }
 
     // The full-screen review has no draggable/hidden state. While the keyboard
     // is visible Android owns Back and dismisses only the IME; after that, Back
     // navigates editor -> review -> analysis result.
     BackHandler(enabled = !imeVisible) {
-        if (editingDishId != null) editingDishId = null else onDismiss()
+        if (editingDishId != null) closeDishEditor() else requestLeaveReview()
     }
 
     Dialog(
@@ -486,6 +604,22 @@ fun MetriaMealReviewSheet(
             modifier = Modifier.fillMaxSize(),
         ) {
             val editingDish = items.dishGroups().firstOrNull { it.id == editingDishId }
+            if (showLeaveConfirmation && editingDish == null) {
+                AlertDialog(
+                    onDismissRequest = { showLeaveConfirmation = false },
+                    title = { Text("Leave without saving?") },
+                    text = { Text("Your changes to this meal will be lost.") },
+                    dismissButton = {
+                        TextButton(onClick = {
+                            showLeaveConfirmation = false
+                            onDismiss()
+                        }) { Text("Leave without saving") }
+                    },
+                    confirmButton = {
+                        Button(onClick = { showLeaveConfirmation = false }) { Text("Keep reviewing") }
+                    },
+                )
+            }
             if (editingDish != null) {
                 DishEditor(
                     dish = editingDish,
@@ -496,8 +630,13 @@ fun MetriaMealReviewSheet(
                     includedPossibleIds = includedPossibleIds.intersect(editingDish.items.map { it.id }.toSet()),
                     rememberDish = dishMemoryChoices[editingDish.id] ?: true,
                     canRemoveLastComponent = items.size > editingDish.items.size,
-                    onCancel = { editingDishId = null },
+                    foodNameCorrection = foodNameCorrection,
+                    onSuggestFoodName = onSuggestFoodName,
+                    onCancelFoodNameCorrection = onCancelFoodNameCorrection,
+                    onClearFoodNameCorrection = onClearFoodNameCorrection,
+                    onCancel = ::closeDishEditor,
                     onApply = { updatedItems, updatedMatches, updatedIncluded, rememberDish ->
+                        onClearFoodNameCorrection()
                         val oldIds = editingDish.items.mapTo(mutableSetOf()) { it.id }
                         val insertionIndex = items.indexOfFirst { it.dishId == editingDish.id }.coerceAtLeast(0)
                         items = items.filterNot { it.dishId == editingDish.id }.toMutableList().also {
@@ -517,6 +656,7 @@ fun MetriaMealReviewSheet(
             } else {
                 MealReview(
                 proposal = proposal,
+                manualEntry = manualEntry,
                 items = items,
                 title = title,
                 onTitleChange = {
@@ -579,7 +719,7 @@ fun MetriaMealReviewSheet(
                     title = MealIdentity.displayTitle(previous)
                     titleEdited = true
                 },
-                onDismiss = onDismiss,
+                onDismiss = ::requestLeaveReview,
                     onSave = {
                     val recordedAt = mealInstantForReview(date, captureTime)
                     val savedItems = items.map { item ->
@@ -599,7 +739,7 @@ fun MetriaMealReviewSheet(
                             it.caloriesKcal, it.proteinGrams, it.carbohydrateGrams, it.fatGrams,
                             source = "member_confirmed_catalog",
                             catalogRelease = catalog?.sourceRelease,
-                            estimateCoverage = if (isPartialEstimate) "partial" else "full",
+                            estimateCoverage = estimateCoverage,
                         )
                     }
                     val meal = recordedAt?.let {
@@ -610,8 +750,8 @@ fun MetriaMealReviewSheet(
                             recordedTimeKnown = true,
                             items = savedItems,
                             assumptions = proposal.assumptions,
-                            confidence = proposal.overallConfidence,
-                            source = if (nutrition == null) "ai_estimate" else "member_confirmed_catalog",
+                            confidence = if (manualEntry) "high" else proposal.overallConfidence,
+                            source = MealReviewMode.source(manualEntry, nutrition != null),
                             nutrition = nutrition,
                             referenceThumbnailBase64 = referenceThumbnailBase64.takeIf { keepReference },
                             analysisAuditId = analysisAuditId,
@@ -640,7 +780,17 @@ fun MetriaMealReviewSheet(
                     } else if (personalDishes.size != selectedDishGroups.size) {
                         error = "Review the name and foods in each dish you want Metria to remember."
                     } else {
-                        error = onSave(meal, learnedCorrections, personalDishes)
+                        val correctionMemory = if (manualEntry) null else {
+                            val diff = MealCorrectionDiff.diff(
+                                correctionSnapshot(initialItems, initialMatchIds, catalog?.sourceRelease),
+                                correctionSnapshot(items, matchIds, catalog?.sourceRelease),
+                            )
+                            (diff as? MealCorrectionDiffResult.Valid)?.changes
+                                ?.takeIf(List<app.metria.MealCorrectionChange>::isNotEmpty)
+                                ?.let { MealCorrectionMemory(meal.id, meal.recordedAt, it) }
+                                ?.let(MealCorrectionMemoryPolicy::normalized)
+                        }
+                        error = onSave(meal, learnedCorrections, personalDishes, correctionMemory)
                     }
                     },
                 )
@@ -652,6 +802,7 @@ fun MetriaMealReviewSheet(
 @Composable
 private fun MealReview(
     proposal: MealProposal,
+    manualEntry: Boolean,
     items: List<MealReviewItemDraft>,
     title: String,
     onTitleChange: (String) -> Unit,
@@ -684,7 +835,7 @@ private fun MealReview(
     onSave: () -> Unit,
 ) {
     Column(Modifier.fillMaxSize().imePadding()) {
-        ReviewHeader(title = "Review this meal", onClose = onDismiss)
+        ReviewHeader(title = if (manualEntry) "Enter meal manually" else "Review this meal", onClose = onDismiss)
         androidx.compose.foundation.lazy.LazyColumn(
             modifier = Modifier.weight(1f).fillMaxWidth(),
             contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
@@ -695,7 +846,23 @@ private fun MealReview(
                     referenceThumbnailBase64 = referenceThumbnailBase64,
                     confidence = proposal.overallConfidence,
                     dishCount = items.dishGroups().size,
+                    manualEntry = manualEntry,
                 )
+            }
+            if (!manualEntry && proposal.omittedItemCount > 0) {
+                item {
+                    Card(colors = CardDefaults.cardColors(containerColor = MetriaColors.EstimatedSoft)) {
+                        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("Some suggestions were left out", style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                if (items.size >= 12) "Check the photo before saving. To add a missing food, first remove one of the current foods."
+                                else "Check the photo and add any missing foods before saving. Only the foods shown here are in this draft.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MetriaColors.InkMuted,
+                            )
+                        }
+                    }
+                }
             }
             item {
                 OutlinedTextField(
@@ -713,11 +880,11 @@ private fun MealReview(
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text("Looks similar to ${MealIdentity.displayTitle(previous)}", style = MaterialTheme.typography.titleSmall)
                             Text(
-                                "Use the familiar name, then review today’s foods and portions.",
+                                "This uses the meal name only. Review today’s foods and portions separately.",
                                 color = MetriaColors.InkMuted,
                                 style = MaterialTheme.typography.bodySmall,
                             )
-                            TextButton(onClick = { onUseSimilarName(previous) }) { Text("Use this name") }
+                            TextButton(onClick = { onUseSimilarName(previous) }) { Text("Use meal name") }
                         }
                     }
                 }
@@ -730,7 +897,11 @@ private fun MealReview(
                 ) {
                     Column(Modifier.weight(1f).padding(end = 12.dp)) {
                         Text("Dishes", style = MaterialTheme.typography.titleLarge)
-                        Text("Tap a dish to review its foods.", color = MetriaColors.InkMuted)
+                        Text(
+                            if (items.isEmpty()) "Add a dish and the foods you recognise."
+                            else "Tap a dish to review its foods.",
+                            color = MetriaColors.InkMuted,
+                        )
                     }
                     if (items.size < 12) TextButton(onClick = onAddDish) {
                         Icon(Icons.Default.Add, contentDescription = null)
@@ -741,13 +912,6 @@ private fun MealReview(
             items.dishGroups().forEach { dish ->
                 item(key = dish.id) {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        personalDishSuggestions[dish.id]?.takeIf(List<PersonalDishMatch>::isNotEmpty)?.let { matches ->
-                            PersonalDishSuggestionsCard(
-                                matches = matches,
-                                onAccept = { match -> onAcceptPersonalDish(dish.id, match) },
-                                onRejectAll = { matches.forEach(onRejectPersonalDish) },
-                            )
-                        }
                         DishReviewCard(
                             dish = dish,
                             includedCount = dish.items.count { it.id in includedIds },
@@ -756,6 +920,14 @@ private fun MealReview(
                             usingSavedDish = dish.id in acceptedDishIds,
                             onClick = { onEditDish(dish.id) },
                         )
+                        personalDishSuggestions[dish.id]?.takeIf(List<PersonalDishMatch>::isNotEmpty)?.let { matches ->
+                            PersonalDishSuggestionsCard(
+                                dishName = dish.name,
+                                matches = matches,
+                                onAccept = { match -> onAcceptPersonalDish(dish.id, match) },
+                                onRejectAll = { matches.forEach(onRejectPersonalDish) },
+                            )
+                        }
                     }
                 }
             }
@@ -844,10 +1016,16 @@ private fun MealReview(
         }
         SystemSafeBottomActions(verticalPadding = 14.dp) {
             Button(
-                onClick = onSave,
+                onClick = if (MealReviewMode.needsFirstDish(manualEntry, items.size)) onAddDish else onSave,
                 modifier = Modifier.fillMaxWidth().height(54.dp),
             ) {
-                Text("Save reviewed meal")
+                Text(if (MealReviewMode.needsFirstDish(manualEntry, items.size)) "Add first dish" else "Save reviewed meal")
+            }
+            OutlinedButton(
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+            ) {
+                Text("Leave without saving")
             }
         }
     }
@@ -869,7 +1047,7 @@ private fun ReviewHeader(title: String, onClose: () -> Unit) {
 }
 
 @Composable
-private fun ReviewIntro(referenceThumbnailBase64: String?, confidence: String, dishCount: Int) {
+private fun ReviewIntro(referenceThumbnailBase64: String?, confidence: String, dishCount: Int, manualEntry: Boolean) {
     Row(
         Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -885,10 +1063,14 @@ private fun ReviewIntro(referenceThumbnailBase64: String?, confidence: String, d
             }
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            MetriaEstimateBadge("AI estimate · ${confidence.replaceFirstChar(Char::uppercase)} confidence")
+            if (manualEntry) Text("Manual entry", style = MaterialTheme.typography.titleSmall)
+            else MetriaEstimateBadge("AI estimate · ${confidence.replaceFirstChar(Char::uppercase)} confidence")
             Text(
-                if (dishCount == 1) "Metria found one dish. Check the foods and portions before saving."
-                else "Metria found $dishCount dishes. Check each one before saving.",
+                when {
+                    manualEntry -> "No foods were taken from the rejected draft. Add and review them before saving."
+                    dishCount == 1 -> "Metria found one dish. Check the foods and portions before saving."
+                    else -> "Metria found $dishCount dishes. Check each one before saving."
+                },
                 color = MetriaColors.InkMuted,
             )
         }
@@ -897,6 +1079,7 @@ private fun ReviewIntro(referenceThumbnailBase64: String?, confidence: String, d
 
 @Composable
 private fun PersonalDishSuggestionsCard(
+    dishName: String,
     matches: List<PersonalDishMatch>,
     onAccept: (PersonalDishMatch) -> Unit,
     onRejectAll: () -> Unit,
@@ -906,6 +1089,11 @@ private fun PersonalDishSuggestionsCard(
     }
     Card(colors = CardDefaults.cardColors(containerColor = MetriaColors.AccentSoft)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(
+                "Suggestion for $dishName",
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.semantics { heading() },
+            )
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Icon(Icons.Default.CheckCircle, contentDescription = null, tint = MetriaColors.Primary)
                 Text(
@@ -1039,6 +1227,65 @@ private fun SettingSwitchRow(
 }
 
 @Composable
+private fun FoodNameCorrectionEditor(
+    input: String,
+    onInputChange: (String) -> Unit,
+    isRunning: Boolean,
+    anotherFoodRunning: Boolean,
+    suggestedName: String?,
+    diagnostic: String?,
+    originalName: String,
+    proposalIsCurrent: Boolean,
+    onSuggest: () -> Unit,
+    onCancel: () -> Unit,
+    onApply: (String) -> Unit,
+    onDiscard: () -> Unit,
+) {
+    Surface(
+        color = MetriaColors.PrimarySoft,
+        shape = MaterialTheme.shapes.medium,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Correct this food name", style = MaterialTheme.typography.titleSmall)
+            Text("Describe the correction. Metria will suggest a name for this food only.", color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall)
+            OutlinedTextField(
+                value = input,
+                onValueChange = onInputChange,
+                label = { Text("For example: it's albóndigas, not fried balls") },
+                enabled = !isRunning,
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 1,
+                maxLines = 3,
+            )
+            if (isRunning) {
+                Text("Considering your correction on this phone…", color = MetriaColors.Primary, style = MaterialTheme.typography.bodySmall)
+                TextButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) { Text("Cancel suggestion") }
+            } else if (suggestedName != null) {
+                Text(
+                    if (proposalIsCurrent) "$originalName  →  $suggestedName" else "This food name changed while Metria was considering the suggestion.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = onDiscard, modifier = Modifier.weight(1f)) { Text("Discard") }
+                    Button(onClick = { onApply(suggestedName) }, enabled = proposalIsCurrent, modifier = Modifier.weight(1f)) { Text("Apply name") }
+                }
+            } else {
+                if (anotherFoodRunning) {
+                    Text("Finish the suggestion for ${originalName.ifBlank { "the other food" }} first.", color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall)
+                }
+                diagnostic?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                Button(
+                    onClick = onSuggest,
+                    enabled = input.trim().length >= 3 && !anotherFoodRunning,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Suggest a food name") }
+            }
+        }
+    }
+}
+
+@Composable
 private fun MealSlotChips(selected: String?, suggested: String?, choose: (String?) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Meal type", style = MaterialTheme.typography.labelLarge)
@@ -1064,6 +1311,10 @@ private fun DishEditor(
     includedPossibleIds: Set<String>,
     rememberDish: Boolean,
     canRemoveLastComponent: Boolean,
+    foodNameCorrection: MealFoodNameCorrectionStatus,
+    onSuggestFoodName: (String, String) -> MealFoodNameCorrectionStatus,
+    onCancelFoodNameCorrection: (Long) -> Unit,
+    onClearFoodNameCorrection: () -> Unit,
     onCancel: () -> Unit,
     onApply: (List<MealReviewItemDraft>, Map<String, Long>, Set<String>, Boolean) -> Unit,
 ) {
@@ -1076,6 +1327,10 @@ private fun DishEditor(
     var expandedItemId by rememberSaveable(dish.id) { mutableStateOf(localItems.firstOrNull()?.id) }
     var catalogSearchItemId by rememberSaveable(dish.id) { mutableStateOf<String?>(null) }
     var editorError by rememberSaveable(dish.id) { mutableStateOf<String?>(null) }
+    var correctionText by rememberSaveable(dish.id) { mutableStateOf("") }
+    var correctionTargetId by rememberSaveable(dish.id) { mutableStateOf<String?>(null) }
+    var correctionOriginalName by rememberSaveable(dish.id) { mutableStateOf("") }
+    var correctionRequestId by rememberSaveable(dish.id) { mutableStateOf<Long?>(null) }
     val foodsById = remember(catalog) { catalog?.foods?.associateBy(CatalogFood::fdcId).orEmpty() }
 
     Column(Modifier.fillMaxSize().imePadding()) {
@@ -1112,35 +1367,96 @@ private fun DishEditor(
             }
             localItems.forEach { item ->
                 item(key = item.id) {
-                    ComponentEditorCard(
-                        item = item,
-                        expanded = expandedItemId == item.id,
-                        catalogFood = localMatchIds[item.id]?.let(foodsById::get),
-                        includedPossible = item.id in localIncludedPossible,
-                        canRemove = localItems.size > 1 || canRemoveLastComponent,
-                        otherDishes = otherDishes,
-                        onToggle = { expandedItemId = if (expandedItemId == item.id) null else item.id },
-                        onChange = { updated ->
-                            if (updated.name != item.name) localMatchIds = localMatchIds - item.id
-                            if (updated.evidence == "seen") localIncludedPossible = localIncludedPossible - item.id
-                            localItems = localItems.map { if (it.id == item.id) updated else it }
-                        },
-                        onTogglePossible = {
-                            localIncludedPossible = if (item.id in localIncludedPossible) localIncludedPossible - item.id else localIncludedPossible + item.id
-                        },
-                        onFindFood = { catalogSearchItemId = item.id },
-                        onRemove = {
-                            localItems = localItems.filterNot { it.id == item.id }
-                            localMatchIds = localMatchIds - item.id
-                            localIncludedPossible = localIncludedPossible - item.id
-                            if (expandedItemId == item.id) expandedItemId = localItems.firstOrNull()?.id
-                        },
-                        onMove = { destination ->
-                            movedItems = movedItems + item.copy(dishId = destination.id, dishName = destination.name)
-                            localItems = localItems.filterNot { it.id == item.id }
-                            if (expandedItemId == item.id) expandedItemId = localItems.firstOrNull()?.id
-                        },
-                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ComponentEditorCard(
+                            item = item,
+                            expanded = expandedItemId == item.id,
+                            catalogFood = localMatchIds[item.id]?.let(foodsById::get),
+                            includedPossible = item.id in localIncludedPossible,
+                            canRemove = localItems.size > 1 || canRemoveLastComponent,
+                            otherDishes = otherDishes,
+                            onToggle = {
+                                val nextExpandedId = if (expandedItemId == item.id) null else item.id
+                                if (nextExpandedId != item.id && correctionTargetId != nextExpandedId) correctionText = ""
+                                expandedItemId = nextExpandedId
+                            },
+                            onChange = { updated ->
+                                if (updated.name != item.name) localMatchIds = localMatchIds - item.id
+                                if (updated.evidence == "seen") localIncludedPossible = localIncludedPossible - item.id
+                                localItems = localItems.map { if (it.id == item.id) updated else it }
+                            },
+                            onTogglePossible = {
+                                localIncludedPossible = if (item.id in localIncludedPossible) localIncludedPossible - item.id else localIncludedPossible + item.id
+                            },
+                            onFindFood = { catalogSearchItemId = item.id },
+                            onRemove = {
+                                if (correctionTargetId == item.id) {
+                                    onClearFoodNameCorrection()
+                                    correctionRequestId = null
+                                    correctionTargetId = null
+                                    correctionText = ""
+                                }
+                                localItems = localItems.filterNot { it.id == item.id }
+                                localMatchIds = localMatchIds - item.id
+                                localIncludedPossible = localIncludedPossible - item.id
+                                if (expandedItemId == item.id) expandedItemId = localItems.firstOrNull()?.id
+                            },
+                            onMove = { destination ->
+                                if (correctionTargetId == item.id) {
+                                    onClearFoodNameCorrection()
+                                    correctionRequestId = null
+                                    correctionTargetId = null
+                                    correctionText = ""
+                                }
+                                movedItems = movedItems + item.copy(dishId = destination.id, dishName = destination.name)
+                                localItems = localItems.filterNot { it.id == item.id }
+                                if (expandedItemId == item.id) expandedItemId = localItems.firstOrNull()?.id
+                            },
+                        )
+                        if (expandedItemId == item.id) {
+                            FoodNameCorrectionEditor(
+                                input = correctionText,
+                                onInputChange = { correctionText = it.take(240) },
+                                isRunning = foodNameCorrection.requestId == correctionRequestId &&
+                                    foodNameCorrection.state == "running" && correctionTargetId == item.id,
+                                anotherFoodRunning = foodNameCorrection.state == "running" && correctionTargetId != item.id,
+                                suggestedName = MealFoodNameCorrectionPresentation.suggestionFor(
+                                    foodNameCorrection,
+                                    correctionRequestId,
+                                    correctionTargetId,
+                                    item.id,
+                                ),
+                                diagnostic = foodNameCorrection.diagnostic.takeIf {
+                                    foodNameCorrection.requestId == correctionRequestId && correctionTargetId == item.id
+                                },
+                                originalName = correctionOriginalName,
+                                proposalIsCurrent = item.name == correctionOriginalName,
+                                onSuggest = {
+                                    correctionTargetId = item.id
+                                    correctionOriginalName = item.name
+                                    val result = onSuggestFoodName(item.name, correctionText)
+                                    correctionRequestId = result.requestId
+                                },
+                                onCancel = { correctionRequestId?.let(onCancelFoodNameCorrection) },
+                                onApply = { name ->
+                                    localItems = localItems.map { current ->
+                                        if (current.id == item.id) current.copy(name = name) else current
+                                    }
+                                    localMatchIds = localMatchIds - item.id
+                                    correctionText = ""
+                                    correctionTargetId = null
+                                    correctionRequestId = null
+                                    onClearFoodNameCorrection()
+                                },
+                                onDiscard = {
+                                    correctionText = ""
+                                    correctionTargetId = null
+                                    correctionRequestId = null
+                                    onClearFoodNameCorrection()
+                                },
+                            )
+                        }
+                    }
                 }
             }
             item {

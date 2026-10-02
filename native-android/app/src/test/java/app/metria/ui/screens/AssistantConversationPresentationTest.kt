@@ -2,13 +2,28 @@ package app.metria.ui.screens
 
 import app.metria.shouldConsumeAssistantResult
 import app.metria.AssistantPendingSubmissionGate
+import app.metria.AssistantCancellationGate
 import app.metria.shouldPresentAssistantThinking
+import app.metria.shouldLatchAssistantDiagnostic
+import app.metria.continuationFailureDiagnostic
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import app.metria.AssistantModelOperationMutex
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 
 class AssistantConversationPresentationTest {
+    @Test
+    fun `current failed turn can keep its error visible after lifecycle status changes`() {
+        assertTrue(shouldLatchAssistantDiagnostic(42L, 42L, "loaded", "Could not verify", false))
+        assertFalse(shouldLatchAssistantDiagnostic(42L, 41L, "loaded", "Stale error", false))
+        assertFalse(shouldLatchAssistantDiagnostic(42L, 42L, "thinking", "Early error", false))
+        assertFalse(shouldLatchAssistantDiagnostic(42L, 42L, "loaded", "Previous error", true))
+    }
     @Test
     fun `assistant home uses calm member language`() {
         assertEquals("Ready when you are", assistantHomeTitle("loaded"))
@@ -65,6 +80,61 @@ class AssistantConversationPresentationTest {
 
         assertTrue(gate.cancel(cancelled))
         assertFalse(gate.isActive(cancelled))
+    }
+
+    @Test
+    fun `assistant cancellation stays busy until native cancellation completes`() {
+        val gate = AssistantCancellationGate()
+        val cancellation = gate.begin()!!
+
+        assertTrue(gate.isInFlight())
+        assertEquals(null, gate.begin())
+        assertTrue(gate.complete(cancellation))
+        assertFalse(gate.isInFlight())
+    }
+
+    @Test
+    fun `conversation reset prevents old cancellation from presenting stopped confirmation`() {
+        val gate = AssistantCancellationGate()
+        val cancellation = gate.begin()!!
+
+        gate.reset()
+
+        assertTrue(gate.isInFlight())
+        assertFalse(gate.complete(cancellation))
+        assertFalse(gate.isInFlight())
+    }
+
+    @Test
+    fun `queued assistant start rechecks its token after cancellation owns the operation lock`() = runBlocking {
+        val operations = AssistantModelOperationMutex()
+        val pending = AssistantPendingSubmissionGate()
+        val token = pending.begin()!!
+        val cancellationEntered = CompletableDeferred<Unit>()
+        val finishCancellation = CompletableDeferred<Unit>()
+        val cancellation = launch(start = CoroutineStart.UNDISPATCHED) {
+            operations.withLock {
+                cancellationEntered.complete(Unit)
+                finishCancellation.await()
+            }
+        }
+        cancellationEntered.await()
+
+        val startQueued = CompletableDeferred<Unit>()
+        var started = false
+        val start = launch(start = CoroutineStart.UNDISPATCHED) {
+            startQueued.complete(Unit)
+            operations.withLock {
+                if (pending.isActive(token)) started = true
+            }
+        }
+        startQueued.await()
+        pending.cancel(token)
+        finishCancellation.complete(Unit)
+
+        cancellation.join()
+        start.join()
+        assertFalse(started)
     }
 
     @Test
@@ -138,5 +208,99 @@ class AssistantConversationPresentationTest {
             modelState = "loaded",
             operation = "agent_waiting_tool",
         ))
+    }
+
+    @Test
+    fun `accepted tool continuation adopts only its new lifecycle request`() {
+        val gate = AssistantPendingSubmissionGate()
+        val token = gate.begin()!!
+
+        assertEquals(43L, gate.reconcile(
+            token = token,
+            requestId = 43L,
+            previousRequestId = 42L,
+            state = "thinking",
+            operation = "agent_tool_result",
+        ))
+        assertTrue(gate.observeLifecycle(43L, "thinking"))
+        assertTrue(shouldConsumeAssistantResult(43L, null, 43L))
+    }
+
+    @Test
+    fun `fast completed tool continuation is adopted when reply arrives before handoff`() {
+        val gate = AssistantPendingSubmissionGate()
+        val token = gate.begin()!!
+
+        assertEquals(43L, gate.reconcile(token, 43L, 42L, "loaded", "agent_reply"))
+        assertFalse(gate.isActive(token))
+        assertTrue(shouldConsumeAssistantResult(43L, null, 43L))
+    }
+
+    @Test
+    fun `loaded poll before request reconciliation retires matching continuation`() {
+        val gate = AssistantPendingSubmissionGate()
+        val token = gate.begin()!!
+
+        assertFalse(gate.observeLifecycle(43L, "loaded"))
+        assertEquals(43L, gate.reconcile(token, 43L, 42L, "thinking", "agent_tool_result"))
+        assertFalse(gate.isActive(token))
+        assertTrue(shouldConsumeAssistantResult(43L, null, 43L))
+    }
+
+    @Test
+    fun `loaded poll for old request does not retire a newer continuation`() {
+        val gate = AssistantPendingSubmissionGate()
+        val token = gate.begin()!!
+
+        assertFalse(gate.observeLifecycle(42L, "loaded"))
+        assertEquals(43L, gate.reconcile(token, 43L, 42L, "thinking", "agent_tool_result"))
+        assertTrue(gate.isActive(token))
+        assertTrue(gate.observeLifecycle(43L, "thinking"))
+    }
+
+    @Test
+    fun `rejected tool handoff without a new request clears pending ownership`() {
+        val gate = AssistantPendingSubmissionGate()
+        val token = gate.begin()!!
+
+        assertEquals(null, gate.reconcile(
+            token = token,
+            requestId = 42L,
+            previousRequestId = 42L,
+            state = "loaded",
+            operation = "agent_waiting_tool",
+        ))
+        assertFalse(gate.isActive(token))
+        assertFalse(shouldConsumeAssistantResult(null, null, 42L))
+    }
+
+    @Test
+    fun `rejected tool handoff exposes a safe fallback when no lifecycle diagnostic exists`() {
+        assertEquals(
+            "Metria could not complete that local reply. Try asking again.",
+            continuationFailureDiagnostic(null),
+        )
+        assertEquals("The local answer could not be checked.", continuationFailureDiagnostic("The local answer could not be checked."))
+        assertEquals(
+            "Metria could not complete that local reply. Try asking again.",
+            continuationFailureDiagnostic("  "),
+        )
+    }
+
+    @Test
+    fun `cancelled tool continuation cannot expose a late result`() {
+        val gate = AssistantPendingSubmissionGate()
+        val token = gate.begin()!!
+        assertEquals(43L, gate.reconcile(token, 43L, 42L, "thinking", "agent_tool_result"))
+
+        assertTrue(gate.cancel(token))
+        assertFalse(shouldConsumeAssistantResult(null, null, 43L))
+    }
+
+    @Test
+    fun `matching assistant result is consumed exactly once`() {
+        assertTrue(shouldConsumeAssistantResult(43L, null, 43L))
+        // The production effect records the request ID before appending the visible reply.
+        assertFalse(shouldConsumeAssistantResult(43L, 43L, 43L))
     }
 }

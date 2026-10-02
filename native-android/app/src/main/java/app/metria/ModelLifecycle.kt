@@ -44,6 +44,32 @@ import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
+typealias AssistantStyle = EncryptedVault.AssistantStyle
+
+private fun traceReason(rejection: String?): String = when (rejection) {
+    "required_tool_missing" -> "required_tool_missing"
+    "unsupported_personal_fact" -> "unsupported_personal_fact"
+    "protocol_leakage", "too_long", "empty" -> "reply_policy"
+    else -> "none"
+}
+
+private fun traceToolName(name: String?): String = when (name?.trim()?.lowercase()) {
+    "read_progress_overview", "read_nutrition_summary", "read_day_nutrition", "read_weight", "read_meals", "search_saved_dishes" -> name.trim().lowercase()
+    else -> "none"
+}
+
+internal const val MEAL_IMAGE_ANALYSIS_PROMPT =
+    "Return only one compact JSON object with exactly these keys: kind, items, assumptions, questions, overall_confidence. " +
+        "kind is meal_proposal. Choose at most the two strongest clearly visible food candidates; prefer whole dishes over ingredient fragments. " +
+        "For a candidate dish, group only ingredients that are plainly visible and confidently identifiable. Omit unclear extra foods and any hidden component you cannot confidently identify; never invent a food to complete a dish. If no food is clear enough, return an empty items array. " +
+        "Each ingredient has exactly name, description, visible_portion, estimated_grams_range, preparation, confidence, evidence, role. Use low confidence when an included identity or portion is uncertain, and describe it no more specifically than the photo supports. " +
+        "Use one or two words for every string where possible. estimated_grams_range has integer min and max. Confidence is exactly low, medium, or high. " +
+        "The evidence value must be exactly the enum string seen or possible_inside, with no explanation or other wording. Use possible_inside only for one likely hidden component of an otherwise recognisable dish; never describe it as visible, and use low confidence. " +
+        "role is exactly one of main_food, side, drink, sauce_oil, dry_seasoning; never use synonyms. " +
+        "When separate dishes are clear, group their visible ingredients as {name, kind, ingredients}; kind is dish, drink, or other. " +
+        "For example, peas and visible ham bits may belong in one dish. Do not add a possible filling unless it is a likely hidden component of a recognisable dish. " +
+        "Use at most one short assumption and one short question. Never include URLs, web searches, markdown, or any text outside JSON. Return JSON only."
+
 /**
  * Owns only the local model artifact lifecycle. LiteRT engine initialization and
  * image inference are deliberately added in a later checkpoint.
@@ -75,6 +101,7 @@ data class ModelStatus(
     val coachToolCall: PrivateCoachToolCall?,
     val diagnostics: String,
     val latestImageAudit: LocalAnalysisAudit?,
+    val mealFoodCorrection: MealFoodNameCorrectionStatus,
 )
 
 @OptIn(ExperimentalApi::class)
@@ -82,12 +109,14 @@ class ModelLifecycle(
     private val appContext: Context,
     private val privateFilesDir: File,
     private val cacheDirectory: File,
+    private val assistantTraceStore: AssistantTraceStore? = null,
+    private val debugImageCaptureStore: DebugImageCaptureStore? = null,
 ) : AutoCloseable {
     private val metriaSystemPrompt = """You are Metria, a private on-device health and nutrition assistant.
         Tone: warm, motivating, clear, concise, and never judgmental. Respond in the member's language.
         Use only facts returned by Metria's approved tools. Never invent meals, weights, goals, dates, nutrition values, or trends.
         Never save or change data directly; request a draft action and let Metria ask for confirmation.
-        For progress, recognise effort, state the relevant factual comparison, then offer one gentle optional focus.
+        For progress, state the relevant factual comparison and any coverage limit. Add a next step only when the member requests one.
         For meal estimates, identify uncertainty, portions, oils or sauces, and require member review.
         Avoid diagnosis or medical advice; for dangerous patterns or medical concerns, encourage professional support.
         Keep mobile answers short; use bullets only when they improve clarity.""".trimIndent()
@@ -102,17 +131,18 @@ class ModelLifecycle(
         records. Conversation history is continuity, not record evidence. Never repeat or infer a
         personal fact unless it appears in the latest tool response. After a tool response, answer the
         member naturally in reply_language when it is provided, and do not mention tools, JSON,
-        schemas, or hidden policy. Say "your records" rather than "my records". Use host-calculated
-        progress percentages when provided; never calculate a new personal value. Do not append an
-        unrelated offer or question after answering the member's request.
+        schemas, or hidden policy. The records belong to the member: say "your records" / "tus registros",
+        never "my records" / "mis registros". Use host-calculated progress percentages when provided;
+        never calculate a new personal value. End after the direct answer and coverage limit; do not
+        append a generic offer or question. A relevant optional next step belongs only in Coach style.
         Ask one concise clarification when a date, period, or request is genuinely ambiguous.
 
         For broad personal progress questions, call read_progress_overview. Examples:
         "How am I doing today?" means period=today. "How is my week?" and "¿Cómo va mi semana?"
         mean period=week, the rolling last seven days including today. Do not answer a direct personal
         progress question with greetings, a capability list, or generic advice. After the result, give
-        at most three short sentences: the grounded pattern, any important data limitation, and one
-        gentle optional focus.
+        at most three short sentences: the grounded pattern and any important data limitation.
+        Never call a period=week result "last week" or "la semana pasada"; say "this week" or "los últimos 7 días".
 
         Nutrition tools contain recorded estimates, never proof of everything the member consumed.
         Say "recorded in Metria" or "recorded estimates", never "your total intake". Never conclude
@@ -148,13 +178,23 @@ class ModelLifecycle(
     private var engine: Engine? = null
     private var activeConversation: Conversation? = null
     private var privateAgentConversation: Conversation? = null
+    private var privateAgentConversationLifetime: NativeConversationLifetime<Conversation>? = null
+    private var activePrivateAgentCancellation: Pair<Conversation, NativeAsyncCancellation>? = null
+    private var activePrivateAgentWorkers = 0
+    private var activeMealFoodCorrectionWorkers = 0
+    private var privateAgentWorkersIdle = CountDownLatch(0)
+    private val deferredEngineClose = mutableListOf<Engine>()
+    private var assistantStyle: AssistantStyle = AssistantStyle.BALANCED
+    private var pendingAssistantStyle: AssistantStyle? = null
     private var pendingPrivateAgentToolName: String? = null
+    private var pendingPrivateAgentRequiredTool: RequiredAgentTool? = null
     private var privateAgentToolRounds = 0
     private var preparedImage: File? = null
     private var generation = 0L
     private var runtimeGeneration = 0L
     private var analysisGeneration = 0L
     private var assistantRequestSequence = 0L
+    private var mealFoodCorrectionSequence = 0L
     private var assistantRequestId: Long? = null
     private var nextImageAnalysisAt = 0L
     // Product decision: permit three demanding runs before the fourth pauses.
@@ -174,6 +214,10 @@ class ModelLifecycle(
     private var referenceThumbnailBase64: String? = null
     private var assistantProposal: MealProposal? = null
     private var assistantDiagnostic: String? = null
+    private var mealFoodCorrectionRequestId: Long? = null
+    private var mealFoodCorrectionState = "idle"
+    private var mealFoodCorrectionName: String? = null
+    private var mealFoodCorrectionDiagnostic: String? = null
     private var coachReply: String? = null
     // This is an ephemeral, locally-sanitized preview. The completed reply still
     // crosses parseCoachReply before it is treated as a settled answer.
@@ -270,14 +314,25 @@ class ModelLifecycle(
         activeRuntimeLoad = null
         activeInference?.cancel(true)
         activeInference = null
-        activeConversation?.cancelProcess()
-        if (activeConversation !== privateAgentConversation) activeConversation?.close()
+        val correctionWorkerActive = activeMealFoodCorrectionWorkers > 0
+        if (!correctionWorkerActive) {
+            activeConversation?.takeIf { it !== privateAgentConversation }?.cancelProcess()
+            if (activeConversation !== privateAgentConversation) activeConversation?.close()
+        }
         activeConversation = null
         clearPrivateAgentConversationLocked()
-        engine?.close()
+        val retiredEngine = engine
         engine = null
+        if (retiredEngine != null) {
+            if (activePrivateAgentWorkers == 0 && activeMealFoodCorrectionWorkers == 0) retiredEngine.close()
+            else deferredEngineClose += retiredEngine
+        }
         assistantRequestId = null
         assistantOperation = null
+        mealFoodCorrectionSequence += 1
+        mealFoodCorrectionState = "cancelled"
+        mealFoodCorrectionName = null
+        mealFoodCorrectionDiagnostic = null
         coachToolCall = null
         coachReply = null
         coachStreamingReply = null
@@ -289,26 +344,55 @@ class ModelLifecycle(
     }
 
     /** Stops only the current assistant response; the verified local model stays available. */
-    @Synchronized
     fun cancelAssistantRequest(): ModelStatus {
-        activeInference?.cancel(true)
-        activeInference = null
-        activeConversation?.cancelProcess()
-        if (activeConversation !== privateAgentConversation) activeConversation?.close()
-        activeConversation = null
-        clearPrivateAgentConversationLocked()
-        if (engine?.isInitialized() == true) {
-            state = "loaded"
-            reason = "Local assistant response cancelled."
+        val workersIdle = synchronized(this) {
+            val cancellingFoodNameCorrection = assistantOperation == "meal_food_name_correction"
+            assistantTraceStore?.record("cancelled", assistantOperation ?: "unknown", "cancelled")
+            activeInference?.cancel(true)
+            activeInference = null
+            if (cancellingFoodNameCorrection) {
+                // The inference worker owns its Conversation and closes it in finally.
+                activeConversation = null
+            } else {
+                activeConversation?.takeIf { it !== privateAgentConversation }?.cancelProcess()
+                if (activeConversation !== privateAgentConversation) activeConversation?.close()
+            }
+            activeConversation = null
+            clearPrivateAgentConversationLocked()
+            if (engine?.isInitialized() == true) {
+                state = "loaded"
+                reason = "Local assistant response cancelled."
+            }
+            assistantOperation = null
+            assistantRequestId = null
+            coachToolCall = null
+            coachReply = null
+            coachStreamingReply = null
+            assistantProposal = null
+            assistantDiagnostic = "Response cancelled."
+            if (cancellingFoodNameCorrection) {
+                mealFoodCorrectionSequence += 1
+                mealFoodCorrectionState = "cancelled"
+                mealFoodCorrectionName = null
+                mealFoodCorrectionDiagnostic = "No change was applied."
+            }
+            privateAgentWorkersIdle.takeIf { activePrivateAgentWorkers > 0 }
         }
-        assistantOperation = null
-        assistantRequestId = null
-        coachToolCall = null
-        coachReply = null
-        coachStreamingReply = null
-        assistantProposal = null
-        assistantDiagnostic = "Response cancelled."
-        return statusLocked()
+        // This method is called on Dispatchers.Default. Never wait while holding the lifecycle
+        // monitor: the worker needs that monitor to publish its final cancellation state.
+        if (workersIdle != null) {
+            var interrupted = false
+            while (true) {
+                try {
+                    workersIdle.await()
+                    break
+                } catch (_: InterruptedException) {
+                    interrupted = true
+                }
+            }
+            if (interrupted) Thread.currentThread().interrupt()
+        }
+        return synchronized(this) { statusLocked() }
     }
 
     /** Clears only conversational KV state; the verified model remains initialized. */
@@ -318,9 +402,36 @@ class ModelLifecycle(
         return statusLocked()
     }
 
+    /** Applies phrasing changes at an idle boundary; an in-flight turn keeps its original prompt. */
+    @Synchronized
+    fun setAssistantStyle(style: AssistantStyle): ModelStatus {
+        if (assistantStyle == style && pendingAssistantStyle == null) return statusLocked()
+        if (activeInference?.isDone == false || pendingPrivateAgentToolName != null) {
+            pendingAssistantStyle = style
+            reason = "Assistant style will apply after this response."
+            return statusLocked()
+        }
+        clearPrivateAgentConversationLocked()
+        assistantStyle = style
+        pendingAssistantStyle = null
+        reason = "Assistant style updated locally."
+        return statusLocked()
+    }
+
     /** Vault lock boundary: discard chat KV state and any in-flight native chat turn only. */
     @Synchronized
     fun lockPrivateAgentConversation(): ModelStatus {
+        assistantTraceStore?.record("locked", assistantOperation ?: "unknown", "cleared")
+        if (assistantOperation == "meal_food_name_correction") {
+            mealFoodCorrectionSequence += 1
+            activeInference?.cancel(true)
+            activeInference = null
+            // The inference worker owns teardown; lock only invalidates its result here.
+            activeConversation = null
+            mealFoodCorrectionState = "cancelled"
+            mealFoodCorrectionName = null
+            mealFoodCorrectionDiagnostic = null
+        }
         val conversation = privateAgentConversation
         if (activeConversation === conversation && conversation != null) {
             activeInference?.cancel(true)
@@ -357,6 +468,13 @@ class ModelLifecycle(
             return statusLocked()
         }
         if (activeInference?.isDone == false || pendingPrivateAgentToolName != null) return statusLocked()
+        pendingAssistantStyle?.let {
+            // The existing native conversation was created with the previous style prompt.
+            // Drop only its KV state; the visible/vault history is supplied on the next turn.
+            clearPrivateAgentConversationLocked()
+            assistantStyle = it
+            pendingAssistantStyle = null
+        }
         state = "thinking"
         clearDeveloperResponseLocked()
         reason = "Continuing the private conversation locally."
@@ -370,6 +488,7 @@ class ModelLifecycle(
         privateAgentToolRounds = 0
         val requestId = ++assistantRequestSequence
         assistantRequestId = requestId
+        assistantTraceStore?.record("turn_started", "agent_turn", "started", requestId = requestId)
         activeInference = executor.submit {
             runPrivateAgentTurn(loadedEngine, input, history, requestId)
         }
@@ -383,16 +502,24 @@ class ModelLifecycle(
         response: Map<String, Any?>,
     ): ModelStatus {
         val conversation = privateAgentConversation
+        val lifetime = privateAgentConversationLifetime
         val expectedName = pendingPrivateAgentToolName
+        val requiredTool = pendingPrivateAgentRequiredTool
+        val expectedDate = requiredTool?.targetDate?.toString()
         if (
-            state != "loaded" || conversation == null || !conversation.isAlive ||
-            expectedName == null || expectedName != toolName
+            state != "loaded" || conversation == null || lifetime == null || !conversation.isAlive ||
+            expectedName == null || expectedName != toolName ||
+            (expectedDate != null && (response["from"] != expectedDate || response["to"] != expectedDate))
         ) {
-            coachDiagnostic = "That private assistant action expired. Please ask again."
+            coachDiagnostic = if (expectedDate != null &&
+                (response["from"] != expectedDate || response["to"] != expectedDate)
+            ) "The selected day changed before Metria could verify it. Please ask again."
+            else "That private assistant action expired. Please ask again."
             clearPrivateAgentConversationLocked()
             return statusLocked()
         }
         pendingPrivateAgentToolName = null
+        pendingPrivateAgentRequiredTool = null
         coachToolCall = null
         coachReply = null
         coachStreamingReply = null
@@ -402,8 +529,16 @@ class ModelLifecycle(
         reason = "Using the approved local result."
         val requestId = ++assistantRequestSequence
         assistantRequestId = requestId
+        assistantTraceStore?.record(
+            "tool_continued",
+            "agent_tool_result",
+            "started",
+            tool = requiredTool?.name ?: traceToolName(toolName),
+            period = requiredTool?.period ?: "none",
+            requestId = requestId,
+        )
         activeInference = executor.submit {
-            runPrivateAgentToolResult(conversation, toolName, response, requestId)
+            runPrivateAgentToolResult(conversation, lifetime, toolName, response, requestId, requiredTool)
         }
         return statusLocked()
     }
@@ -458,6 +593,86 @@ class ModelLifecycle(
         assistantRequestId = requestId
         val startedAt = SystemClock.elapsedRealtime()
         activeInference = executor.submit { proposeMealFromText(loadedEngine, input, requestId, startedAt) }
+        return statusLocked()
+    }
+
+    /** Uses only the local text model to suggest a replacement label for one reviewed food. */
+    @Synchronized
+    fun suggestMealFoodName(currentName: String, memberCorrection: String): ModelStatus {
+        val current = currentName.trim()
+        val correction = memberCorrection.trim()
+        if (activeMealFoodCorrectionWorkers > 0) {
+            if (mealFoodCorrectionState != "running") {
+                mealFoodCorrectionState = "unavailable"
+                mealFoodCorrectionDiagnostic = "Metria is finishing the previous suggestion. Try again when it is ready."
+            }
+            return statusLocked()
+        }
+        if (mealFoodCorrectionState == "running" && assistantOperation == "meal_food_name_correction") {
+            return statusLocked()
+        }
+        val requestId = ++mealFoodCorrectionSequence
+        mealFoodCorrectionRequestId = requestId
+        mealFoodCorrectionName = null
+        mealFoodCorrectionDiagnostic = null
+        if (current.length !in 1..120 || correction.length !in 3..240) {
+            mealFoodCorrectionState = "failed"
+            mealFoodCorrectionDiagnostic = "Describe the food-name correction in a few words."
+            return statusLocked()
+        }
+        val loadedEngine = engine
+        if (state != "loaded" || loadedEngine == null || !loadedEngine.isInitialized()) {
+            mealFoodCorrectionState = "unavailable"
+            mealFoodCorrectionDiagnostic = "The local assistant is unavailable. You can edit the food name directly."
+            return statusLocked()
+        }
+        if (activeInference?.isDone == false) {
+            mealFoodCorrectionState = "unavailable"
+            mealFoodCorrectionDiagnostic = "Metria is busy. Please try the correction again when it is ready."
+            return statusLocked()
+        }
+        mealFoodCorrectionState = "running"
+        state = "thinking"
+        assistantOperation = "meal_food_name_correction"
+        assistantRequestId = ++assistantRequestSequence
+        val assistantId = assistantRequestId!!
+        clearDeveloperResponseLocked()
+        reason = "Considering a food-name correction locally."
+        activeInference = executor.submit {
+            suggestMealFoodName(loadedEngine, current, correction, requestId, assistantId)
+        }
+        return statusLocked()
+    }
+
+    @Synchronized
+    fun cancelMealFoodNameCorrection(requestId: Long): ModelStatus {
+        if (mealFoodCorrectionRequestId != requestId || mealFoodCorrectionState != "running") return statusLocked()
+        mealFoodCorrectionSequence += 1
+        if (assistantOperation == "meal_food_name_correction") {
+            activeInference?.cancel(true)
+            activeInference = null
+            // The inference worker owns teardown; do not close the native Conversation concurrently.
+            activeConversation = null
+            assistantRequestId = null
+            assistantOperation = null
+            if (engine?.isInitialized() == true) state = "loaded"
+        }
+        mealFoodCorrectionState = "cancelled"
+        mealFoodCorrectionName = null
+        mealFoodCorrectionDiagnostic = "No change was applied."
+        reason = "Food-name correction cancelled."
+        return statusLocked()
+    }
+
+    @Synchronized
+    fun clearMealFoodNameCorrection(): ModelStatus {
+        if (mealFoodCorrectionState == "running") {
+            mealFoodCorrectionRequestId?.let(::cancelMealFoodNameCorrection)
+        }
+        mealFoodCorrectionRequestId = null
+        mealFoodCorrectionState = "idle"
+        mealFoodCorrectionName = null
+        mealFoodCorrectionDiagnostic = null
         return statusLocked()
     }
 
@@ -536,6 +751,11 @@ class ModelLifecycle(
 
     @Synchronized
     fun clearMealDraft(): ModelStatus {
+        if (mealFoodCorrectionState == "running") mealFoodCorrectionRequestId?.let(::cancelMealFoodNameCorrection)
+        mealFoodCorrectionRequestId = null
+        mealFoodCorrectionState = "idle"
+        mealFoodCorrectionName = null
+        mealFoodCorrectionDiagnostic = null
         clearDeveloperResponseLocked()
         assistantProposal = null
         assistantDiagnostic = null
@@ -551,6 +771,22 @@ class ModelLifecycle(
         labelDraft = null
         referenceThumbnailBase64 = null
         latestImageAudit = null
+        return statusLocked()
+    }
+
+    /** Remove only the unsaved photo proposal; leave chat and other review state alone. */
+    @Synchronized
+    fun discardImageMealDraft(): ModelStatus {
+        proposal = null
+        proposalDiagnostic = null
+        referenceThumbnailBase64 = null
+        return statusLocked()
+    }
+
+    /** Remove only the unsaved text proposal; visible conversation is unchanged. */
+    @Synchronized
+    fun discardAssistantMealDraft(): ModelStatus {
+        assistantProposal = null
         return statusLocked()
     }
 
@@ -628,9 +864,10 @@ class ModelLifecycle(
         val currentAnalysisGeneration = ++analysisGeneration
         val startedAt = SystemClock.elapsedRealtime()
         val startedWallClock = Instant.now()
+        val imageCaptureToken = debugImageCaptureStore?.recordingToken()
         activeImageAuditStart = startedWallClock to startedAt
         activeInference = executor.submit {
-            analyzePreparedImage(loadedEngine, image, currentAnalysisGeneration, startedAt, startedWallClock)
+            analyzePreparedImage(loadedEngine, image, currentAnalysisGeneration, startedAt, startedWallClock, imageCaptureToken)
         }
         return statusLocked()
     }
@@ -852,6 +1089,7 @@ class ModelLifecycle(
                 candidate?.close()
                 if (engine === candidate) engine = null
                 if (currentRuntimeGeneration == runtimeGeneration && modelFile().isFile) {
+                    assistantTraceStore?.record("failed", "unknown", "failed", reason = "runtime_failure")
                     state = "ready"
                     reason = "LiteRT initialization failed; the verified model remains available."
                 }
@@ -925,17 +1163,30 @@ class ModelLifecycle(
             ExperimentalFlags.enableConversationConstrainedDecoding = true
             loadedEngine.createConversation(
                 ConversationConfig(
-                    systemInstruction = Contents.of(Content.Text(metriaAgentSystemPrompt)),
+                    systemInstruction = Contents.of(Content.Text(metriaAgentSystemPrompt + assistantStylePrompt(assistantStyle))),
                     initialMessages = initialMessages,
                     tools = listOf(tool(MetriaReadToolSet())),
                     automaticToolCalling = false,
                 ),
-            ).also { privateAgentConversation = it }
+            ).also { conversation ->
+                privateAgentConversation = conversation
+                privateAgentConversationLifetime = NativeConversationLifetime(
+                    conversation = conversation,
+                    cancel = ::cancelPrivateAgentConversation,
+                    close = { it.close() },
+                )
+            }
         } finally {
             // LiteRT snapshots this process-global flag inside createConversation.
             // Restore it immediately so image, audio, and legacy JSON conversations are unchanged.
             ExperimentalFlags.enableConversationConstrainedDecoding = previousConstrainedDecoding
         }
+    }
+
+    private fun assistantStylePrompt(style: AssistantStyle): String = when (style) {
+        AssistantStyle.BALANCED -> "\n\nSTYLE: Use the default Metria voice: warm, clear, concise, and non-judgmental."
+        AssistantStyle.COACH -> "\n\nSTYLE: Use a gently encouraging coach voice. Explain the grounded answer clearly. Offer one small, relevant optional next step only if it adds value after the answer; never append a generic question. Never praise, shame, diagnose, or change the factual content."
+        AssistantStyle.RECORDS -> "\n\nSTYLE: Use a direct records-assistant voice. Lead with the locally grounded answer, name the relevant period or coverage limitation, and keep framing short. Never omit uncertainty or change the factual content."
     }
 
     private fun runPrivateAgentTurn(
@@ -944,30 +1195,66 @@ class ModelLifecycle(
         history: List<PrivateConversationMessage>,
         requestId: Long,
     ) {
+        if (!beginPrivateAgentWorker(loadedEngine, requestId)) return
         val startedAt = SystemClock.elapsedRealtime()
+        var leasedLifetime: NativeConversationLifetime<Conversation>? = null
         try {
-            val requiredTool = MetriaAgentGroundingPolicy.requiredTool(memberText, history)
+            val queryToday = java.time.LocalDate.now(java.time.ZoneId.systemDefault())
+            MetriaAgentGroundingPolicy.historicalClarification(memberText, queryToday)?.let { clarification ->
+                synchronized(this) {
+                    if (engine !== loadedEngine || assistantRequestId != requestId) return
+                    clearPrivateAgentConversationLocked()
+                    state = "loaded"
+                    coachStreamingReply = null
+                    coachToolCall = null
+                    coachReply = clarification
+                    coachDiagnostic = null
+                    assistantOperation = "agent_reply"
+                    reason = "Historical request was answered by the local query boundary."
+                    assistantTraceStore?.record(
+                        "reply_audited", "agent_turn", "accepted",
+                        reason = "historical_query_boundary", requestId = requestId,
+                    )
+                }
+                return
+            }
+            val requiredTool = MetriaAgentGroundingPolicy.requiredTool(memberText, history, queryToday)
+            requiredTool?.let {
+                assistantTraceStore?.record(
+                    "tool_required", "agent_turn", "waiting",
+                    tool = traceToolName(it.name), period = it.period ?: "none", requestId = requestId,
+                )
+            }
             val conversation = synchronized(this) {
+                if (engine !== loadedEngine || assistantRequestId != requestId) return@synchronized null
                 // LiteRT retains earlier tool results in conversation KV state. A new
                 // record-backed turn must not see those stale facts: the host policy already
                 // used encrypted visible history to resolve the follow-up before this reset.
                 if (requiredTool != null) clearPrivateAgentConversationLocked()
-                privateAgentConversation
+                if (privateAgentConversation?.isAlive == false) clearPrivateAgentConversationLocked()
+                val selected = privateAgentConversation
                     ?.takeIf { it.isAlive }
                     ?: createPrivateAgentConversation(
                         loadedEngine,
                         if (requiredTool == null) history else emptyList(),
                     )
+                val lifetime = privateAgentConversationLifetime ?: return@synchronized null
+                if (!lifetime.acquire()) return@synchronized null
+                leasedLifetime = lifetime
+                selected
             }
+            if (conversation == null) return
+            val conversationLifetime = leasedLifetime ?: return
             synchronized(this) { activeConversation = conversation }
-            var response = sendPrivateAgentMessage(conversation, Message.user(memberText), requestId)
-            val selectedTool = response.toolCalls.singleOrNull()?.name
+            var response = sendPrivateAgentMessage(conversation, conversationLifetime, Message.user(memberText), requestId)
+            val selectedTool = response.toolCalls.singleOrNull()?.let(MetriaNativeToolCallAdapter::adapt)
             if (
                 requiredTool != null && response.toolCalls.size <= 1 &&
-                !requiredTool.name.equals(selectedTool, ignoreCase = true)
+                !requiredTool.accepts(selectedTool)
             ) {
                 response = sendPrivateAgentMessage(
                     conversation,
+                    conversationLifetime,
                     Message.user(requiredTool.retryInstruction),
                     requestId,
                 )
@@ -978,6 +1265,7 @@ class ModelLifecycle(
                 if (audit.retryable) {
                     response = sendPrivateAgentMessage(
                         conversation,
+                        conversationLifetime,
                         Message.user(MetriaAgentFactAuditor.retryInstruction(hasLatestToolEvidence = false)),
                         requestId,
                     )
@@ -996,6 +1284,11 @@ class ModelLifecycle(
         } catch (error: Exception) {
             synchronized(this) {
                 if (engine === loadedEngine && assistantRequestId == requestId) {
+                    assistantTraceStore?.record(
+                        "failed", "agent_turn", "failed",
+                        reason = if (error is PrivateAgentTimeoutException) "timeout" else "runtime_failure",
+                        requestId = requestId,
+                    )
                     state = "loaded"
                     coachReply = null
                     coachStreamingReply = null
@@ -1013,24 +1306,32 @@ class ModelLifecycle(
                 }
             }
         } finally {
-            synchronized(this) {
+            leasedLifetime?.release()
+            val enginesToClose = synchronized(this) {
                 if (activeConversation === privateAgentConversation) activeConversation = null
+                finishPrivateAgentWorkerLocked()
             }
+            closeRetiredEngines(enginesToClose)
         }
     }
 
     private fun runPrivateAgentToolResult(
         conversation: Conversation,
+        lifetime: NativeConversationLifetime<Conversation>,
         toolName: String,
         response: Map<String, Any?>,
         requestId: Long,
+        requiredTool: RequiredAgentTool?,
     ) {
+        val loadedEngine = synchronized(this) { engine } ?: return
+        if (!beginPrivateAgentWorker(loadedEngine, requestId, lifetime)) return
         val startedAt = SystemClock.elapsedRealtime()
         try {
             synchronized(this) { activeConversation = conversation }
             val evidence = MetriaAgentFactEvidence.from(toolName, response)
             var message = sendPrivateAgentMessage(
                 conversation,
+                lifetime,
                 Message.tool(Contents.of(Content.ToolResponse(toolName, response))),
                 requestId,
             )
@@ -1040,6 +1341,7 @@ class ModelLifecycle(
                 if (audit.retryable) {
                     message = sendPrivateAgentMessage(
                         conversation,
+                        lifetime,
                         Message.user(MetriaAgentFactAuditor.retryInstruction(hasLatestToolEvidence = true)),
                         requestId,
                     )
@@ -1056,10 +1358,16 @@ class ModelLifecycle(
                 startedAt,
                 factEvidence = evidence,
                 factCorrectionAttempted = factCorrectionAttempted,
+                groundedFallback = MetriaNutritionReplyFallback.from(requiredTool, response),
             )
         } catch (error: Exception) {
             synchronized(this) {
                 if (assistantRequestId == requestId) {
+                    assistantTraceStore?.record(
+                        "failed", "agent_tool_result", "failed",
+                        reason = if (error is PrivateAgentTimeoutException) "timeout" else "runtime_failure",
+                        requestId = requestId,
+                    )
                     state = if (engine?.isInitialized() == true) "loaded" else state
                     coachReply = null
                     coachStreamingReply = null
@@ -1077,9 +1385,12 @@ class ModelLifecycle(
                 }
             }
         } finally {
-            synchronized(this) {
+            lifetime.release()
+            val enginesToClose = synchronized(this) {
                 if (activeConversation === conversation) activeConversation = null
+                finishPrivateAgentWorkerLocked()
             }
+            closeRetiredEngines(enginesToClose)
         }
     }
 
@@ -1092,6 +1403,7 @@ class ModelLifecycle(
         requiredTool: RequiredAgentTool? = null,
         factEvidence: MetriaAgentFactEvidence? = null,
         factCorrectionAttempted: Boolean = false,
+        groundedFallback: String? = null,
     ) {
         synchronized(this) {
             if (engine !== loadedEngine || assistantRequestId != requestId || privateAgentConversation !== conversation) return
@@ -1100,6 +1412,7 @@ class ModelLifecycle(
             coachStreamingReply = null
             when {
                 response.toolCalls.size > 1 -> {
+                    assistantTraceStore?.record("reply_rejected", "agent_turn", "rejected", reason = "multiple_tools", requestId = requestId)
                     coachToolCall = null
                     coachReply = null
                     coachDiagnostic = "Metria tried to do too much at once. Please ask one thing at a time."
@@ -1112,8 +1425,15 @@ class ModelLifecycle(
                     val adapted = MetriaNativeToolCallAdapter.adapt(nativeCall)
                     if (
                         adapted == null || privateAgentToolRounds > 2 ||
-                        (requiredTool != null && !requiredTool.name.equals(nativeCall.name, ignoreCase = true))
+                        (requiredTool != null && !requiredTool.accepts(adapted))
                     ) {
+                        assistantTraceStore?.record(
+                            "reply_rejected",
+                            "agent_turn",
+                            "rejected",
+                            reason = if (adapted == null) "unsupported_tool" else "reply_policy",
+                            requestId = requestId,
+                        )
                         coachToolCall = null
                         coachReply = null
                         coachDiagnostic = "Metria could not safely complete that request. Try asking one specific question."
@@ -1121,6 +1441,15 @@ class ModelLifecycle(
                         clearPrivateAgentConversationLocked()
                     } else {
                         pendingPrivateAgentToolName = nativeCall.name
+                        pendingPrivateAgentRequiredTool = requiredTool
+                        assistantTraceStore?.record(
+                            "tool_required",
+                            "agent_turn",
+                            "waiting",
+                            tool = traceToolName(adapted.intent),
+                            period = adapted.period ?: "none",
+                            requestId = requestId,
+                        )
                         coachToolCall = adapted
                         coachReply = null
                         coachDiagnostic = null
@@ -1135,9 +1464,26 @@ class ModelLifecycle(
                     } else {
                         MetriaAgentFactAudit(null, "required_tool_missing")
                     }
-                    val accepted = audit.acceptedText
+                    val fallback = groundedFallback?.takeIf { candidate ->
+                        factEvidence != null &&
+                            MetriaAgentFactAuditor.audit(candidate, factEvidence).acceptedText == candidate
+                    }
+                    val accepted = (audit.acceptedText ?: fallback)?.let { auditedText ->
+                        if (factEvidence == null) auditedText
+                        else MetriaAgentPresentationPolicy.memberOwnedRecords(auditedText)
+                    }
+                    val usedFallback = audit.acceptedText == null && fallback != null
                     val unsupportedFact = audit.rejection == "unsupported_personal_fact"
                     coachReply = accepted
+                    assistantTraceStore?.record(
+                        if (usedFallback) "reply_fallback" else if (accepted == null) "reply_rejected" else "reply_audited",
+                        "agent_turn",
+                        if (usedFallback || accepted != null) "accepted" else "rejected",
+                        reason = traceReason(audit.rejection),
+                        tool = traceToolName(factEvidence?.toolName),
+                        period = factEvidence?.period ?: "none",
+                        requestId = requestId,
+                    )
                     coachDiagnostic = if (accepted == null) {
                         when {
                             requiredTool != null ->
@@ -1152,14 +1498,16 @@ class ModelLifecycle(
                     }
                     assistantOperation = "agent_reply"
                     reason = when {
+                        usedFallback -> "Latest local nutrition facts used after model wording was rejected."
                         accepted != null -> "Private local reply ready."
                         unsupportedFact && factCorrectionAttempted -> "Unsupported personal facts remained after one local correction; reply rejected."
                         unsupportedFact -> "Unsupported personal facts were rejected."
                         else -> "Native local reply was rejected safely."
                     }
                     pendingPrivateAgentToolName = null
+                    pendingPrivateAgentRequiredTool = null
                     privateAgentToolRounds = 0
-                    if (accepted == null || conversation.getTokenCount() >= 3_300) clearPrivateAgentConversationLocked()
+                    if (accepted == null || usedFallback || conversation.getTokenCount() >= 3_300) clearPrivateAgentConversationLocked()
                 }
             }
             diagnostics = measurement("native assistant turn", startedAt)
@@ -1168,38 +1516,247 @@ class ModelLifecycle(
 
     private fun sendPrivateAgentMessage(
         conversation: Conversation,
+        lifetime: NativeConversationLifetime<Conversation>,
         message: Message,
         requestId: Long,
     ): Message {
         val timedOut = AtomicBoolean(false)
-        val timeout = assistantTimeoutExecutor.schedule({
-            synchronized(this) {
-                if (assistantRequestId == requestId && privateAgentConversation === conversation) {
-                    timedOut.set(true)
-                    runCatching { conversation.cancelProcess() }
-                }
+        val nativeCancellation = NativeAsyncCancellation(
+            acquireCancelLease = lifetime::acquireCancellationLease,
+            cancelNative = { conversation.cancelProcess() },
+            releaseCancelLease = lifetime::release,
+        )
+        val registered = synchronized(this) {
+            if (assistantRequestId != requestId || privateAgentConversation !== conversation) false
+            else {
+                activePrivateAgentCancellation = conversation to nativeCancellation
+                true
             }
+        }
+        if (!registered) throw PrivateAgentCancelledException()
+        val timeout = assistantTimeoutExecutor.schedule({
+            val shouldCancel = synchronized(this) {
+                if (assistantRequestId == requestId && privateAgentConversation === conversation) {
+                    true
+                } else false
+            }
+            if (shouldCancel) nativeCancellation.cancel { timedOut.set(true) }
         }, 90, TimeUnit.SECONDS)
         return try {
-            conversation.sendMessage(message)
+            val completed = CountDownLatch(1)
+            val failure = AtomicReference<Throwable?>(null)
+            val response = NativeAsyncMessageAccumulator<com.google.ai.edge.litertlm.ToolCall>()
+            val started = nativeCancellation.start {
+                conversation.sendMessageAsync(message, object : MessageCallback {
+                    override fun onMessage(message: Message) {
+                        val chunk = message.contents.contents.filterIsInstance<Content.Text>()
+                            .joinToString("") { it.text }
+                        response.append(chunk, message.toolCalls, message.channels)
+                    }
+
+                    override fun onDone() {
+                        nativeCancellation.complete()
+                        completed.countDown()
+                    }
+
+                    override fun onError(throwable: Throwable) {
+                        failure.set(throwable)
+                        nativeCancellation.complete()
+                        completed.countDown()
+                    }
+                })
+            }
+            if (!started) throw PrivateAgentCancelledException()
+
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(90)
+            var interrupted = false
+            var completedInTime = false
+            while (!completedInTime) {
+                val remaining = deadline - System.nanoTime()
+                if (remaining <= 0L) break
+                try {
+                    completedInTime = completed.await(remaining, TimeUnit.NANOSECONDS)
+                } catch (_: InterruptedException) {
+                    // Future.cancel(true) is not proof native work has exited. Keep the
+                    // worker lease until LiteRT reports completion or cancellation.
+                    interrupted = true
+                }
+            }
+            if (!completedInTime) {
+                nativeCancellation.cancel { timedOut.set(true) }
+                var nativeFinished = false
+                while (!nativeFinished) {
+                    try {
+                        completed.await()
+                        nativeFinished = true
+                    } catch (_: InterruptedException) {
+                        interrupted = true
+                    }
+                }
+            }
+            if (interrupted) Thread.currentThread().interrupt()
+            if (timedOut.get()) throw PrivateAgentTimeoutException(IllegalStateException("Native local conversation timed out."))
+            failure.get()?.let { error ->
+                if (error is Exception) throw error
+                throw RuntimeException(error)
+            }
+            if (synchronized(this) { assistantRequestId != requestId }) {
+                throw PrivateAgentCancelledException()
+            }
+            val finalResponse = response.snapshot()
+            Message.model(
+                Contents.of(Content.Text(finalResponse.text)),
+                finalResponse.toolCalls,
+                finalResponse.channels,
+            )
         } catch (error: Exception) {
             if (timedOut.get()) throw PrivateAgentTimeoutException(error)
             throw error
         } finally {
             timeout.cancel(false)
+            synchronized(this) {
+                if (activePrivateAgentCancellation?.second === nativeCancellation) {
+                    activePrivateAgentCancellation = null
+                }
+            }
         }
     }
 
     private class PrivateAgentTimeoutException(cause: Throwable) : RuntimeException(cause)
+    private class PrivateAgentCancelledException : RuntimeException("Private assistant request was cancelled.")
 
     private fun clearPrivateAgentConversationLocked() {
         val conversation = privateAgentConversation
+        val lifetime = privateAgentConversationLifetime
         if (activeConversation === conversation) activeConversation = null
-        runCatching { conversation?.cancelProcess() }
-        runCatching { conversation?.close() }
         privateAgentConversation = null
+        privateAgentConversationLifetime = null
+        if (conversation != null && lifetime != null) lifetime.retire()
         pendingPrivateAgentToolName = null
+        pendingPrivateAgentRequiredTool = null
         privateAgentToolRounds = 0
+    }
+
+    private fun cancelPrivateAgentConversation(conversation: Conversation) {
+        val activeCancellation = synchronized(this) {
+            activePrivateAgentCancellation
+                ?.takeIf { it.first === conversation }
+                ?.second
+        }
+        if (activeCancellation != null) activeCancellation.cancel()
+        else runCatching { conversation.cancelProcess() }
+    }
+
+    @Synchronized
+    private fun beginPrivateAgentWorker(loadedEngine: Engine, requestId: Long): Boolean {
+        if (engine !== loadedEngine || assistantRequestId != requestId) return false
+        if (activePrivateAgentWorkers == 0) privateAgentWorkersIdle = CountDownLatch(1)
+        activePrivateAgentWorkers += 1
+        return true
+    }
+
+    @Synchronized
+    private fun beginPrivateAgentWorker(
+        loadedEngine: Engine,
+        requestId: Long,
+        lifetime: NativeConversationLifetime<Conversation>,
+    ): Boolean {
+        if (engine !== loadedEngine || assistantRequestId != requestId) return false
+        if (privateAgentConversation !== lifetime.conversation || privateAgentConversationLifetime !== lifetime) return false
+        if (!lifetime.acquire()) return false
+        if (activePrivateAgentWorkers == 0) privateAgentWorkersIdle = CountDownLatch(1)
+        activePrivateAgentWorkers += 1
+        return true
+    }
+
+    private fun finishPrivateAgentWorkerLocked(): List<Engine> {
+        check(activePrivateAgentWorkers > 0) { "Private assistant worker finished without starting." }
+        activePrivateAgentWorkers -= 1
+        if (activePrivateAgentWorkers == 0) privateAgentWorkersIdle.countDown()
+        return takeDeferredEnginesIfIdleLocked()
+    }
+
+    private fun takeDeferredEnginesIfIdleLocked(): List<Engine> =
+        if (activePrivateAgentWorkers == 0 && activeMealFoodCorrectionWorkers == 0) {
+            deferredEngineClose.toList().also { deferredEngineClose.clear() }
+        } else emptyList()
+
+    private fun closeRetiredEngines(engines: List<Engine>) {
+        engines.forEach { retired -> runCatching { retired.close() } }
+    }
+
+    private fun suggestMealFoodName(
+        loadedEngine: Engine,
+        currentName: String,
+        memberCorrection: String,
+        correctionRequestId: Long,
+        assistantId: Long,
+    ) {
+        var conversation: Conversation? = null
+        var workerRegistered = false
+        try {
+            workerRegistered = synchronized(this) {
+                if (engine !== loadedEngine || assistantRequestId != assistantId ||
+                    mealFoodCorrectionRequestId != correctionRequestId || mealFoodCorrectionSequence != correctionRequestId
+                ) false else {
+                    activeMealFoodCorrectionWorkers += 1
+                    true
+                }
+            }
+            if (!workerRegistered) return
+            conversation = createMetriaConversation(loadedEngine)
+            synchronized(this) {
+                if (mealFoodCorrectionRequestId != correctionRequestId || assistantRequestId != assistantId) return
+                activeConversation = conversation
+            }
+            val output = conversation.sendMessage(
+                """Return only one JSON object with exactly one key: replacement_name.
+                    Use the member's language. Interpret the correction as a proposed correction to the CURRENT_FOOD label only.
+                    Return only the replacement food name in 1 to 6 words. Do not return explanations, ingredients, quantities,
+                    preparation, nutrition, confidence, assumptions, or any other field. Do not add a food the member did not name.
+                    If the correction does not clearly identify one replacement name, return {"replacement_name":""}.
+                    CURRENT_FOOD: $currentName
+                    MEMBER_CORRECTION: $memberCorrection""".trimIndent(),
+            ).contents.contents.filterIsInstance<Content.Text>().joinToString("") { it.text }.trim()
+            val parsed = MealFoodNameCorrectionParser.parse(output, currentName)
+            synchronized(this) {
+                if (engine !== loadedEngine || assistantRequestId != assistantId ||
+                    mealFoodCorrectionRequestId != correctionRequestId || mealFoodCorrectionSequence != correctionRequestId
+                ) return
+                state = "loaded"
+                assistantRequestId = null
+                assistantOperation = null
+                mealFoodCorrectionName = parsed
+                mealFoodCorrectionState = if (parsed == null) "failed" else "ready"
+                mealFoodCorrectionDiagnostic = if (parsed == null) {
+                    "Metria could not identify one clear replacement name. Edit the food name directly."
+                } else null
+                reason = if (parsed == null) "Food-name suggestion was rejected safely." else "Food-name suggestion ready for review."
+            }
+        } catch (_: Exception) {
+            synchronized(this) {
+                if (engine === loadedEngine && assistantRequestId == assistantId && mealFoodCorrectionRequestId == correctionRequestId) {
+                    state = "loaded"
+                    assistantRequestId = null
+                    assistantOperation = null
+                    mealFoodCorrectionName = null
+                    mealFoodCorrectionState = "failed"
+                    mealFoodCorrectionDiagnostic = "Local correction failed. You can edit the food name directly."
+                    reason = "Food-name suggestion failed; LiteRT remains loaded."
+                }
+            }
+        } finally {
+            conversation?.let { runCatching { it.close() } }
+            val enginesToClose = synchronized(this) {
+                if (activeConversation === conversation) activeConversation = null
+                if (workerRegistered) {
+                    check(activeMealFoodCorrectionWorkers > 0) { "Food-name correction worker finished without starting." }
+                    activeMealFoodCorrectionWorkers -= 1
+                }
+                takeDeferredEnginesIfIdleLocked()
+            }
+            closeRetiredEngines(enginesToClose)
+        }
     }
 
     private fun proposeMealFromText(loadedEngine: Engine, memberText: String, requestId: Long, startedAt: Long) {
@@ -1558,6 +2115,7 @@ class ModelLifecycle(
         currentAnalysisGeneration: Long,
         startedAt: Long,
         startedWallClock: Instant,
+        imageCaptureToken: Long?,
     ) {
         var conversation: Conversation? = null
         try {
@@ -1570,17 +2128,7 @@ class ModelLifecycle(
             val output = sendMessageStreaming(conversation,
                 Contents.of(
                     Content.ImageFile(image.absolutePath),
-                    Content.Text(
-                        "Return only one compact JSON object with exactly these keys: kind, items, assumptions, questions, overall_confidence. " +
-                            "kind is meal_proposal. Return up to six meaningful foods or dish components. " +
-                            "Each item has exactly name, description, visible_portion, estimated_grams_range, preparation, confidence, evidence, role. " +
-                            "Use one or two words for every string where possible. estimated_grams_range has integer min and max. Confidence is exactly low, medium, or high. " +
-                            "evidence is seen or possible_inside. Use possible_inside only for a likely hidden component of a recognisable dish; never claim it is visible. " +
-                            "role is exactly one of main_food, side, drink, sauce_oil, dry_seasoning; never use synonyms. " +
-                            "When the plate has separate dishes, group their ingredients as {name, kind, ingredients}; kind is dish, drink, or other. " +
-                            "For example, peas and visible ham bits belong in one dish, while a breaded stuffed cutlet can have possible_inside ham or cheese. " +
-                            "Use at most one short assumption and one short question. Never include URLs, web searches, markdown, or any text outside JSON. Return JSON only."
-                    ),
+                    Content.Text(MEAL_IMAGE_ANALYSIS_PROMPT),
                 ),
             ) {
                 synchronized(this) {
@@ -1601,11 +2149,18 @@ class ModelLifecycle(
                 if (engine === loadedEngine && currentAnalysisGeneration == analysisGeneration) {
                     imageProgress = "validating_draft"
                     debugLatestModelResponse = output.take(16_000).takeIf { BuildConfig.DEBUG }
-                    proposal = MealProposalParser.parse(output)
+                    val parseResult = MealProposalParser.parseWithDiagnostic(output)
+                    proposal = parseResult.proposal
                     if (proposal == null) {
-                        proposalDiagnostic = MealProposalParser.describeFormat(output)
+                        val rejection = requireNotNull(parseResult.rejectionCategory)
+                        proposalDiagnostic = rejection.diagnosticLabel
                         imageReason = "Local analysis completed, but its draft was not safe to display. Enter details manually."
-                        recordImageAuditLocked(startedWallClock, startedAt, "draft_rejected", "proposal_validation_failed")
+                        recordImageAuditLocked(startedWallClock, startedAt, "draft_rejected", rejection.auditCode)
+                    } else if ((proposal?.omittedItemCount ?: 0) > 0) {
+                        val partial = requireNotNull(proposal?.partialCategory)
+                        proposalDiagnostic = null
+                        imageReason = "Local image analysis completed with some foods omitted. Review the suggestions and add anything missing."
+                        recordImageAuditLocked(startedWallClock, startedAt, "draft_partial", partial.auditCode)
                     } else {
                         proposalDiagnostic = null
                         imageReason = "Local image analysis completed. Temporary image discarded."
@@ -1613,7 +2168,26 @@ class ModelLifecycle(
                     }
                     val totalMillis = SystemClock.elapsedRealtime() - startedAt
                     val validationMillis = SystemClock.elapsedRealtime() - validationStartedAt
-                    diagnostics = """Meal proposal schema: compact (two visible candidates)
+                    debugImageCaptureStore?.capture(
+                        recordingToken = imageCaptureToken,
+                        durationMillis = totalMillis,
+                        operation = "image_meal",
+                        outcome = when {
+                            proposal == null -> "draft_rejected"
+                            (proposal?.omittedItemCount ?: 0) > 0 -> "draft_partial"
+                            else -> "draft_ready"
+                        },
+                        category = when {
+                            proposal == null -> parseResult.rejectionCategory?.auditCode ?: "unknown"
+                            (proposal?.omittedItemCount ?: 0) > 0 -> requireNotNull(proposal?.partialCategory).auditCode
+                            else -> "none"
+                        },
+                        modelResponse = output,
+                        thumbnailJpeg = referenceThumbnailBase64?.let {
+                            runCatching { Base64.decode(it, Base64.DEFAULT) }.getOrNull()
+                        },
+                    )
+                    diagnostics = """Meal proposal schema: compact
                         Output: ${output.length} characters
                         Image preparation: ${latestImagePreparationMillis?.let { "${it} ms" } ?: "not measured"}
                         Conversation setup: ${conversationSetupMillis} ms
@@ -1809,6 +2383,12 @@ class ModelLifecycle(
         coachToolCall,
         diagnostics,
         latestImageAudit,
+        MealFoodNameCorrectionStatus(
+            mealFoodCorrectionRequestId,
+            mealFoodCorrectionState,
+            mealFoodCorrectionName,
+            mealFoodCorrectionDiagnostic,
+        ),
     )
 
     private fun recordImageAuditLocked(

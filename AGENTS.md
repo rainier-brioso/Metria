@@ -57,6 +57,8 @@
   ```
 
 - For wireless debugging, use the current phone-provided endpoints: `adb pair <host:pairing-port>` only when Android displays a new pairing code, then `adb connect <host:debug-port>` and confirm the resulting serial with `adb devices -l`.
+- When available, use the installed `android-cli` skill for Android documentation, compact device-layout or screen inspection, and Android Studio semantic lookup. Name the skill explicitly in delegated Android device tasks. Treat the installed command's `android <command> --help` output as authoritative when it conflicts with bundled skill text; the current `layout --diff` flag is deprecated and must not be relied on.
+- Prefer `android layout --flat` before capturing a screen. For authorized visual inspection, use temporary `android screen capture --annotate` output outside the repository and resolve labels with `android screen resolve --screenshot`; preserve the screenshot handling and cleanup rules below.
 - Install with `install -r` so the encrypted vault, downloaded model, member records, and app identity remain intact. Never use `pm clear`, uninstall, downgrade, replace signing keys, or delete private app storage during normal verification.
 - Obtain explicit approval before installing unless the member has already authorized repeated in-place installs for the active test cycle. That authorization never includes clearing data or uninstalling.
 - After launch, biometric unlock is a member action. Do not attempt to bypass, automate, inspect, or alter biometric authentication.

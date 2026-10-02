@@ -158,7 +158,9 @@ privacy.
 - [ ] Prototype a small on-device vision-language model for meal suggestions.
 - [x] Use a compact, bounded on-device meal-proposal schema (two strongest
   visible candidates); strictly validate every model field and fail closed on
-  unsupported values. Members can add or edit secondary foods during review.
+  unsupported values. Independently valid foods may form a visibly partial
+  draft when other suggestions fail validation; no valid foods means manual
+  fallback. Members can add or edit secondary foods during review.
 - [ ] Require portion/preparation confirmation before nutrition calculation.
 - [ ] Measure model download size, latency, battery drain, heat, and failure
   behavior on low/mid/high-tier devices.
@@ -209,6 +211,32 @@ until the final reviewed save succeeds.
 visual embedding as a candidate signal. Visual similarity supplements rather
 than replaces the confirmed component structure, and does not require a vector
 database for the expected personal collection size.
+
+## Milestone 5.6 — Reliable meal photos and private correction learning
+
+**Outcome:** member-confirmed edits make repeat meals easier while varied new
+meals remain useful, safe, offline, and practical several times per day. See
+`docs/vision-correction-learning-spec.md` for the bounded feedback and
+measurement contract.
+
+- [ ] Establish a consented, varied photo benchmark that separates malformed
+  output from visually wrong but valid drafts, with novel and repeat meals
+  reported separately.
+- [ ] Derive stable-item correction differences only from final reviewed meals.
+  The member chose automatic local learning from every successfully saved,
+  reviewed meal, with no toggle or per-meal prompt; "Remember this dish" stays
+  separate. No-op and manual reviews create no correction signal.
+- [ ] Store bounded, inspectable, deletable correction signals atomically with
+  the confirmed meal; provide clear-all without deleting meals, unlink on meal
+  deletion, and preserve existing vault and archive compatibility.
+- [ ] Use positive and contextual negative feedback only to rank visible,
+  reviewable suggestions; never silently change a food or nutrition estimate.
+- [ ] Measure repeated-use latency, battery, memory, thermal behavior, and
+  correction effort on the target phone before daily-use acceptance.
+
+**Acceptance:** quality improves on held-out repeat meals without increasing
+false food suggestions, and novel meals meet an agreed usefulness threshold.
+Manual entry remains usable but is not counted as successful recognition.
 
 ## Milestone 6 — Private alpha and standalone release readiness
 

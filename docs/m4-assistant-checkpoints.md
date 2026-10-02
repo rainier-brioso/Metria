@@ -167,3 +167,1483 @@ successfully. Automated results alone were not used as physical-device evidence.
 - Result: the optimistic Send responsiveness checkpoint passed on the target phone.
 - Evidence boundary: this is member-reported physical acceptance; no private screenshots or
   UI hierarchy dumps were captured.
+
+## Gate B short nutrition follow-up correction — 2026-09-22
+
+**Status:** implementation and automated gate passed; corrected APK installed and
+target-phone interaction recheck pending.
+
+- Physical Gate B testing exposed a bounded failure after a successful Spanish weekly-progress
+  answer: a short Spanish protein follow-up executed a local read and displayed its collapsed
+  evidence card, but the generated answer was rejected by the factual-output auditor. The chat
+  remained responsive and no record was changed.
+- The host grounding policy now recognizes short English and Spanish calorie/protein follow-ups,
+  inherits `today` or `week` from the most recent explicit member period, and requires a fresh
+  `read_nutrition_summary` call for that same period. Tool-name and period matching are both
+  enforced; an older result or a tool call for the wrong period cannot satisfy the request.
+- Nutrition fact auditing now determines actual-versus-goal roles from phrases directly attached
+  to each value instead of treating any nearby goal word as applying to every value in the clause.
+  Natural actual-versus-goal comparisons are accepted while swapped values remain rejected.
+- Focused coverage includes the observed Spanish follow-up, the English equivalent, inherited
+  week/today periods, wrong-period rejection, same-clause Spanish and English comparisons, and
+  swapped-value rejection.
+
+**Automated evidence:** `:app:testDebugUnitTest :app:assembleDebug --no-daemon` passed on
+2026-09-22 with 117 tests, 0 failures, and 0 errors. The debug APK assembled successfully.
+
+### Physical Android recheck — 2026-09-22
+
+- Build: uncommitted Gate B correction based on `0815fd3`
+- Device: Samsung SM-S928B, Android 16 / API 36
+- Installation: `adb install -r` succeeded and the activity launched cold
+- Existing data preserved: pending member verification after biometric unlock
+- Interaction acceptance: pending; installation and launch do not establish that the corrected
+  weekly-progress → protein follow-up passes on the physical model runtime
+- Next bounded task: repeat the same Spanish weekly-progress → protein follow-up and confirm
+  the second response is grounded in weekly evidence without a verification error
+
+### Recheck finding and follow-up correction — 2026-09-22
+
+- The member reported that the verification error persisted. A later on-device check showed a
+  successful protein answer after a voice-labelled turn, followed by a typed `y de proteína?`
+  that received a generic ungrounded reply. The visible typed bubble confirmed Send was used for
+  the latter turn; the earlier voice label alone did not describe the typed turn.
+- Root cause for the generic typed reply: period inheritance stopped at the persisted
+  `Voice: ...` transcript and treated the recording placeholder as another member question,
+  so the host did not require a fresh weekly nutrition read. The history policy now unwraps
+  the transcript and skips only that placeholder while retaining the existing three-turn bound
+  and unrelated-question stop.
+- The live model can still phrase an otherwise valid nutrition result in a way the factual
+  auditor rejects. For a short calorie/protein follow-up only, an audited deterministic reply
+  may now use the same fresh, matching, vault-backed nutrition result after model wording fails.
+  Missing estimates are stated as unavailable; the fallback cannot draw facts from chat history,
+  accept a mismatched period, or retain the rejected native conversation.
+- Automated evidence: `:app:testDebugUnitTest :app:assembleDebug --no-daemon` passed with
+  119 tests, 0 failures, 0 errors; debug APK assembled. Physical acceptance of this new build
+  remains pending.
+- Installation: the corrected debug APK was installed in place with `adb install -r` on the
+  Samsung SM-S928B and cold-launched successfully. No app data was cleared.
+- Member-reported physical acceptance after biometric unlock: existing records remained present;
+  the typed weekly-nutrition question followed by a short protein follow-up
+  sequence produced a weekly record-backed second answer without the red verification error.
+  This is physical member evidence, separate from the 119 passing automated tests.
+- Remaining Gate B work: pronoun and yes/no continuity, period changes, cancellation,
+  biometric lock/unlock, process restart, token-budget reconstruction, airplane mode, and no
+  replay of completed turns still require their own physical acceptance.
+- Next bounded task: exercise the remaining Gate B continuity matrix on the target phone.
+
+### Gate B explicit protein-goal question — 2026-09-22
+
+- The member reported that the first weekly protein-goal turn of the next physical sequence
+  failed. A member-supplied screen
+  capture confirmed the red latest-record verification error after two variants
+  of the weekly protein-goal question, with no new evidence card visible for
+  the failed attempt. The sequence stopped there; pronoun, period-change, and
+  later turns were not accepted. No personal values or raw capture are stored
+  in the checkpoint.
+- A second member-supplied capture of Developer diagnostics showed only runtime
+  and timing metadata, with no latest in-memory response visible. The exact
+  native output/tool decision therefore remains unconfirmed. The member raised
+  an app-private diagnostic-file idea; no file capture is implemented or enabled
+  without an explicit privacy-contract decision.
+- Code inspection found that this exact wording was outside the host's required-read
+  patterns. An explicit goal-comparison question now requires a fresh
+  `read_nutrition_summary` for its stated week/today period and protein/calorie
+  metric. Wrong-tool and wrong-period calls remain rejected; unrelated goal
+  questions are not reclassified. This corrects a verified policy gap but does
+  not, by itself, establish the cause of the physical failure.
+- Automated gate: `:app:testDebugUnitTest :app:assembleDebug --no-daemon` passed
+  with 120 tests, 0 failures, 0 errors; the debug APK assembled. `git diff --check`
+  passed. The new build has not been installed or physically rechecked.
+- Next bounded task: confirm the observed failure mode on the current phone,
+  then in-place install and recheck the exact question before resuming Gate B.
+
+### Opt-in debug assistant trace — 2026-09-22
+
+- The member approved a debug-only, app-private diagnostic file to help identify
+  the exact failure stage when the in-memory response has already disappeared.
+  Developer diagnostics now offers Enable, Disable, and Clear trace. Capture is
+  off by default, stores only allowlisted event/tool/period/outcome metadata,
+  and excludes prompts, model prose, record values, tool payloads, and raw
+  exceptions. It is not encrypted; it is isolated in app-private no-backup
+  storage and excluded from the vault and recovery archive.
+- The trace is limited to 100 events / 64 KiB and a rolling 24-hour window,
+  pruned at startup, on new writes, and hourly while the app is open. Trace
+  status is an in-memory snapshot and file operations run off the UI thread.
+  The debug control is absent and the store is inert in release builds.
+- The local ADB read command and clear/disable checks are in `docs/TESTING.md`.
+  No phone trace, member record, or screenshot was added to the repository.
+- Automated gate: `:app:testDebugUnitTest :app:assembleDebug --no-daemon`
+  passed with 126 tests, 0 failures, 0 errors; the debug APK assembled.
+  `git diff --check` passed. No APK was installed for this change, and no
+  physical acceptance is claimed.
+- Next bounded task: with member approval, install this debug APK in place,
+  enable the trace, repeat the exact weekly protein-goal question after
+  biometric unlock, then inspect only the allowlisted trace through `run-as`
+  and clear or disable it when finished. Verify existing data remains intact.
+
+### Opt-in trace installation — 2026-09-22
+
+- Build: uncommitted working tree based on `0815fd3`; complete Android gate
+  passed with 126 tests, 0 failures, 0 errors, and debug APK assembly.
+- Device: Samsung SM-S928B, Android 16 / API 36 (previously verified target).
+- With explicit member approval, `adb install -r` succeeded and Metria
+  cold-launched successfully. No app data was cleared or uninstalled.
+- Biometric unlock, existing-data preservation, diagnostics UI, trace-file
+  access, and the exact weekly protein-goal interaction remain pending member
+  and device verification. Installation alone is not physical acceptance.
+- Next bounded task: member unlocks, checks existing records, enables the
+  trace in Developer diagnostics, repeats the exact question, and leaves the
+  app open for a metadata-only `run-as` read; then clear or disable the trace.
+
+### First opt-in trace read — 2026-09-23
+
+- The member reported receiving an answer after the in-place install. A
+  metadata-only `run-as` read showed one started turn, a weekly
+  `read_progress_overview` selection and continuation, and an accepted final
+  reply. No prompt, model prose, or record value was read or saved.
+- This demonstrates a completed record-backed weekly overview turn, but the
+  exact prompt and answer accuracy are not yet confirmed. The explicit
+  protein-goal wording is expected to select `read_nutrition_summary`, so this
+  trace cannot yet be counted as physical acceptance of that exact case.
+- Existing-data preservation and diagnostics clear/disable behavior also
+  remain to be confirmed by the member on the device.
+- Next bounded task: confirm the exact sent wording and whether the answer
+  matched visible records, then repeat the explicit protein-goal question
+  with the trace enabled if these events came from a different question.
+
+### Explicit protein-goal retest — 2026-09-23
+
+- The member clarified that the first accepted trace came from a broad weekly
+  nutrition-goals question; `read_progress_overview(week)` was appropriate.
+- The member then sent the explicit weekly protein-goal question and reported
+  that it produced an answer without the previous red verification error.
+  The metadata-only trace confirmed a fresh `read_nutrition_summary(week)`
+  selection and continuation followed by an accepted final reply.
+- The member-shared answer described the period as the previous week although
+  the request and tool were for the current rolling seven days. The member
+  subsequently confirmed that no meals were recorded in the last seven days;
+  the missing-meals claim was true, but the period wording was still wrong.
+  This is not full factual acceptance despite removal of the red error. No raw
+  answer or personal values are stored in this checkpoint.
+- Code inspection indicates the final factual gate checks period alongside
+  numeric nutrition claims, but does not reject a wrong relative-period label
+  in otherwise number-free prose. A targeted period-label check and focused
+  tests are the next bounded implementation task, followed by a new build and
+  member-approved in-place physical recheck.
+
+### Rolling-period wording and response-style first slice — 2026-09-23
+
+- A weekly nutrition answer now fails the factual audit if it calls the rolling
+  seven days "last week" or "la semana pasada", including when the sentence
+  contains no numeric claim. Focused tests cover the rejected and accepted
+  Spanish wording.
+- The approved Balanced, Coach, and Records assistant styles are available as
+  a tone-only choice in Privacy & settings. The preference defaults to Balanced
+  for older vaults, is stored in the encrypted vault, and rebuilds only native
+  conversation context at the next safe boundary. The visible encrypted chat,
+  tool requirements, factual audit, and privacy/safety rules remain unchanged.
+  A failed preference save keeps the selector open with an error.
+- The broader idea of using older recorded history is documented separately;
+  this slice does not add a new history read or permit claims beyond fresh,
+  bounded tool evidence.
+- Automated gate: `:app:testDebugUnitTest :app:assembleDebug --no-daemon`
+  passed after the final adjustment with 128 tests, 0 failures, 0 errors, and
+  debug APK assembly. `git diff --check` passed. No APK from this slice has been installed; period
+  wording and style behavior have not been physically accepted.
+- Next bounded task: obtain explicit approval for an in-place install, then
+  check the exact weekly question and all three styles
+  on the target phone after member biometric unlock. Verify existing records
+  and model remain intact; do not infer physical acceptance from unit tests.
+
+### Rolling-period and style build installed — 2026-09-23
+
+- With explicit member approval, the debug APK from the 128-test gate was
+  installed in place using `adb install -r` on Samsung SM-S928B, Android 16 /
+  API 36. A cold launch of `app.metria/.MainActivity` completed successfully.
+  No app data was cleared, no uninstall or signing-key change was performed.
+- Biometric unlock, existing-record/model preservation, the corrected rolling
+  period wording, and all three style choices still require member verification
+  on the phone. Installation and launch alone are not physical acceptance.
+- Next bounded task: member unlocks, confirms existing data and downloaded
+  model remain available, repeats the weekly nutrition/protein question, then
+  samples Balanced, Coach, and Records assistant for phrasing while checking
+  that every answer stays tied to the same fresh local evidence.
+
+### Member-confirmed weekly protein wording — 2026-09-23
+
+- After the in-place install, the member reported a successful weekly protein
+  answer. It correctly described the period as the last seven days, said there
+  was no recorded protein estimate for that period, and presented the goal as
+  a reference. The member had already confirmed that no meals were recorded
+  in that period. The earlier wrong "previous week" wording and red
+  verification error were not reported on this retest.
+- This is physical acceptance of the targeted rolling-period protein response,
+  not acceptance of every nutrition query or response style. The member has
+  not yet explicitly confirmed preservation of all existing records/model or
+  exercised Coach and Records assistant on the phone. No raw answer or personal
+  goal value is stored in this checkpoint.
+- Next bounded task: confirm existing data and downloaded model remain intact,
+  then sample the three styles for phrasing and evidence consistency. Broader
+  historical context remains a separately specified capability decision.
+
+### Post-install preservation confirmation — 2026-09-23
+
+- The member confirmed that existing records and the downloaded model are still
+  present after the in-place install. This completes the preservation check for
+  this build; no records or model files were inspected or copied by the agent.
+- The remaining physical check for this slice is to switch among Balanced,
+  Coach, and Records assistant and verify that the same weekly protein question
+  stays grounded in the same fresh seven-day evidence while only phrasing changes.
+
+### Style check and next history slice — 2026-09-23
+
+- The member reported no red verification error after moving through the style
+  check. Exact answer wording, factual equivalence, and tone differences were
+  not supplied, so full physical style acceptance remains open.
+- The next bounded implementation slice targets explicit older-day meal and
+  weight questions within the existing 0–90-day read-tool window. The host
+  must require a fresh exact-day read and reject wrong-tool or wrong-day calls;
+  the answer audit must reject a different claimed date. This does not add
+  all-time access or historical nutrition totals, and cannot claim that Metria
+  knows all older records yet.
+
+### Exact historical-day read slice — 2026-09-23
+
+- Explicit Spanish/English meal-list and weight questions about one relative
+  day within 0–90 days now require the matching native read tool with that
+  exact offset. Wrong tools, offsets, and meal-slot substitutions are rejected;
+  the model gets at most one corrective tool retry. Host responses remain
+  bounded to 24 records and now carry the host's `as_of` date so the factual
+  audit can reject wrong ISO and relative-day claims.
+- Explicit questions beyond 90 days and unsupported historical nutrition
+  totals receive a deterministic, localized no-read clarification before
+  native inference. Today nutrition remains supported. This slice neither
+  exposes the full vault nor enables all-time or older-period nutrition claims.
+- Independent review found and prompted fixes for out-of-range/wrong-tool
+  substitution, historical-nutrition reinterpretation, and wrong relative-day
+  prose. A follow-up review confirmed the fixes and found a today-nutrition
+  regression, which was then corrected and tested.
+- Complete Android gate after the final fix:
+  `:app:testDebugUnitTest :app:assembleDebug --no-daemon` passed with 133 tests,
+  0 failures, 0 errors, and debug APK assembly. `git diff --check` passed.
+  This APK has not been installed; no historical-day phone acceptance is claimed.
+- Next bounded task: obtain approval for `adb install -r`, member biometric
+  unlock, verify existing data/model preservation, then ask one known older-day
+  meal and weight question and one unsupported historical nutrition question.
+
+### Exact historical-day build installed — 2026-09-23
+
+- With explicit member approval, the debug APK from the 133-test gate was
+  installed in place on Samsung SM-S928B, Android 16 / API 36, using
+  `adb install -r`. Metria cold-launched successfully. No app data was cleared,
+  no uninstall or signing-key change was performed.
+- Biometric unlock, existing-record/model preservation, and the new day-specific
+  meal/weight and unsupported-history responses are not yet physically verified.
+  Installation and cold launch alone do not establish acceptance.
+- Next bounded task: member unlocks, checks existing records/model, and asks
+  one exact older-day meal question, one exact older-day weight question, and
+  one unsupported historical nutrition question. Compare answers with visible
+  records and report any red verification error or wrong day.
+
+### Member historical-day screen check — 2026-09-23
+
+- The member reported no red error and that the three responses looked good.
+  With explicit permission to inspect the current phone screen, the agent read
+  the compact UI hierarchy and one temporary annotated capture outside the
+  repository, then deleted the capture. No raw screen or member value is saved
+  here.
+- The older-day meal and weight turns each displayed a collapsed local-record
+  evidence card and a response about the requested day. The unsupported
+  historical nutrition turn displayed the intended deterministic limit message
+  without a record-evidence card. This confirms that the third turn did not
+  present a made-up older-day nutrition total. The member's actual records for
+  that specific day were not independently checked by the agent.
+- Copy issue observed: the meal answer described the member's records in the
+  first person ("my records") despite the assistant prompt requiring "your
+  records". The first two answers also appended generic follow-up questions.
+  These are phrasing defects, not evidence of a wrong-day or red verification
+  failure. Broader historical nutrition remains outside this slice.
+- The member has not yet explicitly reconfirmed existing-record/model
+  preservation after this particular install. Next bounded task: confirm that,
+  then address the phrasing and plan bounded historical nutrition if desired.
+
+### Bounded exact-day nutrition and answer wording — 2026-09-23
+
+- Implemented a separate read-only `read_day_nutrition(days_ago)` for an explicit
+  day 0–90 days ago. The host calculates recorded-meal estimates from saved
+  meals for that day only, combining complete and partial estimates while
+  retaining separate subtotals and complete/partial/missing coverage. An absent
+  estimate remains absent, not zero. The response binds its exact date, offset,
+  requested metric, as-of date, and recorded-meals-only interpretation; it has
+  no historical goal. Multi-day and all-time nutrition totals remain out of
+  scope, and unsupported/out-of-range written offsets get a no-read limit reply.
+- Exact-day questions in English and Spanish, including written offsets through
+  90 days, require a matching native read. A wrong offset, date, period, or
+  metric cannot be used as the answer's latest record evidence. A corrective
+  retry now names the required offset. Unparsed written dates beyond the window
+  and questions comparing two distinct days clarify rather than selecting an
+  arbitrary single day. Today and rolling-seven-day reads retain their
+  existing contracts.
+- Tightened answer-style guidance to end after the requested fact and coverage
+  limit unless a relevant Coach next step adds value. After factual auditing,
+  a narrow presentation-only correction changes “my records” / “mis registros”
+  to member-owned wording; it does not alter numbers or grant evidence.
+- Automated gate from `native-android`: `./gradlew.bat :app:testDebugUnitTest
+  :app:assembleDebug --no-daemon` passed, 145 tests, 0 failures/errors; debug
+  APK assembled. `git diff --check` passed. Independent review found and the
+  implementation closed written-offset, multi-date, and corrective-retry gaps.
+- Physical status: this new APK has **not** been installed or checked on the
+  Samsung SM-S928B. Existing records/model preservation, exact-day nutrition
+  wording, coverage presentation, and absence of red verification errors on
+  the new build remain unverified. Install only after renewed member approval,
+  with `adb install -r` and member-performed biometric unlock.
+
+### Exact-day nutrition APK installed — 2026-09-23
+
+- With explicit member approval, installed the gate-passing debug APK in place
+  on Samsung SM-S928B (Android 16, API 36) using `adb install -r`; ADB reported
+  `Success`. Force-stop followed by `am start -W` reported a successful cold
+  launch. No app-data clear, uninstall, downgrade, signing-key change, vault
+  access, or model-file access was performed.
+- Biometric unlock and verification of retained records/model are member-only
+  and still pending. No exact-day nutrition response on this APK has yet been
+  physically accepted. Next check: member unlocks, confirms existing data and
+  model remain available, then asks an exact older-day calorie or protein
+  question and checks the answer, coverage, evidence card, and red-error state.
+
+### Calendar-date nutrition phone failure — 2026-09-23
+
+- On the installed uncommitted build based on `0815fd3`, the member asked a
+  Spanish calorie question naming a calendar day with a saved meal. They saw a
+  red message that disappeared after about two seconds. Whether an answer then
+  appeared and what that message said are not yet confirmed; this is a failed,
+  not accepted, physical scenario. Existing records/model preservation after
+  this install is also not yet explicitly confirmed.
+- The opt-in metadata-only debug trace for the latest turn shows
+  `turn_started` followed by `reply_rejected` with
+  `unsupported_personal_fact`, with no approved read tool in between. No raw
+  prompt, response, tool payload, or record value was copied to this document.
+  Code inspection confirms that the exact-day grounding parser accepts
+  relative offsets but not an explicit calendar date. Thus the model was not
+  required to read that saved day, and its personal claim was correctly blocked.
+- Next bounded task: add a strictly parsed, local-zone calendar-date form for
+  unambiguous supported days, convert it to the same 0–90-day exact-day read,
+  and fail closed on ambiguous/out-of-range dates. Test Spanish and English
+  forms, wrong-day tool calls, empty/partial coverage, and the transient error
+  lifecycle. Run the complete Android gate before requesting a new in-place
+  install and physical recheck.
+
+### Calendar-date read and persistent error build — 2026-09-24
+
+- The uncommitted build now parses unambiguous named Spanish/English and ISO
+  calendar days, binds a supported single day to the matching 0–90-day local
+  read, rejects ambiguous or out-of-range forms, and audits answer dates
+  against the exact response. The generic verification error is latched for the
+  current turn and saved across rotation without saving conversation text in
+  Android instance state.
+- Review of the first build found two regressions in older evidence without an
+  `as_of` field: swapped meal/date and weight/date facts were accepted. The
+  auditor now derives a date reference from returned records when necessary.
+  The existing date-binding tests pass again. Independent review then found
+  that such a record date must not define relative words like “today”; those
+  claims now fail closed without an explicit `as_of` or a bounded response
+  range. Regression cases cover both incomplete response shapes.
+- Complete Android gate from `native-android`:
+  `.\gradlew.bat :app:testDebugUnitTest :app:assembleDebug --no-daemon` passed
+  with 154 tests, 0 failures, 0 errors; debug APK assembled. `git diff --check`
+  passed. This is automated evidence only, not phone acceptance.
+- Target phone remains Samsung SM-S928B, Android 16 / API 36. At this build
+  checkpoint the APK had **not** been installed, and vault, model, and member
+  records had not been rechecked. The next step was an approved in-place install
+  followed by member biometric unlock and the named-date calorie recheck.
+
+### Calendar-date build installed in place — 2026-09-24
+
+- After explicit member approval, the 154-test debug APK was installed on the
+  connected Samsung SM-S928B (Android 16) with `adb install -r`; ADB reported
+  `Success`. A force-stop and `am start -W` reported a successful cold launch.
+  No data clear, uninstall, downgrade, signing-key change, or vault/model-file
+  access was performed.
+- Biometric unlock, retained-record/model confirmation, the named-date calorie
+  response, and error persistence have **not** been physically accepted yet.
+  The next check belongs to the member after unlocking: confirm existing data
+  and model, ask the named-date calorie question for a day with saved meals,
+  compare the answer and coverage with visible records, and report any red
+  verification error or disappearance without an answer.
+
+### Exact-day answer screen inspection — 2026-09-24
+
+- With the member's explicit permission, a compact UI layout and one temporary
+  annotated screenshot of the current Samsung SM-S928B screen were inspected.
+  The screenshot was deleted after inspection; no raw screen, meal value, or
+  model prose was added to the repository.
+- The visible chat showed two member attempts and one dated, record-backed
+  calorie reply. The local evidence indicated one recorded meal with a partial
+  estimate. No red verification error was visible at inspection time. This is
+  screen observation, not an independent check against the saved meal or a
+  member-confirmed physical acceptance result.
+- Presentation failure: expanding “From your records” exposed internal field
+  labels, `null` values, and an unrounded floating-point artifact; the answer
+  repeated the artifact and implied partial estimates were shown separately
+  when the answer did not do so. Next bounded task: make the exact-day evidence
+  member-facing and quantize the tool's exposed estimate consistently with the
+  factual auditor, then run the Android gate before requesting another install.
+
+### Exact-day nutrition presentation build — 2026-09-24
+
+- The exact-day read now exposes deterministically rounded estimates (whole
+  kcal and protein to one decimal) to the local model and the same factual
+  auditor. Saved meal values and underlying deterministic summaries are not
+  rewritten; absent estimates remain absent. The evidence card now uses
+  Spanish or English member-language date, recorded-meal coverage, the
+  requested estimate when available, and a recorded-meals-only limit instead
+  of internal field names. The host fallback no longer claims partial estimates
+  are separately shown; it mentions partial coverage only when present and
+  explicitly qualifies available totals when any recorded meal has no nutrition
+  estimate.
+- Complete Android gate from `native-android`:
+  `.\gradlew.bat :app:testDebugUnitTest :app:assembleDebug --no-daemon` passed
+  with 156 tests, 0 failures, 0 errors; debug APK assembled. New tests cover
+  floating-point-artifact rounding, null and bilingual evidence, audited
+  fallback date/metric binding, and partial/missing coverage combinations.
+  This is automated evidence, not phone acceptance.
+- At this build checkpoint the APK had **not** been installed. The existing encrypted conversation
+  may still contain its older technical evidence card until it expires or the
+  member starts a new conversation; the implementation does not rewrite saved
+  history. Next bounded task: after new approval, install with `adb install -r`,
+  member unlocks and repeats a supported exact-day nutrition question, then
+  inspect the new card and answer for concise wording, partial coverage,
+  sensible precision, and absence of red verification errors. Confirm existing
+  vault/model data remains available.
+
+### Exact-day presentation APK installed in place — 2026-09-24
+
+- After explicit member approval, installed the 156-test debug APK on Samsung
+  SM-S928B (Android 16) with `adb install -r`; ADB reported `Success`. A
+  force-stop and `am start -W` reported a successful cold launch. No app-data
+  clear, uninstall, downgrade, signing-key change, or private vault/model-file
+  access was performed.
+- Member biometric unlock, retained-record/model confirmation, the revised
+  card/answer wording, and any red-error check remain physically unverified.
+  Next bounded step: member unlocks and asks an exact-day calorie question for
+  a day with a saved meal, compares the answer to visible records, and reports
+  whether the new card avoids technical fields and floating-point artifacts.
+
+### Member feedback on revised exact-day presentation — 2026-09-24
+
+- On the installed 156-test build, the member reported that the new answer and
+  expanded “From your records” section both look very good. This is positive
+  physical-device feedback for wording and presentation; no screenshot or raw
+  member value is retained here.
+- The member subsequently confirmed that the information matched the saved
+  records and was correct. This verifies factual content for this exact-day
+  scenario. Retained vault/model availability, rotation/accessibility checks,
+  and the explicit no-red-error condition remain unconfirmed; do not infer
+  them from the answer-quality report.
+
+### Next Gate B phone check: period change — 2026-09-24
+
+- The installed 156-test build is ready for a member-run continuity check;
+  there is no new APK to install. Ask for today's recorded calories, then the
+  rolling seven-day recorded calories, then follow with a short protein question.
+  The second and third turns must use fresh weekly evidence, and every answer
+  must label its own period without borrowing today's result. Check for a red
+  verification error and compare any returned values with visible records.
+- This is a planned check, not physical acceptance. Cancellation, lock/restart,
+  token-budget reconstruction, airplane mode, and the remaining UI quality
+  matrix are still open Gate B work.
+
+### Gate B period-change phone finding — 2026-09-24
+
+- With the member's permission, inspected the current chat on the connected
+  Samsung SM-S928B (Android 16) using a temporary screen capture outside the
+  repository. The first two turns had visible today and weekly answers. After
+  the short protein follow-up, a weekly local-record evidence card appeared,
+  but there was no assistant reply beneath it even after scrolling to the end.
+  No red verification error was visible. This sequence fails the Gate B
+  period-change acceptance despite the evidence card selecting the week.
+- The member was hiding the keyboard when the answer seemed to disappear; the
+  inspected screen had the keyboard closed, so the missing final bubble was
+  not merely obscured by the keyboard. The precise continuation failure stage
+  has not been established. No screenshot, raw answer, or personal values are
+  retained in this checkpoint. Next bounded task: inspect metadata-only trace
+  for a fresh reproduction if the member approves, then fix the confirmed
+  handoff/failure path and rerun the complete Android gate before installation.
+- The member immediately resent the short protein follow-up and reported that
+  it worked very well. This confirms a successful retry on the same installed
+  build, but does not erase the observed missing-reply failure or establish its
+  cause. The first-attempt failure remains open as an intermittent Gate B gap.
+- During a later repeat of the sequence, the member reported a red message on
+  the second question and that the phone felt hot. The exact diagnostic text,
+  tool stage, and thermal status at the moment of failure were not captured; no cause is inferred.
+  Stop repeated model tests until the phone cools. This is another failed Gate B
+  observation, not acceptance of the period-change path. A metadata-only trace
+  may be inspected only with member permission if it was enabled for that turn.
+- The member also reported substantial battery use by the Android CLI phone
+  helper. A later read-only ADB sample found its instrumentation process active
+  at 116% CPU, battery at 31% and 39.4°C, and Android thermal status 2 with
+  skin temperature about 41°C. This is a single subsequent sample, not proof
+  that the helper caused the red error or all battery drain. No process was
+  stopped, package removed, or Metria data changed while awaiting permission.
+- The member force-stopped the Android CLI helper directly on the phone. A
+  subsequent plain-ADB check found no helper process; thermal status had
+  dropped to 1, with skin temperature about 39.6°C. This supports that the
+  helper stayed stopped, but is not a controlled battery or causal test. The
+  agent did not restart Android CLI or access the assistant trace.
+
+### Gate B continuation reliability hardening — 2026-09-25
+
+- Code inspection found two paths that could leave a local evidence card without a
+  visible final outcome: a rejected tool continuation reused the previous request
+  ID and lost UI correlation, and status polling could supersede the keyed tool
+  effect before the new request ID was adopted. These are defensible code risks,
+  not a confirmed diagnosis of the member's intermittent phone failure. No trace
+  was read and the Android CLI phone helper was not restarted.
+- The tool hand-off now runs in the conversation's composition-owned coroutine
+  scope, keeps optimistic pending state until a matching lifecycle request is
+  adopted, and presents a recoverable error if continuation is rejected. A
+  cancelled token cannot apply a late result. Final reply observation also
+  rechecks when the active request ID changes, while handled IDs still prevent
+  duplicate bubbles. The pending gate handles a final lifecycle poll that
+  arrives before request-ID reconciliation without leaving “thinking” stuck.
+- Focused tests cover successful and fast-completed continuation, rejection,
+  cancellation and stale IDs, loaded-before-reconcile ordering, fallback error
+  text, and exactly-once result matching. Independent review identified the
+  early-final-poll case; a follow-up review found its correction sound.
+- Complete Android gate from `native-android`:
+  `.\gradlew.bat :app:testDebugUnitTest :app:assembleDebug --no-daemon` passed
+  with 164 tests, 0 failures, 0 errors; the debug APK assembled. This is
+  automated evidence only. The new APK has not been installed, and Gate B
+  physical acceptance remains open. No vault, model, or phone data was changed.
+- Next bounded step: request approval for an in-place `adb install -r` when the
+  member is ready, then have the member unlock and repeat the today → rolling
+  seven days → protein follow-up sequence once on a cool phone. Verify that
+  each turn ends with a reply or a persistent recoverable error, and compare
+  record-backed periods and values with visible records. Do not attribute any
+  observed red error to a particular cause without fresh evidence.
+
+### Gate B continuation build installed in place — 2026-09-25
+
+- With explicit member approval, installed the 164-test debug APK using
+  `adb install -r` on Samsung SM-S928B, Android 16 / API 36; ADB returned
+  `Success`. A subsequent force-stop and `am start -W` reported a successful
+  cold launch. No app-data clear, uninstall, downgrade, signing-key change,
+  vault/model-file access, assistant-trace read, or Android CLI screen-helper
+  start was performed.
+- Member biometric unlock, retained-record/model confirmation, and the
+  today → rolling-seven-day → protein follow-up recheck remain pending.
+  Installation and launch do not establish physical Gate B acceptance.
+
+### Gate B first-turn today nutrition failure — 2026-09-25
+
+- On the installed 164-test build, the member reported a red error on the first
+  Spanish question asking for today's recorded calories. The planned later
+  weekly and protein turns were stopped; this sequence failed physical Gate B
+  acceptance. Retained records/model availability has not yet been explicitly
+  reconfirmed for this install.
+- With explicit member permission, a plain-ADB read of the opt-in metadata-only
+  assistant trace showed that the latest turn started and then its reply was
+  rejected as `unsupported_personal_fact`, with no approved record-read tool
+  between those events. No prompt, reply, record value, or raw trace was copied
+  into the repository. The Android CLI phone helper was not restarted.
+- Code inspection found a matching host-policy coverage gap: explicit current-
+  period calorie-total questions without a goal-comparison or short-follow-up
+  form did not require `read_nutrition_summary`. The model could therefore
+  return ungrounded personal prose, which the factual auditor correctly blocked.
+  This explains the observed event sequence, but does not establish why the
+  model omitted a tool in this particular run.
+- Next bounded task: require the correct fresh today/rolling-seven-day nutrition
+  read for explicit current-period calorie/protein totals, preserve historical
+  and unsupported-period boundaries, add focused tests, and run the complete
+  Android gate before requesting another installation.
+
+### Explicit current-period nutrition read build — 2026-09-25
+
+- Clear one-metric recorded calorie/protein amount questions for today or the
+  rolling last seven days now require a fresh matching
+  `read_nutrition_summary` response. The host rejects wrong-tool and
+  wrong-period substitutions; an audited deterministic reply can use only that
+  same validated result if model wording fails. Historical exact-day rules,
+  factual auditing, and saved-record calculations were not changed.
+- The new routing fails closed for mixed metrics/periods, unsupported month or
+  previous-week ranges, per-day rates, and advice phrasing. Focused Spanish and
+  English tests cover the observed wording, common verb variants, missing
+  estimates, and those boundaries. Independent review found two wording gaps
+  and an advice-intent false route; each was corrected and tested.
+- Complete Android gate from `native-android`:
+  `.\gradlew.bat :app:testDebugUnitTest :app:assembleDebug --no-daemon` passed
+  with 166 tests, 0 failures, 0 errors; the debug APK assembled. This build
+  has **not** been installed. The physical first-turn failure remains open
+  until a member-approved in-place install and repeat on the target phone.
+- Next bounded step: ask approval for `adb install -r`; after member biometric
+  unlock, repeat the today recorded-calorie question once, confirm a fresh
+  today evidence card and an answer without the red verification error, then
+  resume the weekly-period and protein follow-up checks only if that first
+  turn passes. Confirm existing records and downloaded model remain available.
+
+### Explicit current-period nutrition build installed — 2026-09-25
+
+- With explicit member approval, installed the 166-test debug APK in place on
+  Samsung SM-S928B (Android 16 / API 36) using `adb install -r`; ADB returned
+  `Success`. A force-stop and `am start -W` reported a successful cold launch.
+  No app-data clear, uninstall, signing-key change, vault/model-file access,
+  trace read, or Android CLI screen-helper start was performed during install.
+- Biometric unlock, retained-record/model confirmation, and the corrected
+  first-turn today-calorie recheck remain pending. Installation does not
+  establish physical acceptance; stop before weekly follow-ups if the first
+  turn still fails.
+
+### Member first-turn feedback — 2026-09-25
+
+- On the installed 166-test build, the member reported **no red verification
+  message** after repeating the first today-calorie question. This is positive
+  physical feedback for the specific previous error state, not yet full
+  acceptance of the answer: a final assistant bubble, matching today evidence,
+  factual accuracy, and retained vault/model data were not explicitly
+  confirmed in that report.
+- Next check: confirm that the turn ended with a today record card and final
+  answer matching visible records, plus preservation of existing records and
+  downloaded model. Only then continue to the weekly-calorie and short-protein
+  period-change turns.
+- The member subsequently confirmed that the existing records and downloaded
+  model are still present after this in-place update. The wording of that
+  confirmation did not establish whether the assistant's latest turn had a
+  final answer/card or whether its values matched the records; those checks
+  remain open.
+- The member then confirmed that the first turn had a final assistant answer
+  and a today “From your records” card, and that the answer matched their
+  saved records. Together with the earlier no-red-error and preservation
+  reports, this physically accepts the corrected first-turn today-calorie
+  scenario on the 166-test build. The weekly-period change and short protein
+  follow-up remain separate, unverified Gate B checks.
+- The member then ran the weekly-calorie question and short protein follow-up
+  on the same installed build and reported that the sequence “ended very well.”
+  This is positive phone feedback for completion, but the report did not
+  explicitly state whether both cards/answers used fresh seven-day evidence,
+  matched visible records, or avoided a red error. Do not mark the period-
+  change Gate B check fully accepted until those details are confirmed.
+- The member chose to move to the next check without further period/value
+  confirmation. Keep that evidence gap open. The next bounded physical check
+  is cancellation during a local assistant turn: cancel while thinking, verify
+  no late answer or action appears, then confirm the composer remains usable.
+
+### Stop responsiveness implementation — 2026-09-25
+
+- Stop now invalidates the active request and pending handoffs synchronously,
+  presents an accessible “Stopping…” status, and keeps Send disabled while the
+  synchronized LiteRT cancellation runs on a background dispatcher. On
+  completion it shows “Response stopped” and returns the composer to use.
+- Typed request starts, native tool continuations, and cancellation share a
+  session-scoped mutex. Each queued start rechecks its pending token after
+  acquiring the lock; cancellation teardown runs non-cancellably even if the
+  conversation screen is disposed.
+- Cancellation completion is generation-checked so a reset/new conversation
+  cannot receive stale stop confirmation. Late replies remain ineligible via
+  the cleared active request ID.
+- Focused `AssistantConversationPresentationTest` passed, including duplicate
+  cancellation gating, reset-during-cancel coverage, and a queued-start race
+  check. The full Android gate remains for the parent handoff; no physical
+  device check or install has been performed for this change.
+- Next physical check: on the existing installation after an approved build,
+  tap Stop during a local turn; verify immediate “Stopping…”, no late answer,
+  “Response stopped” after shutdown, and a usable composer.
+- Independent review caught a queued-start race: a native request could have
+  begun after Stop had finished. A session-owned operation mutex now orders
+  typed starts, tool continuations, and teardown; each queued start rechecks
+  its pending token under the lock. A focused concurrency test covers the
+  stop-before-start ordering. Follow-up read-only review found no remaining
+  ordering defect; scope disposal and LiteRT timing still need phone evidence.
+- Complete Android gate from `native-android`:
+  `.\gradlew.bat :app:testDebugUnitTest :app:assembleDebug --no-daemon` passed
+  with 169 tests, 0 failures, 0 errors, and a debug APK. `git diff --check`
+  passed. Physical cancellation feedback and late-result acceptance remained
+  open pending an approved in-place install.
+
+### Stop responsiveness build installed in place — 2026-09-25
+
+- With explicit member approval, installed the 169-test debug APK on the one
+  connected Samsung SM-S928B (Android 16 / API 36) using plain ADB
+  `install -r`; Android reports the updated package. A force-stop and
+  `am start -W` completed a successful cold launch. The Android CLI phone
+  helper was not started; no data clear, uninstall, signing-key change, or
+  vault/model-file access was performed.
+- Member biometric unlock, retained-data confirmation, and the physical Stop
+  check are pending. Ask the member to tap Stop during a local turn and report
+  whether “Stopping…” appears promptly, no late answer appears, “Response
+  stopped” is shown, and the composer accepts a new message afterward.
+
+### Native cancellation force-close — 2026-09-25
+
+- The member reported that Stop appeared briefly, then Metria force-closed; the
+  control also did not feel like a clear cancellation action. With explicit
+  permission, the parent read a narrowly filtered crash buffer and identified
+  `SIGABRT: Pure virtual function called!` in `liblitertlm_jni.so` during native
+  `sendMessage` on the private assistant worker. This is a failed physical
+  cancellation check on the installed 169-test build; the corrected flow has
+  not yet been installed or physically accepted.
+- Failure signature: Stop interrupted the `Future`, called `cancelProcess`, and
+  immediately closed the native conversation while synchronous `sendMessage()`
+  could still be in JNI. `Future.cancel(true)` can report done before that
+  native call exits. The crash identifies `nativeSendMessage` as the active JNI
+  frame, but does not by itself establish whether concurrent `cancelProcess`,
+  premature conversation close, or their interaction caused the abort.
+- The proposed lifecycle fix introduces a use lease for each private native conversation. Stop
+  invalidates the request immediately and asks LiteRT to cancel, but native
+  conversation close waits until the worker releases its lease. Runtime unload
+  also defers engine close while a private worker is active. Private assistant
+  turns now use LiteRT's asynchronous callback API, the documented cancellation
+  mode. Stop waits for the completion/error callback on a background dispatcher
+  before releasing the UI send gate; no lifecycle monitor is held during that
+  wait. If LiteRT never delivers a terminal callback, Metria deliberately keeps
+  the conversation and engine alive and keeps Send unavailable rather than
+  closing native state whose safety is unknown. Lock/reset and queued-start
+  paths continue to reject stale requests.
+- The Stop action now has a filled tonal affordance and is labelled “Stop
+  response”; the explicit “Stopping…” state remains visible until native worker
+  cleanup finishes.
+- Deterministic tests exercise a blocked send, retirement racing `cancelProcess`,
+  a terminal callback arriving during a blocked cancel, competing timeout
+  cancellation sources, cancel-before-start, and callback aggregation of delta
+  text, every tool call, and channels. Each cancel claim now acquires a
+  conversation-lifetime lease before publishing timeout and invoking
+  `cancelProcess`; the lease is released only after that call returns. Callback
+  tool calls append across messages, including identical calls, so multi-call
+  responses remain rejected by the existing host validator. Whitespace-only
+  text deltas are also preserved. The focused Android tests passed (7 tests,
+  0 failures/errors). Follow-up read-only review confirmed the native lifetime
+  and tool-call fixes, then identified the whitespace-delta gap corrected above.
+- Complete Android gate from `native-android`:
+  `.\gradlew.bat :app:testDebugUnitTest :app:assembleDebug --no-daemon` passed
+  with 176 tests, 0 failures, 0 errors, and a debug APK. `git diff --check`
+  passed. The corrected APK has **not** been installed. Physical verification
+  must confirm no force-close, no late reply, retained data, and that the
+  composer becomes usable only after Stop completes.
+
+### Native cancellation fix installed in place — 2026-09-25
+
+- With explicit member approval, installed the 176-test debug APK in place on
+  the one connected Samsung SM-S928B (Android 16 / API 36) via plain ADB
+  `install -r`. Android reports a fresh package update time, and a subsequent
+  force-stop plus `am start -W` completed a successful cold launch. The Android
+  CLI phone helper was not restarted. No app-data clear, uninstall, signing-key
+  change, or vault/model-file access was performed.
+- Biometric unlock, retained-record/model confirmation, and the physical Stop
+  regression remain pending. Verify the new “Stop response” tap feedback,
+  prompt “Stopping…” state, no force-close or late reply, and a usable composer
+  after “Response stopped.” Automated tests do not establish physical passage.
+
+### Member cancellation feedback and meal-image follow-up — 2026-09-27
+
+- On the installed 176-test build, the member reported that cancellation worked
+  without the earlier force-close. The cancellation status card subsequently
+  vanished after the member left the app and returned, consistent with its
+  transient, non-persisted status contract. Do not mark the complete Stop
+  acceptance row passed until the no-late-reply, composer-reuse, and status
+  lifetime checks are confirmed.
+- The member reported that two member-selected meal photos completed local
+  analysis but showed the recoverable “draft was not safe to display” message
+  instead of opening an editable proposal. This identifies strict proposal
+  rejection, not a confirmed cause. No raw photo, model response, or meal
+  interpretation is stored in this checkpoint. The member is checking the
+  existing Developer diagnostics outcome; repeated hot-device inference should
+  be avoided.
+- Next bounded task: classify the proposal rejection without persisting raw
+  output, then add a narrowly justified parser/prompt regression test and
+  correction if the rejected shape can be proven safe. Repeat the complete
+  Android gate before requesting any new in-place install.
+
+### Debug image-analysis inspection implementation — 2026-09-27
+
+- The member clarified that screenshot/manual-diagnostics handoffs are too
+  slow for development and explicitly requested direct developer inspection
+  of image-analysis trace, model response, and a reduced test image. This is
+  a deliberate debug-only, opt-in exception to the ordinary local-only data
+  policy; the metadata-only assistant trace remains raw-content-free.
+- The strict meal-proposal parser now returns a fixed, content-free rejection
+  category for invalid JSON, root, group, item, or portion range. It still
+  rejects the entire unsafe draft. The category is available in local audit
+  metadata; the model response is not added to that audit.
+- At this checkpoint, a separate session-only **Image development capture**
+  control started off on each app launch. This enablement policy was superseded
+  by the persistent-opt-in checkpoint below. When enabled for a test image, it kept at most one bounded
+  raw vision response and reduced EXIF-free JPEG in app-private no-backup
+  storage, with duration, outcome, and parser category. Disable, Clear,
+  lock/background, process startup, or destruction removes it; a 30-minute
+  expiry is enforced while the app runs. After a hard process kill, the next
+  launch or authorized ADB helper read removes an expired capture. Release
+  builds cannot enable or write it. A local ADB
+  helper reads the capture outside the repository after member authorization.
+- Complete Android gate from `native-android`:
+  `.\gradlew.bat :app:testDebugUnitTest :app:assembleDebug --no-daemon` passed
+  with 189 tests, 0 failures, 0 errors after a release-startup cleanup
+  regression test; the debug APK assembled.
+  `git diff --check` passed. The phone was not listed by ADB at the time of
+  attempted read, so the old in-memory response could not be inspected. No
+  new APK has been installed and the two meal-photo failures remain undiagnosed.
+- Independent review caught binary redirection incompatibility with older
+  Windows PowerShell and the hard-process-kill expiry gap. The ADB helper now
+  copies native output as bytes, checks age before decoding the response,
+  and removes an expired capture. Documentation names the residual crash
+  lifetime explicitly. Follow-up review found no further material code issue;
+  the helper still needs a device-side exercise after installation.
+- Next bounded step: independent review of the new capture path, then request
+  approval for an in-place debug APK install. On a cool phone, enable Image
+  development capture, analyze one member-approved failing image once, keep
+  Metria open/unlocked, and inspect only that capture via plain ADB. Use the
+  captured parser category and bounded response to justify a safety-preserving
+  parser/prompt correction, followed by another full gate and physical test.
+
+### Image-inspection debug build installed in place — 2026-09-27
+
+- With explicit member approval, installed the 189-test debug APK on the one
+  connected Samsung SM-S928B (Android 16 / API 36) using plain ADB
+  `install -r`; ADB returned `Success`. A force-stop and `am start -W` reported
+  `Status: ok` and a cold launch. No app-data clear, uninstall, signing-key
+  change, vault/model-file access, or Android CLI phone-helper start occurred.
+- Member biometric unlock, retained-record/model check, capture-toggle UI
+  check, and one member-run image analysis are still pending. Installation
+  and launch do not establish that the meal-photo failure is corrected or that
+  the new ADB capture helper works on the phone.
+
+### First image-capture finding — 2026-09-27
+
+- The member completed one meal-image run on the installed debug build and
+  reported the recoverable draft-rejected message. With the member's explicit
+  development-capture authorization, the plain-ADB helper successfully read
+  the one app-private opt-in capture without a screen dump or Android CLI
+  phone helper. The result was `draft_rejected`, fixed category `invalid_item`,
+  after about 36 seconds.
+- Inspection of the bounded output and reduced test image showed that the
+  model used descriptive prose in the required enum-only `evidence` field.
+  It also misidentified several visible dishes and invented an uncertain
+  extra component. Merely accepting that malformed field would expose a
+  misleading draft, so the parser's fail-closed behavior remains appropriate.
+  No raw photo, response, or meal names/values are kept in this checkpoint.
+- The second member-provided photo has not yet been captured on this build.
+  Existing vault/model preservation after installation and the full meal-review
+  path are still not physically confirmed. Next bounded task: review a safer
+  vision prompt/UX fallback for complex multi-dish photos, add targeted tests,
+  then run the complete Android gate before another installation. Avoid
+  repeated inference while the phone is warm.
+
+### Meal-image prompt hardening after first capture — 2026-09-27
+
+- The vision request now asks for at most the two strongest clearly visible
+  candidates, omits uncertain extra foods, and requires the exact `seen` or
+  `possible_inside` evidence token. Descriptive evidence text remains rejected;
+  it is not silently converted to a visible-food claim. An empty item list also
+  fails closed instead of opening a review with no foods. These changes do not
+  alter deterministic nutrition, member review, or the temporary-image policy.
+- The complete Android gate from `native-android` passed:
+  `.\gradlew.bat :app:testDebugUnitTest :app:assembleDebug --no-daemon`;
+  192 tests, 0 failures, 0 errors, and debug APK assembled. `git diff --check`
+  passed. The new APK has **not** been installed. The observed photo failure
+  remains unresolved on the physical phone until the member authorizes an
+  in-place install and tries one image on a cool device. A prompt constraint
+  cannot guarantee that the local model will follow the schema or identify
+  every dish correctly; rejected drafts must continue to offer manual entry.
+
+### Meal-image prompt build installed in place — 2026-09-27
+
+- With the member's explicit approval, installed the 192-test debug APK on the
+  one connected Samsung SM-S928B (Android 16 / API 36) using plain ADB
+  `install -r`; ADB returned `Success`. Force-stop and `am start -W` reported
+  `Status: ok` and `LaunchState: COLD`. The Android CLI phone helper was not
+  started. No app-data clear, uninstall, signing-key change, or vault/model
+  access was performed.
+- Member biometric unlock, retained-record/model confirmation, and the
+  complex-meal photo test are pending. Installation and launch do not establish
+  that the model now follows the evidence enum or identifies the photo safely.
+
+### Rejected-photo follow-up and manual route — 2026-09-27
+
+- The member retried one image on the installed prompt-hardened build and
+  reported the same draft-rejected message. The opt-in, plain-ADB capture
+  classified it as `invalid_group` after about 44 seconds. Inspection showed
+  an unsupported grouped-item type and materially inaccurate food labels, so
+  accepting or loosely coercing the whole draft would have been misleading.
+  The one app-private capture and temporary reduced JPEG were removed after
+  inspection; no raw image, response, food names, or record values are retained
+  in this checkpoint. This is a **failed physical vision acceptance**, not a
+  successful correction from prompt changes.
+- A direct manual-entry card has been added for rejected photo drafts. It opens
+  the existing focused meal review with no model-suggested foods, starts with
+  **Add first dish** instead of an empty Save action, and records unmatched
+  reviewed food as `manual_entry` rather than `ai_estimate`. The strict parser
+  remains unchanged. The optional reduced reference follows the existing
+  member-confirmation path. Manual review closes at vault lock.
+- The complete Android gate after this UX change and a post-review safety-test
+  addition passed with 194 tests, 0 failures, 0 errors, and debug APK assembly.
+  Independent read-only review found no confirmed defect in the fallback's
+  empty proposal, manual provenance, or save gating, but Compose interaction
+  and physical states remain unverified. The APK has not been installed, so
+  keyboard, rotation, thumbnail opt-in, and save provenance still need a
+  member-run phone check. Do not claim that the local model now recognises the
+  complex meal correctly.
+
+### Reliable meal-photo and correction-learning design slice — 2026-09-27
+
+- In response to the member's several-meals-per-day reliability concern, the
+  working `docs/vision-correction-learning-spec.md` separates schema validity,
+  visual food accuracy, and thermal/latency acceptance. Manual entry remains a
+  recovery path, not evidence that recognition is reliable. The proposed
+  correction-memory retention scope still awaits the member's choice.
+- A pure, bounded, in-memory diff now compares initial and confirmed review
+  items by stable ID. It distinguishes additions, removals, renames, real dish
+  moves, portion changes, and catalog-match changes; a dish-label edit alone
+  does not count as a move. Independent review found and prompted that last
+  correction. No new vault persistence, ranking, automatic suggestion, debug
+  capture, or production call site was added for this slice.
+- The complete Android gate passed from `native-android`:
+  `.\gradlew.bat :app:testDebugUnitTest :app:assembleDebug --no-daemon`;
+  202 tests, 0 failures, 0 errors, and debug APK assembled. The new APK was
+  **not installed** and no physical acceptance is claimed for this slice.
+- Next bounded step, after the member chooses retention scope: wire the diff
+  only to successful reviewed Save, then design bounded encrypted storage,
+  member inspection/deletion, vault/archive compatibility, and tests before
+  letting feedback affect any candidate ranking. Base vision quality still
+  requires a varied, consented photo benchmark and repeated-use phone gate.
+
+### Automatic private correction-note foundation — 2026-09-28
+
+- The member chose automatic, on-device capture from a successfully saved,
+  corrected photo meal, without a settings toggle or second confirmation.
+  "Remember this dish" remains a separate choice. The review flow now derives
+  a bounded stable-item diff only at Save and passes it into the same encrypted
+  vault transaction as the meal. No-op, manual, rejected, cancelled, and failed
+  saves do not retain a draft-to-confirmed note. Privacy settings offers
+  inspect and clear controls without deleting meals or saved dishes.
+- The optional version-1 vault/archive field defaults empty for older payloads.
+  Pure-JVM codec tests cover round-trip, malformed records, and dangling meal
+  links. New food-match hints carry meal provenance; edit/delete removes only
+  that meal's hints and note with rollback, while removing only a private
+  reference thumbnail leaves learning intact. Older global hints have no
+  provenance: they remain readable in the vault/archive and member-clearable,
+  but no longer influence catalog ranking. The settings dialog discloses
+  their inactive status.
+- Correction notes are **not yet used to rank future photo suggestions**; the
+  member-facing wording says so. Existing catalog-match hint behavior is
+  separate. No claim of better visual recognition or several-meals-per-day
+  readiness follows from this storage work.
+- Complete Android gate from `native-android` passed:
+  `.\gradlew.bat :app:testDebugUnitTest :app:assembleDebug --no-daemon`;
+  212 tests, 0 failures, 0 errors, and debug APK assembled. `git diff --check`
+  passed. The APK was **not installed**; vault compatibility, review UI,
+  rotation, clear/unlink, and photo outcomes remain unverified on the phone.
+  No vault instrumentation suite exists yet, so encrypted storage/rollback
+  behavior is not covered end-to-end by the pure-JVM tests.
+- Next bounded task: use only explainable, member-reviewable correction candidates with
+  negative/contradiction tests. Separately benchmark varied photos and repeated
+  cool/warm phone use. Obtain installation approval before physical checks.
+
+### Correction-note foundation installed in place — 2026-09-28
+
+- With the member's explicit approval, paired plain ADB to the current
+  wireless-debugging endpoint and selected the Samsung SM-S928B running
+  Android 16 / API 36. The 212-test debug APK was installed with `adb install
+  -r`; ADB returned `Success`. A force-stop followed by `am start -W` reported
+  `Status: ok` and `LaunchState: COLD`. The Android CLI phone helper was not
+  started. No app-data clear, uninstall, signing-key replacement, or vault/model
+  deletion was performed.
+- This confirms installation and launch only. Member biometric unlock,
+  preservation of existing records/model, correction-note capture and clear,
+  thumbnail-only update, rotation/keyboard accessibility, and repeat-photo
+  outcomes remain physically unverified. No screenshot or raw member data was
+  captured. Next: member-led smoke test of existing data and the changed meal
+  review flow before any physical acceptance claim.
+
+### First photo attempt on installed correction-note build — 2026-09-28
+
+- The member reported the visible "Couldn't make a reliable meal draft"
+  fallback after local photo analysis. This is the parser-rejected-draft path:
+  no model-proposed foods are displayed and no meal is saved. The fallback
+  offers manual entry. The correction-note feature cannot learn from this run
+  because it requires a valid draft followed by a successful reviewed Save.
+- The precise rejection category and raw model output for this run have not
+  been inspected. Existing-record/model preservation and the manual fallback
+  interaction are not yet confirmed by the member. Treat this as failed
+  physical photo-draft acceptance, not improved recognition. Avoid repeated
+  inference while the phone is warm; a later single opt-in development capture
+  can diagnose the output if the member authorizes it.
+
+### Opt-in repeat-photo capture on installed build — 2026-09-28
+
+- The member enabled Image development capture and repeated the same photo
+  once. With that authorization, the plain-ADB helper read the one debug-only
+  app-private capture: `draft_rejected`, category `invalid_group`, about 54.3
+  seconds. The model used an unsupported grouped-item kind, despite the prompt
+  specifying the allowed enum. It also produced more candidate components and
+  stronger identity confidence than the photo justified. Converting that enum
+  alone would not make the draft trustworthy; fail-closed validation was the
+  correct outcome.
+- The reduced temporary JPEG on the development computer was inspected and
+  deleted immediately afterward, along with its temporary directory. No raw
+  photo, model response, meal names, device address, or member values were
+  added to the repository. The app-private capture should be cleared with the
+  in-app control or vault lock; no claim is made that it has already been
+  cleared. This remains a failed physical vision case and further evidence
+  that prompt-only hardening is insufficient.
+- Next bounded task: evaluate candidate draft quality separately from schema
+  validity on a consented set of varied photos, then make a measured model or
+  review-flow improvement without loosening food-identity validation.
+
+### Persistent debug image-capture opt-in — 2026-09-28
+
+- After a member-edited, one-dish photo yielded a meal draft on the installed
+  build, the member requested that Image development capture remain enabled
+  until explicitly disabled. This reports one successful draft, not a verified
+  nutrition estimate or general multi-dish reliability.
+- The debug-only setting now persists as a one-byte choice in app-private
+  no-backup storage. It is off for a fresh or pre-existing installation until
+  enabled once, then survives lock, backgrounding, activity recreation, and
+  process restart until **Disable**. The raw reduced photo and model response
+  still clear on lock/background/startup, explicit Clear or Disable, and
+  activity teardown, with the existing 30-minute expiry. Release startup
+  removes any leftover debug choice and capture. A per-analysis recording token
+  also prevents an in-flight result from recreating a capture after a clear.
+- The diagnostic UI and testing/safety/screen contracts now distinguish the
+  durable choice from the short-lived payload. Persisted enablement alone is
+  not authorization to read a run over ADB; ask for the active test session.
+- The complete Android gate passed from `native-android` with
+  `.\gradlew.bat :app:testDebugUnitTest :app:assembleDebug --no-daemon`:
+  216 tests, 0 failures, 0 errors, and the debug APK assembled. The new APK
+  was subsequently installed in place after separate member approval (see
+  installation note below). No physical acceptance is claimed from these tests
+  or the prior one-dish run.
+
+### Persistent image-capture setting installed in place — 2026-09-28
+
+- With explicit member approval, selected one currently connected transport
+  for the Samsung SM-S928B (Android 16 / API 36) and installed the 216-test
+  debug APK using only `adb install -r`; ADB returned `Success`. A force-stop
+  and `am start -W` returned `Status: ok`, `LaunchState: COLD`. No app-data
+  clear, uninstall, signing-key replacement, or vault/model deletion occurred.
+- Installation and cold launch are confirmed, but biometric unlock, preservation
+  of existing records, persistent opt-in after background/restart, disable
+  behavior, and raw-capture cleanup still require member-led physical checks.
+  The prior enabled session does not migrate to the new durable setting: enable
+  Image development capture once more in Developer diagnostics, then it should
+  remain enabled until explicitly disabled.
+
+### Local model-assisted food-name correction — 2026-09-29
+
+- The expanded dish editor now lets the member describe a correction for one
+  selected food in ordinary language. LiteRT uses the local text model to
+  suggest only a replacement name. A strict one-key parser rejects prose,
+  extra nutrition/portion/ingredient fields, unchanged names, and malformed or
+  oversized output.
+- The member sees an old → new preview with **Apply name** and **Discard**.
+  Applying changes only the local draft's name and clears its catalog match;
+  portion, ingredients, preparation, and any saved record are not changed by
+  the model. The existing dish Apply and final meal Save gates still control
+  when review state and the meal reach the vault. Busy/unavailable runtime,
+  cancellation, editor exit, and stale request/item results are handled. A
+  canceled native conversation stays owned by its inference worker through
+  teardown; another correction waits for that worker, and runtime unload defers
+  closing the engine until active workers have exited.
+- The complete gate from `native-android` passed with
+  `:app:testDebugUnitTest :app:assembleDebug --no-daemon --rerun-tasks`:
+  222 tests, 0 failures, 0 errors, and debug APK assembly. `git diff --check`
+  passed. The APK was subsequently installed in place with member approval
+  (see below). Physical checks of keyboard behavior,
+  correction quality, cancellation, and final-save persistence remain pending;
+  no visual food-recognition improvement is claimed from the automated tests.
+
+### Food-name correction installed in place — 2026-09-29
+
+- With explicit member approval, selected the connected Samsung SM-S928B
+  (Android 16) and installed the tested debug APK using `adb install -r`.
+  ADB returned `Success`; force-stop and `am start -W` returned `Status: ok`
+  and `LaunchState: COLD`. No app-data clear, uninstall, signing-key change,
+  vault removal, or model removal was performed.
+- Installation and launch are confirmed. Biometric unlock, preservation of
+  existing records, the keyboard-visible correction flow, safe cancellation,
+  suggestion quality, and final Save/reopen still require member-led physical
+  verification. No physical acceptance is claimed yet.
+- Member follow-up: the food-name suggestion worked on the installed phone.
+  This confirms the suggestion path for that attempt, but does not yet verify
+  that Apply cleared the old catalog match, the corrected meal saved and
+  reopened accurately, or that cancellation and keyboard states pass.
+- Subsequent authorized on-device inspection showed a saved meal whose title
+  used the member's corrected dish wording while its Food field retained the
+  model's earlier incorrect food label. The member had tapped **Use this name**
+  on a similar-meal suggestion, which changes the meal title rather than a
+  component. This is a failed end-to-end food-correction check and a confusing
+  distinction in the review UI, not evidence that **Apply name** persisted.
+  The temporary screenshot was removed from the development machine; no raw
+  image or member meal values are retained in this checkpoint.
+
+### Saved-meal correction and atomic photo removal — 2026-09-29
+
+- The similar-meal action now reads **Use meal name**, with copy clarifying it
+  changes the meal title only. This distinguishes it from food correction.
+- Saved-meal editing is extracted into `SavedMealEditorScreen`. A member may
+  ask the local text assistant about one food, review the old → new label, and
+  Apply or Discard. Direct manual rename stays available. A name change clears
+  that food's prior catalog match; a new match can be selected separately.
+  Assistant output changes only the in-memory draft. Member-entered nutrition
+  remains unchanged and is explicitly described as unchanged in the correction
+  panel. Saving still uses the existing single validated meal update.
+- Removing a reference photo is staged in the editor and reaches the vault only
+  with Save. Cancel/back therefore leaves the previously saved meal and photo
+  untouched. Draft fields and selection state are saveable across configuration
+  recreation; an active suggestion is cancelled and cleared on exit/recreation.
+  IME padding and a scrollable editor keep the save action reachable.
+- Six policy tests cover name-change match invalidation, photo-removal draft
+  immutability, validation of a renamed catalog meal without stale nutrition,
+  unavailable or unresolved catalog blocking, and explicit confirmation when
+  existing nutrition coverage would be reduced. A failed vault Save or Delete
+  now keeps the editor and its draft visible with a local error; the Delete
+  dialog displays that error and deletion remains behind its confirmation.
+  An unavailable old catalog ID does not block a member-selected valid
+  replacement match.
+  No `androidTest` source set or Compose UI-test dependency is present, so visual,
+  keyboard, and button-flow UI tests remain a physical acceptance gap.
+- `.\gradlew.bat :app:testDebugUnitTest :app:assembleDebug --no-daemon`
+  passed: 228 tests, 0 failures, 0 errors; debug APK assembled. `git diff --check`
+  passed. The APK was not installed and no physical acceptance is
+  claimed for this slice.
+- Follow-up: `EncryptedVault.updateMeal` currently removes correction learning
+  linked to a meal after substantive edits and does not add a new correction
+  diff from saved-meal editing. This slice preserves that vault contract;
+  saved-editor corrections do not yet influence future suggestions. Physical
+  verification remains required for save/reopen, catalog-rematch nutrition,
+  cancellation/rotation, keyboard reachability, and Cancel after photo removal.
+
+### Saved-meal correction APK installed in place — 2026-09-30
+
+- After the final 228-test gate and clean `git diff --check`, the member
+  explicitly approved installation. A single wireless ADB transport for the
+  Samsung SM-S928B (Android 16 / API 36) was selected. `adb install -r`
+  returned `Success`; force-stop and `am start -W` returned `Status: ok` and
+  `LaunchState: COLD`. No app-data clear, uninstall, signing-key replacement,
+  vault/model removal, or biometric automation was performed.
+- Installation and cold launch are confirmed only. Preservation of existing
+  records/model after biometric unlock, saved-food correction quality, Save
+  and reopen, catalog re-match, cancellation, photo-removal Cancel, rotation,
+  keyboard reachability, and TalkBack still require member-led physical checks.
+  No raw device screenshot or member record was captured for this install.
+
+### Partial photo-draft schema recovery — 2026-09-30
+
+- With the member's authorization for this active test run, a local ADB read of
+  the opt-in debug capture showed a structured meal response rejected after
+  about 34.6 seconds as `invalid_group`. The model used a grouped-item kind
+  outside the parser's enum and a second nonstandard evidence token. The
+  reduced test JPEG was inspected and removed from the development machine;
+  no photo, model prose, meal names, or device identity was added to the repo.
+  The app-private capture should still be cleared by the member's Clear control
+  or vault lock.
+- The parser now normalizes only an explicit, unambiguous added group/evidence
+  alias while retaining its earlier safe aliases. It validates foods
+  independently, keeps only valid siblings in a visibly partial draft, and
+  falls back to manual entry for an invalid root or no valid foods. Unknown
+  fields, free-text evidence, invalid portions, and unsupported groups are not
+  guessed into accepted foods. A partial result has low overall confidence,
+  bounded omitted-food count, and a fixed `draft_partial` audit/capture outcome.
+- The result and review screens disclose omitted suggestions. Catalog-backed
+  nutrition saved from such a review is marked partial even when all retained
+  foods have matches. The review's 12-food limit no longer silently discards a
+  validated food when a catalog hint splits another name. At the cap, the
+  notice explains that a food must be removed before adding a missing one.
+  Meal Save and deterministic nutrition still require member review.
+- Independent review found and prompted preservation of earlier parser aliases
+  and singleton groups, and the partial-nutrition coverage fix. The full
+  Android gate from `native-android` passed:
+  `.\gradlew.bat :app:testDebugUnitTest :app:assembleDebug --no-daemon`;
+  238 tests, 0 failures, 0 errors, and debug APK assembled. `git diff --check`
+  passed. The new APK has **not** been installed. No physical photo-analysis,
+  visual-accuracy, nutrition, thermal, or privacy acceptance is claimed from
+  automated tests.
+- Next bounded task: with explicit in-place install approval, have the member
+  unlock and run one cool-device photo analysis, verify review contents and
+  partial/full labeling against the photo, then test Save/reopen without
+  assuming the model's food identities or portions are correct. Do not treat
+  this schema recovery as proof of several-meals-per-day reliability.
+
+### Partial photo-draft APK installed in place — 2026-09-30
+
+- After member approval and the 238-test Android gate, selected one current
+  ADB transport for the Samsung SM-S928B (Android 16 / API 36). `adb install -r`
+  returned `Success`; force-stop and `am start -W` returned `Status: ok` and
+  `LaunchState: COLD`. No app-data clear, uninstall, signing-key change,
+  vault/model deletion, or biometric automation was performed.
+- After biometric unlock, the member confirmed that existing records remained
+  intact. One photo analysis ran on the installed build, and the member reported
+  that the proposed foods matched the photo and the partial-draft notice matched
+  what was shown. This is a successful member-observed check for that one photo,
+  not evidence of reliable recognition across varied meals or repeated warm
+  runs. The member also reported that a photo with two separate dishes reached
+  review and offered a remembered-dish suggestion for a provisional food label,
+  rather than silently replacing it. The member accepted the suggestion, saved
+  and reopened the meal, and confirmed that the corrected food label persisted.
+  The corrected entry also appeared in Progress's calories/protein meal list.
+  This passes the named save/reopen and cross-screen label check for that meal;
+  nutrition-value accuracy and partial-coverage persistence, cancellation,
+  keyboard/rotation accessibility, and thermal behavior remain unverified.
+
+### Saved partial-estimate resave guard — 2026-09-30
+
+- A read-only path audit found that the first reviewed Save preserves a partial
+  catalog estimate, and vault reload and Progress display it, but the saved-meal
+  editor could recalculate it as full on a later Save when every retained food
+  row had a catalog match. Foods omitted from the photo proposal are not saved
+  as rows, so that recalculation could overstate coverage.
+- The editor now conservatively retains an existing partial catalog coverage
+  flag when rebuilding nutrition. Missing current matches still produce partial
+  coverage; no catalog totals still produce no estimate. Nutrition values and
+  the encrypted vault format are unchanged. Four focused policy cases cover
+  these outcomes. Independent review found no material defect in the fix.
+- The full Android gate from `native-android` passed:
+  `.\gradlew.bat :app:testDebugUnitTest :app:assembleDebug --no-daemon`;
+  242 tests, 0 failures, 0 errors, and debug APK assembled. No installation
+  or physical acceptance is claimed for this build.
+- Next bounded task: after explicit in-place install approval, have the member
+  save a photo review that says suggestions were omitted, verify the Partial
+  estimate marker in Progress, open Edit and Save without filling the missing
+  foods, then confirm the marker remains. Compare the visible nutrition values
+  with the reviewed foods; broader repeated-meal and thermal gates remain open.
+
+### Saved partial-estimate guard installed in place — 2026-09-30
+
+- After member approval and the 242-test Android gate, selected one current ADB
+  transport for the Samsung SM-S928B (Android 16 / API 36). `adb install -r`
+  returned `Success`; force-stop and `am start -W` returned `Status: ok` and
+  `LaunchState: COLD`. No data clear, uninstall, signing-key replacement,
+  vault/model deletion, or biometric automation was performed.
+- Following the requested unchanged Edit/Save check, the member reported that
+  "Partial estimate" still appears in Progress. This passes that specific
+  member-observed resave-label check; it does not establish nutrition-value
+  accuracy or reliability across other meals. Existing-record preservation was
+  requested but not separately confirmed in this exchange.
+- Next bounded task: compare the saved estimate with the foods and portions the
+  member actually confirmed, then exercise a small varied photo set on cool
+  and warm starts without treating one correct proposal as daily-use acceptance.
+
+### Saved partial-meal nutrition spot check — 2026-09-30
+
+- For the same saved partial meal, the member compared its food names, portions,
+  nutrition matches, and displayed calories/protein in the editor and Progress,
+  then reported that they match after an unchanged Save. The Partial estimate
+  label also remained visible. This is a member-observed consistency check for
+  one entry, not independent validation of the food database values or broad
+  photo-recognition accuracy. No private values or screenshots were collected.
+- Next bounded task: establish a consented varied-photo baseline, separating
+  novel from repeat meals and malformed from visually wrong drafts, before
+  claiming several-meals-per-day reliability or changing suggestion ranking.
+
+### Varied-photo pilot protocol prepared — 2026-09-30
+
+- `docs/vision-benchmark-protocol.md` now defines a member-led first pilot:
+  about eight novel-meal photos and four newly photographed repeat meals across
+  cool and consecutive warm runs. It separates technical rejection from valid
+  but visually wrong drafts, tracks missed/unsupported foods and review effort,
+  and uses existing metadata audit and standard ADB device metrics. It keeps
+  photos, meal identities, model text, and record values out of the repository.
+- This is a protocol only. No test set has been selected or consented to, no
+  varied-photo runs or thermal measurements were performed, and no daily-use
+  reliability gate is marked passed. The installed APK is unchanged; the last
+  Android gate remains 242 tests with debug assembly successful.
+- Next bounded task: ask the member to select a small first set of photos and
+  approve a session, then run and score one cool-device photo before attempting
+  consecutive warm analyses. No raw debug capture read without separate
+  active-run authorization.
+
+### Three-dish same-photo retest — 2026-09-30
+
+- The member reanalysed a three-dish photo that had failed the prior day and
+  reported an accurate current draft. This is an exact-photo retest, not a
+  novel or newly photographed repeat result in the varied-photo pilot. No
+  duration, thermal measurement, or raw capture was collected.
+- The member clarified that the remembered-dish suggestion was correct for the
+  second dish and was explicitly accepted; the saved entry contained the
+  correct dish. The confusion was visual placement: the suggestion card sat
+  between the first and second dish cards, making its target unclear. Code
+  inspection confirms the suggestion card is rendered *before* its associated
+  dish card. This is a presentation issue, not evidence of a false match or
+  automatic application. Do not count this exact-photo retest as varied-photo
+  reliability.
+- Next bounded task: place each suggestion after its associated dish card and
+  name the target dish explicitly; verify the three-dish reading order on the
+  phone after the full Android gate and an approved in-place install.
+
+### Saved-dish suggestion target clarified — 2026-09-30
+
+- Meal review now places each remembered-dish suggestion directly after its
+  associated dish card and labels it "Suggestion for [dish name]" as an
+  accessible heading. Accept/reject still targets the same dish ID; retrieval
+  scoring, whole-photo fallback, and persisted meal behavior are unchanged.
+  The screen contract now requires an unambiguous target and reading order.
+- The full Android gate from `native-android` passed:
+  `.\gradlew.bat :app:testDebugUnitTest :app:assembleDebug --no-daemon`;
+  242 tests, 0 failures, 0 errors, and debug APK assembled. A focused review
+  mode test passed. No Compose UI test infrastructure currently checks the
+  visual order. `git diff --check` passed.
+- The APK has not been installed. Physical acceptance remains pending for the
+  three-dish review, keyboard/scroll and enlarged-text layout, and verifying
+  the correct dish is still saved only after explicit acceptance.
+- Next bounded task: request in-place installation approval, then have the
+  member reanalyse the same photo once on a cool phone and confirm the
+  suggestion follows the fried-items card with its target label. Do not count
+  that same-photo run toward novel/repeat-new-photo reliability.
+
+### Suggestion-placement APK installed in place — 2026-09-30
+
+- After explicit member approval and the 242-test gate, selected one current
+  ADB transport for the Samsung SM-S928B (Android 16 / API 36). `adb install -r`
+  returned `Success`; force-stop and `am start -W` returned `Status: ok` and
+  `LaunchState: COLD`. No data clear, uninstall, signing change, vault/model
+  removal, or biometric automation occurred.
+- Installation and launch are confirmed only. The member still needs to unlock,
+  verify existing records, and check the three-dish suggestion placement on the
+  phone. No physical visual/accessibility acceptance is claimed yet.
+- After the requested member-led three-dish review, the member reported the
+  suggestion placement "fixed." This passes the targeted visual association
+  check for that layout on this device. The reply did not separately confirm
+  existing-record preservation, enlarged text, TalkBack, rotation, or wider
+  meal-photo reliability. The same-photo rerun is not counted as a novel or
+  newly photographed repeat benchmark sample.
+- Next bounded task: begin the consented varied-photo pilot with a genuinely
+  new meal photo, tracking visual correctness and suggestion relevance
+  separately. Avoid repeated hot-phone analysis.
+
+### Visible meal-review exit and edited-draft guard — 2026-09-30
+
+- On the installed Samsung SM-S928B (Android 16 / API 36), authorized compact
+  layout and one temporary visual inspection showed Save reviewed meal as the
+  only labelled bottom action; the header had only a Back icon. The temporary
+  screenshot was removed from the development machine and not saved in the
+  repository. Code review confirmed Back closed review without a meal write,
+  but the route for leaving without saving was not visible at the action area.
+- Meal review now has a persistent secondary **Leave without saving** action.
+  An untouched or fully reverted draft exits immediately; save-relevant edits
+  prompt **Leave without saving?** with **Keep reviewing** and **Leave without
+  saving**. Header Back and Android Back use the same guard; keyboard Back
+  still hides the keyboard first, and dish-editor Back still closes that editor.
+  Confirmed leave uses the existing no-save dismiss path. Initial draft state
+  and the leave dialog survive configuration recreation. A code review caught
+  and corrected an initial dialog-wiring defect before the full gate; a second
+  independent review found no remaining material defect.
+- Seven focused policy tests cover clean, edited, reverted, individual
+  save-relevant fields, and baseline save/restore. The full Android gate from
+  `native-android` passed:
+  `.\gradlew.bat :app:testDebugUnitTest :app:assembleDebug --no-daemon`;
+  246 tests, 0 failures, 0 errors, and debug APK assembled. No Compose UI-test
+  infrastructure currently verifies actual button/Back interactions.
+- The APK has not been installed. Physical checks still needed: clean leave,
+  edited leave/Keep reviewing/confirmed leave, no new meal or learning after
+  leaving, bottom actions with keyboard and three-button navigation, rotation,
+  and enlarged text. Existing-record preservation remains to be confirmed
+  after any in-place install.
+- Next bounded task: request explicit in-place install approval, then have the
+  member exercise the leave paths on one review without saving a duplicate meal.
+
+### Visible review-exit APK installed in place — 2026-10-01
+
+- After explicit member approval and the 246-test Android gate, selected a
+  current ADB transport for the Samsung SM-S928B (Android 16 / API 36).
+  `adb install -r` returned `Success`; force-stop and `am start -W` returned
+  `Status: ok` and `LaunchState: COLD`. No data clear, uninstall, signing
+  change, vault/model removal, or biometric automation occurred.
+- Installation and launch are confirmed only. The member still needs to unlock,
+  verify existing records, and exercise clean leave, edited leave/Keep
+  reviewing/confirmed leave, and bottom actions with keyboard/system bars.
+  Rotation and enlarged-text checks remain open. No physical acceptance is
+  claimed from the automated gate or installation.
+- Next bounded task: ask the member to verify the visible leave action and
+  confirmation on one review without saving a duplicate meal, then record the
+  observed device outcome.
+
+### Grouped sauce proposal recovery — 2026-10-01
+
+- With explicit member authorization for this active debug run, inspected the
+  opt-in image-development capture through local ADB. The sanitized outcome
+  was `draft_partial` / `invalid_group`: a visible sauce was proposed as a
+  separately grouped ingredient, but its group kind was outside the parser's
+  accepted vocabulary. Other valid foods reached review. The temporary
+  reduced photo on the development machine was removed; no raw response,
+  photo, or member record was placed in the repository.
+- The parser now accepts only the additional explicit `sauce` group kind and
+  still validates each nested ingredient normally. Two focused tests cover a
+  valid sauce with no omissions and a malformed sauce ingredient that remains
+  visibly partial. Unknown group kinds remain rejected.
+- Full Android gate from `native-android` passed:
+  `.\gradlew.bat :app:testDebugUnitTest :app:assembleDebug --no-daemon`;
+  248 tests, 0 failures, 0 errors, and debug APK assembled. This build is not
+  installed. Physical confirmation of the grouped-sauce review and nutrition
+  coverage is pending; prior member feedback does not validate this new APK.
+- Next bounded task: request in-place installation approval, then have the
+  member analyse a sauce-containing meal once on a cool phone and confirm the
+  sauce appears for review without a false omitted-suggestion warning.
+
+### Grouped-sauce APK installed in place — 2026-10-01
+
+- After explicit member approval and the 248-test gate, selected a current
+  ADB transport for the Samsung SM-S928B (Android 16 / API 36). `adb install -r`
+  returned `Success`; force-stop and `am start -W` returned `Status: ok` and
+  `LaunchState: COLD`. No data clear, uninstall, signing change, vault/model
+  removal, or biometric automation occurred.
+- Installation and launch are confirmed only. The member still needs to unlock,
+  verify existing records, and test a visible-sauce analysis. No physical
+  acceptance of the parser change is claimed yet.
+- Next bounded task: ask the member to run one sauce-containing photo on a
+  cool phone and report whether the sauce is visible in review and the
+  omitted-suggestion warning is absent; do not save an unwanted duplicate.
+
+### Grouped-sauce physical check — 2026-10-01
+
+- On the installed Samsung SM-S928B (Android 16 / API 36), the member analysed
+  a sauce-containing meal and reported that the creamy sauce appeared in review
+  with no omitted-suggestion warning. This passes the targeted grouped-sauce
+  presentation check for that photo and installed build.
+- The member did not report a save/reopen, nutrition-total comparison, existing
+  record inventory, or accessibility/rotation check in this turn. Those gates
+  remain open; the single photo does not establish broader vision reliability.
+- Next bounded task: finish the meal-review leave-without-saving physical
+  checks, then continue the consented varied-photo pilot with genuinely new
+  photos and separately track detection, partial coverage, and saved values.
+
+### Explicit unsaved meal-draft discard — 2026-10-01
+
+- The member confirmed that leaving review should keep the original proposal,
+  but asked for a way to remove it without killing Metria. Photo and text meal
+  proposal cards now have a secondary **Discard draft** action. A short
+  confirmation distinguishes it from **Leave without saving**: **Keep draft**
+  preserves the proposal; confirmed discard clears only that unsaved proposal
+  (and its unsaved photo thumbnail for a photo draft). Saved meals, the vault,
+  and visible conversation are unchanged. The controls use 48 dp targets.
+- The final Android unit-test/build gate passed with 248 tests, 0 failures,
+  0 errors, and a debug APK. `git diff --check` passed. No Compose UI-test
+  source set exists, and this APK has not been installed; no physical
+  acceptance is claimed.
+- Next bounded task: after an approved in-place install, verify Keep draft and
+  confirmed Discard draft on a photo proposal and a text proposal, check that
+  saved meals and the visible chat remain, and exercise keyboard, Back,
+  rotation, enlarged text, and screen-reader reading order.
+
+### Unsaved-draft discard APK installed in place — 2026-10-01
+
+- After explicit member approval and the 248-test Android gate, selected one
+  current ADB transport for the Samsung SM-S928B (Android 16 / API 36).
+  `adb install -r` returned `Success`; force-stop and `am start -W` returned
+  `Status: ok` and `LaunchState: COLD`. No data clear, uninstall, signing-key
+  change, vault/model removal, or biometric automation was performed.
+- Installation and launch only are confirmed. The member still needs to unlock,
+  confirm existing records, and test Keep draft and confirmed Discard draft on
+  an unsaved proposal. No physical interaction or accessibility acceptance is
+  claimed yet.
+
+### Unsaved-draft discard member check — 2026-10-02
+
+- On the installed Samsung SM-S928B (Android 16 / API 36), the member reported
+  that the requested discard interaction worked. This is a targeted,
+  member-observed phone check. The reply did not distinguish photo from text
+  proposal or separately confirm both choices in the dialog, existing-record
+  preservation, keyboard and Back behavior, rotation, enlarged text, or
+  TalkBack. Those checks remain open; automated results alone are not physical
+  acceptance for them.
+- Next bounded task: begin the consented varied-photo pilot with new photos,
+  tracking visual correctness, omissions, correction effort, duration, and
+  thermal behavior separately. Do not read raw capture without authorization
+  for that diagnostic run.

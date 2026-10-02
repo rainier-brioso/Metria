@@ -15,6 +15,42 @@ may discuss meals, nutrition, weight, goals, progress, saved dishes, general wel
 brief greetings, and small talk. It redirects unrelated requests and never pretends to
 browse the web.
 
+## Member-selected response style
+
+The member may choose **Balanced** (default), **Coach**, or **Records assistant** in
+Local assistant settings. This is a presentation preference, not a different agent or
+permission level. Balanced is warm and concise; Coach is more reflective and offers
+at most one optional next step; Records assistant leads with the direct answer and
+record coverage. Every style remains neutral about food, weight, and adherence and
+uses the member's language. None may change tool selection, data access, factual
+auditing, action confirmation, privacy, or medical-safety boundaries. Changing the
+style rebuilds model context without resending a completed member turn or deleting
+the encrypted visible conversation. Older vaults default to Balanced.
+
+Knowing more of the member's recorded history is a separate capability decision.
+The current `today` and rolling-seven-day tools must not imply there are no older
+records. A future history-coverage map or broader query must expose only bounded,
+fresh vault evidence and preserve the same factual-output audit; style selection
+alone cannot make historical claims.
+
+For an explicit meal-list, weight, or nutrition question about one day within
+the existing 90-day read window, the host requires the matching exact-day read.
+This includes unambiguous named calendar dates in Spanish or English and ISO
+dates. An omitted year resolves to the most recent past occurrence; ambiguous
+numeric dates, multiple dates, future dates, and dates outside the window do
+not trigger a record read and receive a clarification instead.
+It must not accept a tool call for another day or reinterpret a nutrition-total
+request as a meal-list query. A day-specific nutrition result is calculated
+locally from saved meals, distinguishes complete, partial, and missing estimates,
+and never treats an absent estimate as zero or recorded meals as total intake.
+The exact-day read exposes member-appropriate rounded estimate values to the
+model and factual auditor while leaving saved meal values and deterministic
+underlying arithmetic unchanged; it must not leak floating-point artifacts or
+claim precision the source does not support.
+The answer's claimed date must match the read range. Current nutrition goals
+must not be presented as historical goals. All-time coverage and multi-day
+historical nutrition aggregates require separate bounded contracts.
+
 ## Native turn protocol
 
 ```text
@@ -47,6 +83,11 @@ member message
 | `read_meals` | `days_ago` (0–90), optional `meal_slot` | bounded meal names/dates/slots |
 | `search_saved_dishes` | short `query` | at most the local matcher candidates |
 
+The later exact-day extension adds `read_day_nutrition(days_ago)` for one day
+within 0–90 days. It returns that day's recorded-meal nutrition estimates and
+coverage, with the exact date and as-of date; it does not grant arbitrary vault
+access or historical goal lookup.
+
 `week` always means the rolling last seven calendar days including today. Broad personal
 questions such as “How am I doing?” and “¿Cómo va mi semana?” use
 `read_progress_overview`; a generic capability list is not an acceptable answer. If the model
@@ -61,6 +102,11 @@ for `search_saved_dishes`; generic AI-memory prose is not accepted as an answer.
 ingredient follow-up after conversation reconstruction reuses only the previous dish name as a
 query and performs a fresh vault read. For compound dishes, presentation separates the dish name
 from its component list without silently deleting uncertain member data.
+
+Record-backed prose calls these the member's records, not the assistant's
+records. It answers the requested question and its coverage first, without a
+generic trailing offer or question. Coach may suggest one relevant optional
+next step only when it adds value and does not imply new evidence.
 
 Explicit write requests temporarily retain the already-tested router during Gate A.
 Gate D moves weight recording and meal drafting into native tool calls only after durable
@@ -106,9 +152,30 @@ their roles or associate them with the wrong record.
 
 One local corrective retry may ask the same conversation either to use an approved read tool or to
 rewrite strictly from the latest result. If the corrected answer still contains an unsupported
-claim, it fails closed, the native conversation is discarded, and the member sees a neutral retry
-message. The audit stores and logs neither the answer nor the tool payload; its evidence object is
-immutable and scoped to the active continuation only.
+claim, the native conversation is discarded. Normally the member sees a neutral retry message;
+the bounded nutrition follow-up exception below can show a host-composed answer. The audit stores
+and logs neither the answer nor the tool payload; its evidence object is immutable and scoped to
+the active continuation only.
+
+For a short calorie or protein follow-up with an inherited period, the host may instead display a
+brief deterministic answer from that turn's validated `read_nutrition_summary` result after model
+wording fails the audit. It must match the requested metric and period, pass the same factual audit,
+state when no recorded estimate is available, and discard the unsafe native conversation. This
+fallback never uses visible history as factual evidence.
+
+### Development-only trace
+
+With explicit member opt-in in a debug build, Metria may retain a short,
+app-private, no-backup trace of typed request stages, approved tool categories,
+bounded periods, and audit outcomes. The trace is off by default, expires within
+24 hours, and has a member-visible clear action. It contains no prompt, model
+prose, tool arguments or results, record values, hidden reasoning, or raw
+exception text. It is separate from the encrypted conversation and recovery
+archive; release builds neither record nor expose it. The existing latest raw
+model response remains in memory only and clears on lock/background.
+This assistant trace is separate from the session-only, debug-build image
+development capture described in `m1-product-safety-foundation.md`; enabling
+the latter never adds raw content to the assistant trace or chat history.
 
 ## Failure and recovery
 

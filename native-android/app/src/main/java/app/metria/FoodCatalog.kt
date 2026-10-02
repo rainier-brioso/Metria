@@ -381,7 +381,13 @@ object FoodCatalog {
     }
 
     private fun personalCorrectionScore(food: CatalogFood, assistantFoodName: String, corrections: List<FoodCorrection>): Int =
-        corrections.filter { searchKey(it.observedName) == searchKey(assistantFoodName) && it.confirmedFoodId == food.fdcId }.sumOf(FoodCorrection::count)
+        corrections.filter { correction ->
+            // Legacy corrections have no meal provenance. Keep them in encrypted archives for member recovery,
+            // but never let an untraceable hint affect future catalog suggestions.
+            val sourceMealId = correction.sourceMealId ?: return@filter false
+            FoodCorrectionValidation.valid(correction, setOf(sourceMealId)) &&
+                searchKey(correction.observedName) == searchKey(assistantFoodName) && correction.confirmedFoodId == food.fdcId
+        }.sumOf(FoodCorrection::count)
 
     private fun expandAliases(query: String): String {
         var normalized = " ${searchKey(query)} "

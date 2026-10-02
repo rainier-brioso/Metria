@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -47,6 +48,8 @@ import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -183,6 +186,8 @@ fun MetriaAssistantConversationScreen(
     input: String,
     onInputChange: (String) -> Unit,
     assistantThinking: Boolean,
+    assistantStopping: Boolean,
+    responseStopped: Boolean,
     mealDraftThinking: Boolean,
     streamingReply: String?,
     assistantDiagnostic: String?,
@@ -199,6 +204,7 @@ fun MetriaAssistantConversationScreen(
     onEditSavedWeight: (WeightEntry) -> Unit,
     onUndoSavedWeight: (WeightEntry) -> Unit,
     onReviewMeal: (MealProposal) -> Unit,
+    onDiscardMealDraft: () -> Unit,
     onToggleVoice: () -> Unit,
     onSend: () -> Unit,
 ) {
@@ -207,6 +213,8 @@ fun MetriaAssistantConversationScreen(
     var confirmNewConversation by remember { mutableStateOf(false) }
     val transientCount = listOfNotNull(
         assistantThinking.takeIf { it },
+        assistantStopping.takeIf { it },
+        responseStopped.takeIf { it },
         mealDraftThinking.takeIf { it },
         savedWeight,
         mealProposal,
@@ -242,6 +250,12 @@ fun MetriaAssistantConversationScreen(
                         ThinkingBubble(streamingReply = streamingReply, onCancel = onCancelAssistant)
                     }
                 }
+                if (assistantStopping) {
+                    item { StoppingBubble() }
+                }
+                if (responseStopped) {
+                    item { StatusCard("Response stopped", "You can send another message.") }
+                }
                 if (mealDraftThinking) {
                     item {
                         StatusCard("Preparing a meal draft", "You will review it before anything is saved.")
@@ -254,7 +268,7 @@ fun MetriaAssistantConversationScreen(
                 }
                 mealProposal?.let { proposal ->
                     item {
-                        MealDraftCard(proposal, onReviewMeal)
+                        MealDraftCard(proposal, onReviewMeal, onDiscardMealDraft)
                     }
                 }
                 assistantDiagnostic?.let { message -> item { ErrorMessage(message) } }
@@ -267,7 +281,7 @@ fun MetriaAssistantConversationScreen(
                 preparingVoice = preparingVoice,
                 voiceMessage = voiceMessage,
                 modelReady = modelReady,
-                assistantBusy = assistantThinking || mealDraftThinking,
+                assistantBusy = assistantThinking || assistantStopping || mealDraftThinking,
                 onToggleVoice = onToggleVoice,
                 onSend = onSend,
             )
@@ -286,6 +300,27 @@ fun MetriaAssistantConversationScreen(
             },
             dismissButton = { TextButton(onClick = { confirmNewConversation = false }) { Text("Keep conversation") } },
         )
+    }
+}
+
+@Composable
+private fun StoppingBubble() {
+    Surface(
+        color = MetriaColors.Surface,
+        shape = MaterialTheme.shapes.medium,
+        modifier = Modifier.widthIn(max = 340.dp).semantics {
+            liveRegion = LiveRegionMode.Polite
+            contentDescription = "Stopping Metria's response"
+        },
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+            Text("Stopping…", color = MetriaColors.Ink)
+        }
     }
 }
 
@@ -392,9 +427,9 @@ private fun ThinkingBubble(streamingReply: String?, onCancel: () -> Unit) {
             streamingReply?.takeIf(String::isNotBlank)?.let { SafeMarkdownText(it, MetriaColors.Ink) } ?: TypingDots()
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text(if (streamingReply.isNullOrBlank()) "Thinking locally" else "Finishing this reply", color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall)
-                TextButton(onClick = onCancel) {
+                FilledTonalButton(onClick = onCancel, modifier = Modifier.heightIn(min = 48.dp)) {
                     Icon(Icons.Rounded.Stop, contentDescription = null, modifier = Modifier.padding(end = 4.dp).size(18.dp))
-                    Text("Stop")
+                    Text("Stop response")
                 }
             }
         }
@@ -447,13 +482,14 @@ private fun SavedWeightCard(entry: WeightEntry, onEdit: (WeightEntry) -> Unit, o
 }
 
 @Composable
-private fun MealDraftCard(proposal: MealProposal, onReview: (MealProposal) -> Unit) {
+private fun MealDraftCard(proposal: MealProposal, onReview: (MealProposal) -> Unit, onDiscard: () -> Unit) {
     Card(colors = CardDefaults.cardColors(containerColor = MetriaColors.PrimarySoft)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Meal draft ready", style = MaterialTheme.typography.titleMedium)
             Text(proposal.items.joinToString { it.name }, color = MetriaColors.InkMuted)
             Text("Review portions and ingredients before saving.", color = MetriaColors.Estimated, style = MaterialTheme.typography.bodySmall)
             TextButton(onClick = { onReview(proposal) }, modifier = Modifier.fillMaxWidth()) { Text("Review meal") }
+            MealDraftDiscardAction(onDiscard = onDiscard)
         }
     }
 }

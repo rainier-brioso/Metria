@@ -33,6 +33,11 @@ class MetriaReadToolSet : ToolSet {
         @ToolParam(description = "Optional breakfast, lunch, dinner, or snack filter.") meal_slot: String? = null,
     ): Map<String, Any> = hostExecutionOnly("read_meals", "$days_ago:${meal_slot.orEmpty()}")
 
+    @Tool(description = "Read nutrition estimates from meals recorded on exactly one relative day within the last 90 days. Returns recorded estimates and coverage only, never a historical goal or complete-intake claim.")
+    fun read_day_nutrition(
+        @ToolParam(description = "Exact day offset from today, from 0 through 90. Zero is today.") days_ago: Int,
+    ): Map<String, Any> = hostExecutionOnly("read_day_nutrition", days_ago.toString())
+
     @Tool(description = "Search the member's private saved dishes by a short food or dish name.")
     fun search_saved_dishes(
         @ToolParam(description = "A short dish or food query, between 2 and 120 characters.") query: String,
@@ -77,6 +82,10 @@ object MetriaNativeToolCallAdapter {
                 val mealSlot = arguments.string("meal_slot")
                 if (mealSlot != null && mealSlot !in MealSlots.allowed) return null
                 PrivateCoachToolCall(intent = name, daysAgo = daysAgo, mealSlot = mealSlot)
+            }
+            "read_day_nutrition" -> {
+                val daysAgo = arguments.int("days_ago")?.takeIf { it in 0..90 } ?: return null
+                PrivateCoachToolCall(intent = name, period = "historical_day", daysAgo = daysAgo)
             }
             "search_saved_dishes" -> {
                 val query = arguments.string("query")?.takeIf { it.length in 2..120 } ?: return null
@@ -194,19 +203,38 @@ class MetriaAgentFactEvidence private constructor(
     internal val weightChangeValues: Set<String>,
     internal val containsVaultFacts: Boolean,
     internal val period: String?,
+    internal val requestedMetric: String?,
+    internal val dayOffset: Int?,
     internal val weightRecords: List<MetriaWeightRecordFact>,
     internal val weightTransition: MetriaWeightTransitionFact?,
     internal val mealRecords: List<MetriaMealRecordFact>,
     internal val nutritionFacts: List<MetriaNutritionFact>,
     internal val countFacts: List<MetriaCountFact>,
     internal val savedDishes: List<MetriaSavedDishFact>,
+    internal val responseDateRange: ClosedRange<java.time.LocalDate>?,
+    internal val responseAsOf: java.time.LocalDate?,
 ) {
+    internal fun calendarReferenceDay(): java.time.LocalDate? = responseAsOf
+        ?: responseDateRange?.endInclusive
+        ?: (weightRecords.map(MetriaWeightRecordFact::date) + mealRecords.map(MetriaMealRecordFact::date))
+            .mapNotNull { runCatching { java.time.LocalDate.parse(it) }.getOrNull() }
+            .maxOrNull()
+
     companion object {
         fun from(toolName: String, response: Map<String, Any?>): MetriaAgentFactEvidence {
             val numbers = linkedSetOf<String>()
             collectNumbers(response, numbers)
             val normalizedToolName = toolName.trim().lowercase()
+            val responseDateRange: ClosedRange<java.time.LocalDate>? = runCatching<ClosedRange<java.time.LocalDate>?> {
+                val from = response["from"]?.toString()?.let(java.time.LocalDate::parse)
+                val to = response["to"]?.toString()?.let(java.time.LocalDate::parse)
+                if (from == null || to == null) null else minOf(from, to)..maxOf(from, to)
+            }.getOrNull()
+            val responseAsOf = runCatching { response["as_of"]?.toString()?.let(java.time.LocalDate::parse) }.getOrNull()
             val period = response.string("period")?.let(::canonicalPeriod)
+            val requestedMetric = response.string("requested_metric")?.takeIf { it in setOf("protein", "calories") }
+            val dayOffset = (response["days_ago"] as? Number)?.toInt()
+                ?.takeIf { (response["days_ago"] as? Number)?.toDouble() == it.toDouble() }
             val entryWeights = response.listOfMaps("entries").mapNotNull { entry ->
                 val date = entry.string("date") ?: return@mapNotNull null
                 val kilograms = entry.numberValues("kilograms")
@@ -243,6 +271,10 @@ class MetriaAgentFactEvidence private constructor(
                 val selectedPeriod = period ?: return@buildList
                 addNutritionFact(nutrition, selectedPeriod, "calories", "actual", "calories_kcal")
                 addNutritionFact(nutrition, selectedPeriod, "protein", "actual", "protein_g")
+                addNutritionFact(nutrition, selectedPeriod, "calories", "complete", "complete_calories_kcal")
+                addNutritionFact(nutrition, selectedPeriod, "protein", "complete", "complete_protein_g")
+                addNutritionFact(nutrition, selectedPeriod, "calories", "partial", "partial_calories_kcal")
+                addNutritionFact(nutrition, selectedPeriod, "protein", "partial", "partial_protein_g")
                 addNutritionFact(nutrition, selectedPeriod, "calories", "goal", "calorie_goal_kcal")
                 addNutritionFact(nutrition, selectedPeriod, "protein", "goal", "protein_goal_g")
                 addNutritionFact(progress, selectedPeriod, "calories", "progress", "calorie_goal_percent")
@@ -297,12 +329,16 @@ class MetriaAgentFactEvidence private constructor(
                 weightChangeValues = explicitChange?.let(::signedNumericCandidates).orEmpty(),
                 containsVaultFacts = response["source"] == "metria_local_vault",
                 period = period,
+                requestedMetric = requestedMetric,
+                dayOffset = dayOffset,
                 weightRecords = weights,
                 weightTransition = weightTransition,
                 mealRecords = meals,
                 nutritionFacts = nutritionFacts,
                 countFacts = counts,
                 savedDishes = savedDishes,
+                responseDateRange = responseDateRange,
+                responseAsOf = responseAsOf,
             )
         }
 
@@ -387,6 +423,7 @@ class MetriaAgentFactEvidence private constructor(
         private fun canonicalPeriod(raw: String): String? = when (normalizeWords(raw)) {
             "today" -> "today"
             "week", "last_7_days", "last_7_days_including_today" -> "week"
+            "historical_day" -> "historical_day"
             else -> null
         }
     }
@@ -449,9 +486,20 @@ object MetriaAgentFactAuditor {
         RegexOption.IGNORE_CASE,
     )
     private val proteinMetricWord = Regex("""\b(?:prote[ií]na|protein)\b""", RegexOption.IGNORE_CASE)
-    private val goalWords = Regex("""\b(?:goal|target|objetivo|meta)\b""", RegexOption.IGNORE_CASE)
+    private val goalBeforeValue = Regex(
+        """(?:^|[\s,;:])(?:goal|target|objetivo|meta)\b\s*[:=-]?\s*(?:\p{L}+\s+){0,4}$""",
+        RegexOption.IGNORE_CASE,
+    )
+    private val goalAfterValue = Regex(
+        """^\s*(?:(?:de|as|for)\s+(?:the\s+)?)?(?:goal|target|objetivo|meta)\b""",
+        RegexOption.IGNORE_CASE,
+    )
     private val todayWords = Regex("""\b(?:today|hoy|daily|diari[oa])\b""", RegexOption.IGNORE_CASE)
     private val weekWords = Regex("""\b(?:week|weekly|semana|semanal|7\s+d[ií]as|7\s+days)\b""", RegexOption.IGNORE_CASE)
+    private val pastWeekWords = Regex(
+        """\b(?:(?:last|previous|past)\s+week|(?:semana\s+pasada|semana\s+anterior))\b""",
+        RegexOption.IGNORE_CASE,
+    )
     private val negativeResult = Regex("""\b(?:no|none|ningun[oa]?|sin)\b""", RegexOption.IGNORE_CASE)
     private val mealCountValue = Regex(
         """\b(\d+)\s+(?:recorded\s+)?(?:meals?|comidas?)\b""",
@@ -506,10 +554,31 @@ object MetriaAgentFactAuditor {
         }
 
         val withoutListOrdinals = text.replace(Regex("(?m)^\\s*\\d{1,2}[.)]\\s+"), "")
-        val unsupportedNumber = numberToken.findAll(withoutListOrdinals)
+        val calendarClaims = if (evidence.toolName in setOf("read_meals", "read_weight", "read_day_nutrition")) {
+            val asOf = evidence.calendarReferenceDay()
+            asOf?.let { day ->
+                MetriaCalendarDayPolicy.scan(withoutListOrdinals, day).also { scan ->
+                    if (scan.unsupported) return MetriaAgentFactAudit(null, "unsupported_personal_fact")
+                }.claims
+            }.orEmpty()
+        } else emptyList()
+        val withoutCalendarDates = calendarClaims.sortedByDescending { it.range.first }
+            .fold(withoutListOrdinals) { current, claim ->
+                current.replaceRange(claim.range, " ".repeat(claim.range.last - claim.range.first + 1))
+            }
+        // Relative-day words are validated against the response's exact date range below;
+        // they are not standalone personal numeric claims.
+        val numberScanText = relativeDayClaim.replace(normalizeWords(withoutCalendarDates), "")
+        val unsupportedNumber = numberToken.findAll(numberScanText)
             .map(MatchResult::value)
             .firstOrNull { token -> numericCandidates(token).none(evidence.allowedNumbers::contains) }
         if (unsupportedNumber != null) return MetriaAgentFactAudit(null, "unsupported_personal_fact")
+
+        // The nutrition summary's week is the rolling seven days including today. Reject
+        // historical wording even when the sentence contains no numeric claim to bind.
+        if (evidence.period == "week" && pastWeekWords.containsMatchIn(normalized)) {
+            return MetriaAgentFactAudit(null, "unsupported_personal_fact")
+        }
 
         if (!typedBindingsAreValid(withoutListOrdinals, evidence)) {
             return MetriaAgentFactAudit(null, "unsupported_personal_fact")
@@ -530,6 +599,7 @@ object MetriaAgentFactAuditor {
     private fun typedBindingsAreValid(text: String, evidence: MetriaAgentFactEvidence): Boolean {
         val clauses = factClauses(text)
         return clauses.all { clause ->
+            datesStayWithinResponseRange(clause, evidence) &&
             weightRecordBindingsAreValid(clause, evidence) &&
                 mealRecordBindingsAreValid(clause, evidence) &&
                 nutritionBindingsAreValid(clause, evidence) &&
@@ -537,6 +607,42 @@ object MetriaAgentFactAuditor {
                 savedDishBindingsAreValid(clause, evidence) &&
                 typedNumbersAreExplicit(clause, evidence)
         }
+    }
+
+    private fun datesStayWithinResponseRange(clause: String, evidence: MetriaAgentFactEvidence): Boolean {
+        val relativeClaims = relativeDayClaim.findAll(normalizeWords(clause)).toList()
+        // Relative dates need both the host's real as-of day and an authorized read range.
+        // A returned record date alone cannot establish what "today" means.
+        if (evidence.toolName in setOf("read_meals", "read_weight", "read_day_nutrition") &&
+            relativeClaims.isNotEmpty() &&
+            (evidence.responseAsOf == null || evidence.responseDateRange == null)
+        ) return false
+        val range = evidence.responseDateRange ?: return true
+        if (evidence.toolName !in setOf("read_meals", "read_weight", "read_day_nutrition")) return true
+        if (evidence.toolName == "read_day_nutrition" && range.start != range.endInclusive) return false
+        val asOf = evidence.calendarReferenceDay() ?: return evidence.toolName != "read_day_nutrition"
+        val calendar = MetriaCalendarDayPolicy.scan(clause, asOf)
+        if (calendar.unsupported || calendar.claims.any { it.day !in range }) return false
+        if (evidence.toolName == "read_day_nutrition") {
+            val offset = evidence.dayOffset ?: return false
+            if (evidence.period != "historical_day" || offset !in 0..90 || range.start != range.endInclusive ||
+                range.start != asOf.minusDays(offset.toLong())
+            ) return false
+        }
+        if (evidence.toolName == "read_day_nutrition" &&
+            (calorieValue.containsMatchIn(clause) || proteinValue.containsMatchIn(clause)) &&
+            calendar.claims.isEmpty() && relativeClaims.isEmpty()
+        ) return false
+        return relativeClaims.all { match ->
+            val offset = relativeDayOffset(match)
+            offset != null && range.contains(asOf.minusDays(offset.toLong()))
+        }
+    }
+
+    private val relativeDayClaim = MetriaAgentGroundingPolicy.relativeDayClaim
+
+    private fun relativeDayOffset(match: MatchResult): Int? {
+        return MetriaAgentGroundingPolicy.relativeDayOffset(match.value)
     }
 
     private fun weightRecordBindingsAreValid(clause: String, evidence: MetriaAgentFactEvidence): Boolean {
@@ -548,7 +654,7 @@ object MetriaAgentFactAuditor {
                 } == true
             }
         ) return false
-        val dates = isoDate.findAll(clause).toList()
+        val dates = evidence.calendarReferenceDay()?.let { MetriaCalendarDayPolicy.scan(clause, it).claims }.orEmpty()
         val weights = weightValue.findAll(clause)
             .filterNot { match -> isWeightChange(clause, match) }
             .toList()
@@ -565,14 +671,14 @@ object MetriaAgentFactAuditor {
                 kotlin.math.abs(weightMatch.range.first - dateMatch.range.first)
             } ?: return@all false
             evidence.weightRecords.any { fact ->
-                fact.date == dateMatch.value && numericCandidates(nearestWeight.groupValues[1]).any(fact.kilograms::contains)
+                fact.date == dateMatch.day.toString() && numericCandidates(nearestWeight.groupValues[1]).any(fact.kilograms::contains)
             }
         } && weights.all { weightMatch ->
             val nearestDate = dates.minByOrNull { dateMatch ->
                 kotlin.math.abs(dateMatch.range.first - weightMatch.range.first)
             } ?: return@all false
             evidence.weightRecords.any { fact ->
-                fact.date == nearestDate.value && numericCandidates(weightMatch.groupValues[1]).any(fact.kilograms::contains)
+                fact.date == nearestDate.day.toString() && numericCandidates(weightMatch.groupValues[1]).any(fact.kilograms::contains)
             }
         }
     }
@@ -592,15 +698,15 @@ object MetriaAgentFactAuditor {
             }.map { index -> meal to index }.toList()
         }
         val namedMeals = titleOccurrences.map { it.first }.distinct()
-        val dates = isoDate.findAll(clause).toList()
+        val dates = evidence.calendarReferenceDay()?.let { MetriaCalendarDayPolicy.scan(clause, it).claims }.orEmpty()
         if (dates.isNotEmpty() && namedMeals.isNotEmpty()) {
             return dates.all { date ->
                 titleOccurrences.minByOrNull { (_, index) -> kotlin.math.abs(index - date.range.first) }
                     ?.first
-                    ?.date == date.value
+                    ?.date == date.day.toString()
             } && titleOccurrences.all { (meal, index) ->
                 dates.minByOrNull { date -> kotlin.math.abs(date.range.first - index) }
-                    ?.value == meal.date
+                    ?.day?.toString() == meal.date
             }
         }
         if (!personalRecordClaim.containsMatchIn(normalized) || hasCollectionCountLanguage(normalized)) return true
@@ -612,6 +718,8 @@ object MetriaAgentFactAuditor {
 
     private fun nutritionBindingsAreValid(clause: String, evidence: MetriaAgentFactEvidence): Boolean {
         if (evidence.nutritionFacts.isEmpty()) return true
+        if (evidence.requestedMetric == "protein" && calorieValue.containsMatchIn(clause)) return false
+        if (evidence.requestedMetric == "calories" && proteinValue.containsMatchIn(clause)) return false
         if (!ratioBindingsAreValid(clause, calorieRatio, "calories", evidence)) return false
         if (!ratioBindingsAreValid(clause, proteinRatio, "protein", evidence)) return false
         if (!metricBindingsAreValid(calorieRatio.replace(clause, ""), calorieValue, "calories", evidence)) return false
@@ -685,12 +793,25 @@ object MetriaAgentFactAuditor {
         metric: String,
         evidence: MetriaAgentFactEvidence,
     ): Boolean = pattern.findAll(clause).all { match ->
-        val contextStart = (match.range.first - 28).coerceAtLeast(0)
-        val contextEnd = (match.range.last + 28).coerceAtMost(clause.lastIndex)
+        val contextStart = (match.range.first - 72).coerceAtLeast(0)
+        val contextEnd = (match.range.last + 72).coerceAtMost(clause.lastIndex)
         val localContext = clause.substring(contextStart, contextEnd + 1)
-        val role = if (goalWords.containsMatchIn(localContext)) "goal" else "actual"
-        periodMatches(localContext, evidence.period) && evidence.hasNutrition(metric, role, match.groupValues[1])
+        val before = clause.substring(contextStart, match.range.first)
+        val after = clause.substring(match.range.last + 1, contextEnd + 1)
+        val goalBefore = goalBeforeValue.containsMatchIn(before)
+        val goalAfter = goalAfterValue.containsMatchIn(after)
+        val role = if (goalBefore || goalAfter) "goal" else "actual"
+        val nutritionRole = when {
+            goalBefore || goalAfter -> "goal"
+            partialNutritionWords.containsMatchIn(localContext) -> "partial"
+            completeNutritionWords.containsMatchIn(localContext) -> "complete"
+            else -> role
+        }
+        periodMatches(localContext, evidence.period) && evidence.hasNutrition(metric, nutritionRole, match.groupValues[1])
     }
+
+    private val partialNutritionWords = Regex("""\b(?:partial|parcial(?:es)?)\b""", RegexOption.IGNORE_CASE)
+    private val completeNutritionWords = Regex("""\b(?:complete|complet[oa]s?)\b""", RegexOption.IGNORE_CASE)
 
     private fun periodMatches(clause: String, evidencePeriod: String?): Boolean = when {
         evidencePeriod == null -> true
@@ -759,6 +880,7 @@ object MetriaAgentFactAuditor {
             dishCountValue,
             confirmationCountValue,
         ).flatMap { pattern -> pattern.findAll(clause).map { it.range }.toList() }
+            .plus(evidence.calendarReferenceDay()?.let { MetriaCalendarDayPolicy.scan(clause, it).claims.map(MetriaCalendarDayPolicy.Claim::range) }.orEmpty())
         return numberToken.findAll(clause).all { number ->
             recognizedRanges.any { range -> number.range.first >= range.first && number.range.last <= range.last }
         }
@@ -816,16 +938,37 @@ data class RequiredAgentTool(
     val name: String,
     val period: String? = null,
     val query: String? = null,
+    val metric: String? = null,
+    val daysAgo: Int? = null,
+    val fromDaysAgo: Int? = null,
+    val toDaysAgo: Int? = null,
+    val targetDate: java.time.LocalDate? = null,
 ) {
     val retryInstruction: String = when (name) {
         "read_progress_overview" ->
             "Grounding correction: this question asks about the member's personal progress. " +
                 "Call $name with period=$period now. Do not answer with prose or a capability list before the tool result."
+        "read_nutrition_summary" ->
+            "Grounding correction: this question asks about the member's personal nutrition. " +
+                "Call $name with period=$period now. Do not answer with prose or reuse an earlier tool result."
         "search_saved_dishes" ->
             "Grounding correction: this question asks about a private saved dish. " +
                 "Call $name with query=${query.orEmpty()} now. Do not discuss AI memory or answer with prose before the tool result."
+        "read_meals" ->
+            "Grounding correction: call read_meals with days_ago=$daysAgo and meal_slot=null now. Do not answer before the exact tool result."
+        "read_day_nutrition" ->
+            "Grounding correction: call read_day_nutrition with days_ago=$daysAgo now. Do not use a different day or infer a historical goal."
+        "read_weight" ->
+            "Grounding correction: call read_weight with from_days_ago=$fromDaysAgo and to_days_ago=$toDaysAgo now. Do not answer before the exact tool result."
         else -> "Grounding correction: call $name now before answering."
     }
+
+    fun accepts(call: PrivateCoachToolCall?): Boolean = call != null &&
+        name.equals(call.intent, ignoreCase = true) &&
+        (period == null || period == call.period) &&
+        (daysAgo == null || (call.daysAgo == daysAgo && call.mealSlot == null)) &&
+        (fromDaysAgo == null || call.fromDaysAgo == fromDaysAgo) &&
+        (toDaysAgo == null || call.toDaysAgo == toDaysAgo)
 }
 
 /**
@@ -834,6 +977,52 @@ data class RequiredAgentTool(
  * generic prose instead.
  */
 object MetriaAgentGroundingPolicy {
+    private val historicalMealQuestion = Regex(
+        "\\b(?:que\\s+comi|que\\s+he\\s+comido|what\\s+did\\s+i\\s+(?:eat|have))\\b",
+        RegexOption.IGNORE_CASE,
+    )
+    private val historicalNutritionMetricQuestion = Regex(
+        "\\b(?:cuant[oa]s?|how\\s+many|how\\s+much|consumi|consume|comi|eati|intake|gramos?|grams?|kcal|calori|protein|nutrition|nutricion|calories)\\b",
+        RegexOption.IGNORE_CASE,
+    )
+    private val historicalWeightQuestion = Regex(
+        "\\b(?:cuanto\\s+pesaba|cual\\s+era\\s+mi\\s+peso|how\\s+much\\s+did\\s+i\\s+weigh|what\\s+was\\s+my\\s+weight)\\b",
+        RegexOption.IGNORE_CASE,
+    )
+    private val historicalEnglishUnit = "(?:one|two|three|four|five|six|seven|eight|nine)"
+    private val historicalEnglishNumber = "(?:zero|a|an|$historicalEnglishUnit|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|" +
+        "twenty(?:[- ]$historicalEnglishUnit)?|thirty(?:[- ]$historicalEnglishUnit)?|forty(?:[- ]$historicalEnglishUnit)?|" +
+        "fifty(?:[- ]$historicalEnglishUnit)?|sixty(?:[- ]$historicalEnglishUnit)?|seventy(?:[- ]$historicalEnglishUnit)?|" +
+        "eighty(?:[- ]$historicalEnglishUnit)?|ninety)"
+    private val historicalSpanishUnit = "(?:un|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve)"
+    private val historicalSpanishNumber = "(?:cero|$historicalSpanishUnit|diez|once|doce|trece|catorce|quince|dieciseis|diecisiete|dieciocho|diecinueve|veinte|" +
+        "veinti$historicalSpanishUnit|treinta(?:\\s+y\\s+$historicalSpanishUnit)?|cuarenta(?:\\s+y\\s+$historicalSpanishUnit)?|" +
+        "cincuenta(?:\\s+y\\s+$historicalSpanishUnit)?|sesenta(?:\\s+y\\s+$historicalSpanishUnit)?|setenta(?:\\s+y\\s+$historicalSpanishUnit)?|" +
+        "ochenta(?:\\s+y\\s+$historicalSpanishUnit)?|noventa)"
+    private val historicalDayNumber = "(?:\\d+|$historicalEnglishNumber|$historicalSpanishNumber)"
+    internal val relativeDayClaim = Regex(
+        """\b(?:hoy|today|ayer|yesterday|anteayer|day\s+before\s+yesterday|hace\s+$historicalDayNumber\s+dias?|$historicalDayNumber\s+days?\s+ago)\b""",
+        RegexOption.IGNORE_CASE,
+    )
+    private val historicalDay = Regex(
+        "\\b(?:hace\\s+($historicalDayNumber)\\s+dias?|($historicalDayNumber)\\s+days?\\s+ago|" +
+            "ayer|yesterday|hoy|today)\\b",
+        RegexOption.IGNORE_CASE,
+    )
+    private val historicalSmallNumbers = mapOf(
+        "zero" to 0, "cero" to 0, "one" to 1, "a" to 1, "an" to 1, "un" to 1, "uno" to 1, "una" to 1,
+        "two" to 2, "dos" to 2, "three" to 3, "tres" to 3, "four" to 4, "cuatro" to 4,
+        "five" to 5, "cinco" to 5, "six" to 6, "seis" to 6, "seven" to 7, "siete" to 7,
+        "eight" to 8, "ocho" to 8, "nine" to 9, "nueve" to 9, "ten" to 10, "diez" to 10,
+        "eleven" to 11, "once" to 11, "twelve" to 12, "doce" to 12, "thirteen" to 13, "trece" to 13,
+        "fourteen" to 14, "catorce" to 14, "fifteen" to 15, "quince" to 15, "sixteen" to 16, "dieciseis" to 16,
+        "seventeen" to 17, "diecisiete" to 17, "eighteen" to 18, "dieciocho" to 18, "nineteen" to 19, "diecinueve" to 19,
+    )
+    private val historicalTens = mapOf(
+        "twenty" to 20, "veinte" to 20, "thirty" to 30, "treinta" to 30, "forty" to 40, "cuarenta" to 40,
+        "fifty" to 50, "cincuenta" to 50, "sixty" to 60, "sesenta" to 60, "seventy" to 70, "setenta" to 70,
+        "eighty" to 80, "ochenta" to 80, "ninety" to 90, "noventa" to 90,
+    )
     private val broadProgressPhrases = listOf(
         "how am i doing",
         "how is my week",
@@ -849,10 +1038,61 @@ object MetriaAgentGroundingPolicy {
     private val savedDishQuestion = Regex(
         """(?iu)^\s*[¿?]?\s*(?:recuerdas|recuerda|te\s+acuerdas\s+de|tienes\s+guardad[oa]|has\s+guardado|do\s+you\s+remember|remember)\s+(?:mi|mis|el|la|my|the)?\s*(.+?)\s*[?!.]*\s*$""",
     )
+    private val nutritionFollowUp = Regex(
+        """(?iu)^\s*[¿?]?\s*(?:y|and)\s+(?:de\s+)?(calor(?:[ií]as?|ies?)|kcal|prote[ií]nas?|proteins?)\s*[?!.]*\s*$""",
+    )
+    private val nutritionMetric = Regex(
+        """\b(?:nutricion|nutrition|calor(?:ias?|ies?)|kcal|prote(?:ina|inas)|proteins?)\b""",
+        RegexOption.IGNORE_CASE,
+    )
+    private val nutritionGoal = Regex("""\b(?:objetivos?|metas?|goals?|targets?)\b""", RegexOption.IGNORE_CASE)
+    private val nutritionPeriod = Regex(
+        """\b(?:today|hoy|this\s+week|esta\s+semana|weekly|semanal)\b""",
+        RegexOption.IGNORE_CASE,
+    )
+    private val nutritionPerDay = Regex(
+        """\b(?:daily|diari[oa]|diariamente|al\s+d[ií]a|(?:each|every|per)\s+day|cada\s+d[ií]a|todos\s+los\s+d[ií]as|por\s+d[ií]a|day\s+by\s+day|d[ií]a\s+a\s+d[ií]a)\b""",
+        RegexOption.IGNORE_CASE,
+    )
+    private val nutritionPastWeek = Regex(
+        """\b(?:(?:last|previous|past)\s+week|(?:semana\s+pasada|semana\s+anterior))\b""",
+        RegexOption.IGNORE_CASE,
+    )
+    private val nutritionQuantityQuestion = Regex(
+        """\b(?:cuant[oa]s?|how\s+many|how\s+much)\b""",
+        RegexOption.IGNORE_CASE,
+    )
+    private val nutritionRecordedTotalAction = Regex(
+        """\b(?:registr\w*|anotad\w*|apuntad\w*|consum\w*|inger\w*|com[ií]|eaten|ate|log(?:ged)?|record(?:ed)?|register(?:ed|s|ing)?|track(?:ed)?)\b""",
+        RegexOption.IGNORE_CASE,
+    )
+    private val nutritionCurrentDayPeriod = Regex("""\b(?:today|hoy)\b""", RegexOption.IGNORE_CASE)
+    private val nutritionRollingWeekPeriod = Regex(
+        """\b(?:(?:this|the\s+current)\s+week|esta\s+semana|(?:last|past|previous)\s+(?:7|seven)\s+days|[uú]ltimos?\s+(?:7|siete)\s+d[ií]as)\b""",
+        RegexOption.IGNORE_CASE,
+    )
+    private val nutritionUnsupportedPeriod = Regex(
+        """\b(?:(?:this|last|past|previous)\s+month|este\s+mes|mes\s+pasado|(?:last|past|previous)\s+30\s+days|(?:ultimos?|pasados?)\s+30\s+dias)\b""",
+        RegexOption.IGNORE_CASE,
+    )
+    private val nutritionAdviceModal = Regex(
+        """\b(?:should|could|would|deberia|podria|convendria)\b""",
+        RegexOption.IGNORE_CASE,
+    )
+    private val nutritionGoalComparisonStart = Regex(
+        """^(?:cumpli|alcance|logre|consegui|llegue\s+a|he\s+(?:cumplido|alcanzado|logrado|conseguido)|did\s+i\s+(?:meet|hit|reach|achieve)|have\s+i\s+(?:met|hit|reached|achieved))\b""",
+        RegexOption.IGNORE_CASE,
+    )
+    private val voicePrefix = Regex("""(?i)^\s*voice:\s*""")
+    private val weekPeriodWords = Regex(
+        """\b(?:week|weekly|semana|semanal|7\s+d[ií]as|7\s+days)\b""",
+        RegexOption.IGNORE_CASE,
+    )
 
     fun requiredTool(
         memberText: String,
         history: List<PrivateConversationMessage> = emptyList(),
+        today: java.time.LocalDate = java.time.LocalDate.now(),
     ): RequiredAgentTool? {
         savedDishQuestion.matchEntire(memberText)?.groupValues?.getOrNull(1)
             ?.trim()
@@ -860,6 +1100,58 @@ object MetriaAgentGroundingPolicy {
             ?.let { query -> return RequiredAgentTool("search_saved_dishes", query = query) }
         val normalized = java.text.Normalizer.normalize(memberText.lowercase(), java.text.Normalizer.Form.NFD)
             .replace(Regex("\\p{M}+"), "")
+        val calendar = MetriaCalendarDayPolicy.scan(memberText, today, rejectNumericDates = true)
+        if (historicalRecordQuestion(normalized) && calendar.hasExpression) {
+            if (calendar.unsupported || calendar.claims.size != 1 || historicalDay.containsMatchIn(normalized)) return null
+            val daysAgo = java.time.temporal.ChronoUnit.DAYS.between(calendar.claims.single().day, today).toInt()
+            val targetDate = calendar.claims.single().day
+            return when {
+                historicalNutritionQuestion(normalized) -> RequiredAgentTool(
+                    "read_day_nutrition", period = "historical_day",
+                    metric = historicalNutritionMetric(normalized), daysAgo = daysAgo, targetDate = targetDate,
+                )
+                historicalMealQuestion.containsMatchIn(normalized) -> RequiredAgentTool(
+                    "read_meals", daysAgo = daysAgo, targetDate = targetDate,
+                )
+                historicalWeightQuestion.containsMatchIn(normalized) -> RequiredAgentTool(
+                    "read_weight", fromDaysAgo = daysAgo, toDaysAgo = daysAgo, targetDate = targetDate,
+                )
+                else -> null
+            }
+        }
+        if (historicalRecordQuestion(normalized) &&
+            (hasUnparsedRelativeDay(normalized) || hasMultipleRelativeDayOffsets(normalized))
+        ) return null
+        historicalDay.find(normalized)?.let { dayMatch ->
+            val daysAgo = historicalOffset(dayMatch)
+            if (daysAgo != null && daysAgo in 0..90) {
+                when {
+                    daysAgo > 0 && historicalNutritionQuestion(normalized) ->
+                        return RequiredAgentTool(
+                            "read_day_nutrition",
+                            period = "historical_day",
+                            metric = historicalNutritionMetric(normalized),
+                            daysAgo = daysAgo,
+                        )
+                    historicalMealQuestion.containsMatchIn(normalized) ->
+                        return RequiredAgentTool("read_meals", daysAgo = daysAgo)
+                    historicalWeightQuestion.containsMatchIn(normalized) ->
+                        return RequiredAgentTool("read_weight", fromDaysAgo = daysAgo, toDaysAgo = daysAgo)
+                }
+            }
+        }
+        nutritionGoalComparison(normalized)?.let { (period, metric) ->
+            return RequiredAgentTool("read_nutrition_summary", period, metric = metric)
+        }
+        nutritionRecordedTotal(normalized)?.let { (period, metric) ->
+            return RequiredAgentTool("read_nutrition_summary", period, metric = metric)
+        }
+        val followUp = nutritionFollowUp.matchEntire(memberText)
+        if (followUp != null) {
+            val recentPeriod = inheritedNutritionPeriod(history)
+            val metric = if (followUp.groupValues[1].startsWith("prot", ignoreCase = true)) "protein" else "calories"
+            recentPeriod?.let { return RequiredAgentTool("read_nutrition_summary", it, metric = metric) }
+        }
         if (
             listOf("que lleva", "que contiene", "sus ingredientes", "what is in it", "what does it contain", "its ingredients")
                 .any { phrase -> phrase in normalized }
@@ -878,6 +1170,299 @@ object MetriaAgentGroundingPolicy {
         val period = if ("today" in normalized || "hoy" in normalized) "today" else "week"
         return RequiredAgentTool("read_progress_overview", period)
     }
+
+    /** Deterministic no-read boundary for historical requests outside supported contracts. */
+    fun historicalClarification(memberText: String, today: java.time.LocalDate = java.time.LocalDate.now()): String? {
+        val normalized = normalizeWords(memberText)
+        if (historicalRecordQuestion(normalized)) {
+            val calendar = MetriaCalendarDayPolicy.scan(memberText, today, rejectNumericDates = true)
+            if (calendar.hasExpression) {
+                return if (calendar.unsupported || calendar.claims.size != 1 || historicalDay.containsMatchIn(normalized)) {
+                    historicalLimitClarification(normalized)
+                } else null
+            }
+        }
+        if (historicalRecordQuestion(normalized) &&
+            (hasUnparsedRelativeDay(normalized) || hasMultipleRelativeDayOffsets(normalized))
+        ) return historicalLimitClarification(normalized)
+        val dayMatch = historicalDay.find(normalized)
+        if (dayMatch == null) {
+            return if (hasUnparsedRelativeDay(normalized) && historicalRecordQuestion(normalized)) {
+                historicalLimitClarification(normalized)
+            } else null
+        }
+        val daysAgo = historicalOffset(dayMatch) ?: return if (hasUnparsedRelativeDay(normalized) && historicalRecordQuestion(normalized)) {
+            historicalLimitClarification(normalized)
+        } else null
+        val isSpanish = normalized.any { it in 'á'..'ú' } || Regex("\\b(?:que|comi|consumi|calorias|proteina|hace|dias)\\b").containsMatchIn(normalized)
+        val hasNutritionMetric = historicalNutritionQuestion(normalized)
+        if (hasNutritionMetric && daysAgo > 0) {
+            if (daysAgo <= 90) return null
+        }
+        if (daysAgo !in 0..90) {
+            return historicalLimitClarification(normalized)
+        }
+        return null
+    }
+
+    private val englishRelativeDayToken =
+        "(?:zero|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|and|several|few|couple|many)"
+    private val explicitRelativeDayPhrase = Regex(
+        """\bhace\s+([a-z0-9]+(?:\s+(?:y\s+)?[a-z0-9]+){0,5})\s+dias?\b|\b($englishRelativeDayToken(?:[- ]+$englishRelativeDayToken){0,5})\s+days?\s+ago\b""",
+        RegexOption.IGNORE_CASE,
+    )
+
+    private fun historicalRecordQuestion(normalized: String): Boolean =
+        historicalMealQuestion.containsMatchIn(normalized) ||
+            historicalWeightQuestion.containsMatchIn(normalized) ||
+            historicalNutritionQuestion(normalized)
+
+    private fun hasUnparsedRelativeDay(normalized: String): Boolean =
+        explicitRelativeDayPhrase.findAll(normalized).any { phrase ->
+            val raw = phrase.groupValues.drop(1).firstOrNull(String::isNotEmpty) ?: return@any true
+            parseHistoricalDays(raw)?.let { it !in 0..90 } ?: true
+        }
+
+    private fun hasMultipleRelativeDayOffsets(normalized: String): Boolean =
+        historicalDay.findAll(normalized)
+            .mapNotNull(::historicalOffset)
+            .distinct()
+            .take(2)
+            .count() > 1
+
+    private fun historicalLimitClarification(normalized: String): String {
+        val isSpanish = Regex("""\b(?:que|comi|consumi|calorias|proteina|hace|dias|peso)\b""")
+            .containsMatchIn(normalized)
+        return if (isSpanish) {
+            "Puedo consultar comidas, peso y nutrición de un día concreto hasta 90 días atrás. Indica un día dentro de ese límite."
+        } else {
+            "I can check meals, weight, and nutrition for one specific day up to 90 days ago. Please choose a day within that limit."
+        }
+    }
+
+    private fun parseHistoricalDays(raw: String): Int? {
+        val normalized = normalizeWords(raw).replace('-', ' ').trim().replace(Regex("\\s+"), " ")
+        normalized.toIntOrNull()?.let { return it }
+        historicalSmallNumbers[normalized]?.let { return it }
+        if (normalized.startsWith("veinti")) {
+            val unit = historicalSmallNumbers[normalized.removePrefix("veinti")] ?: return null
+            return 20 + unit
+        }
+        val words = normalized.split(' ').filterNot { it == "y" }
+        val tens = historicalTens[words.firstOrNull()] ?: return null
+        if (words.size == 1) return tens
+        val unit = historicalSmallNumbers[words.getOrNull(1)] ?: return null
+        return tens + unit
+    }
+
+    private fun historicalOffset(dayMatch: MatchResult): Int? {
+        val text = normalizeWords(dayMatch.value)
+        if (text.startsWith("ayer") || text.startsWith("yesterday")) return 1
+        if (text.startsWith("anteayer") || text.startsWith("day before yesterday")) return 2
+        if (text.startsWith("hoy") || text.startsWith("today")) return 0
+        val raw = dayMatch.groupValues.drop(1).firstOrNull { it.isNotEmpty() } ?: return null
+        return parseHistoricalDays(raw)
+    }
+
+    fun relativeDayOffset(claim: String): Int? =
+        historicalDay.find(normalizeWords(claim))?.let(::historicalOffset)?.takeIf { it in 0..90 }
+
+    private fun historicalNutritionQuestion(normalized: String): Boolean =
+        nutritionMetric.containsMatchIn(normalized) && historicalNutritionMetricQuestion.containsMatchIn(normalized)
+
+    fun historicalNutritionMetric(memberText: String): String? {
+        val normalized = normalizeWords(memberText)
+        val hasProtein = Regex("\\b(?:proteina|proteinas|proteins?)\\b").containsMatchIn(normalized)
+        val hasCalories = Regex("\\b(?:calorias?|calories?|kcal)\\b").containsMatchIn(normalized)
+        return when {
+            hasProtein == hasCalories -> null
+            hasProtein -> "protein"
+            else -> "calories"
+        }
+    }
+
+    private fun nutritionGoalComparison(normalized: String): Pair<String, String?>? {
+        val question = normalized.trim().removePrefix("¿").trim()
+        if (!nutritionGoalComparisonStart.containsMatchIn(question) ||
+            !nutritionMetric.containsMatchIn(question) ||
+            !nutritionGoal.containsMatchIn(question) ||
+            !nutritionPeriod.containsMatchIn(question) ||
+            nutritionPerDay.containsMatchIn(question) ||
+            nutritionPastWeek.containsMatchIn(question)
+        ) return null
+        val hasProtein = Regex("""\b(?:prote(?:ina|inas)|proteins?)\b""", RegexOption.IGNORE_CASE)
+            .containsMatchIn(question)
+        val hasCalories = Regex("""\b(?:calor(?:ias?|ies?)|kcal)\b""", RegexOption.IGNORE_CASE)
+            .containsMatchIn(question)
+        val metric = when {
+            hasProtein && hasCalories -> null
+            hasProtein -> "protein"
+            hasCalories -> "calories"
+            else -> return null
+        }
+        val hasToday = Regex("""\b(?:today|hoy)\b""", RegexOption.IGNORE_CASE).containsMatchIn(question)
+        val hasWeek = Regex("""\b(?:this\s+week|esta\s+semana|weekly|semanal)\b""", RegexOption.IGNORE_CASE)
+            .containsMatchIn(question)
+        if (hasToday == hasWeek) return null
+        val period = if (hasToday) "today" else "week"
+        return period to metric
+    }
+
+    /** Requires one explicit supported period, one metric, and a direct amount/recorded-total ask. */
+    private fun nutritionRecordedTotal(normalized: String): Pair<String, String>? {
+        if (!nutritionQuantityQuestion.containsMatchIn(normalized) ||
+            !nutritionRecordedTotalAction.containsMatchIn(normalized) ||
+            nutritionPerDay.containsMatchIn(normalized) ||
+            nutritionPastWeek.containsMatchIn(normalized) ||
+            nutritionUnsupportedPeriod.containsMatchIn(normalized) ||
+            nutritionAdviceModal.containsMatchIn(normalized)
+        ) return null
+
+        val hasProtein = Regex("""\b(?:proteina|proteinas|protein|proteins)\b""")
+            .containsMatchIn(normalized)
+        val hasCalories = Regex("""\b(?:caloria|calorias|calorie|calories|kcal)\b""")
+            .containsMatchIn(normalized)
+        val metric = when {
+            hasProtein && hasCalories -> return null
+            hasProtein -> "protein"
+            hasCalories -> "calories"
+            else -> return null
+        }
+
+        val hasToday = nutritionCurrentDayPeriod.containsMatchIn(normalized)
+        val hasWeek = nutritionRollingWeekPeriod.containsMatchIn(normalized)
+        if (hasToday == hasWeek) return null
+        return (if (hasToday) "today" else "week") to metric
+    }
+
+    private fun inheritedNutritionPeriod(history: List<PrivateConversationMessage>): String? {
+        history.asReversed()
+            .asSequence()
+            .filter(PrivateConversationMessage::fromMember)
+            .map { it.text.replaceFirst(voicePrefix, "").trim() }
+            .filterNot { it.equals("Voice request received locally.", ignoreCase = true) }
+            .take(3)
+            .forEach { message ->
+                val prior = normalizeWords(message)
+                when {
+                    nutritionPastWeek.containsMatchIn(prior) -> return null
+                    "today" in prior || "hoy" in prior -> return "today"
+                    weekPeriodWords.containsMatchIn(prior) -> return "week"
+                    nutritionFollowUp.matches(message) -> Unit
+                    else -> return null
+                }
+            }
+        return null
+    }
+}
+
+/** A record-only answer for a short nutrition follow-up when model prose fails the final audit. */
+object MetriaNutritionReplyFallback {
+    fun from(requiredTool: RequiredAgentTool?, response: Map<String, Any?>): String? {
+        if (requiredTool?.name == "read_day_nutrition") return historicalDay(requiredTool, response)
+        if (requiredTool?.name != "read_nutrition_summary" || requiredTool.metric !in setOf("protein", "calories")) return null
+        if (response["source"] != "metria_local_vault") return null
+        val evidence = MetriaAgentFactEvidence.from("read_nutrition_summary", response)
+        if (evidence.period != requiredTool.period || evidence.period !in setOf("today", "week")) return null
+        val nutrition = response["nutrition"] as? Map<*, *> ?: return null
+        val actualKey = if (requiredTool.metric == "protein") "protein_g" else "calories_kcal"
+        if (!nutrition.containsKey(actualKey)) return null
+        if (nutrition[actualKey] != null &&
+            evidence.nutritionFacts.none { it.metric == requiredTool.metric && it.role == "actual" &&
+                it.values.any(::validNonnegativeNumber) }
+        ) return null
+        val spanish = response["reply_language"] == "Spanish"
+        val period = if (spanish) {
+            if (evidence.period == "week") "en los últimos 7 días" else "hoy"
+        } else {
+            if (evidence.period == "week") "in the last 7 days" else "today"
+        }
+        val metric = requiredTool.metric
+        val actual = evidence.nutritionFacts.firstOrNull { it.metric == metric && it.role == "actual" }
+            ?.values?.firstOrNull()?.takeIf(::validNonnegativeNumber)
+        val goal = evidence.nutritionFacts.firstOrNull { it.metric == metric && it.role == "goal" }
+            ?.values?.firstOrNull()?.takeIf(::validNonnegativeNumber)
+        val unit = if (metric == "protein") {
+            if (spanish) "g de proteína" else "g protein"
+        } else "kcal"
+        val base = when {
+            actual == null && spanish -> "No hay una estimación de ${if (metric == "protein") "proteína" else "calorías"} $period en las comidas registradas en Metria."
+            actual == null -> "No ${if (metric == "protein") "protein" else "calorie"} estimate is available $period from meals recorded in Metria."
+            spanish -> "Las comidas registradas en Metria $period suman una estimación de $actual $unit."
+            else -> "Meals recorded in Metria $period total an estimated $actual $unit."
+        }
+        val goalSentence = goal?.let {
+            if (spanish) " Objetivo: $it $unit."
+            else " Goal: $it $unit."
+        }.orEmpty()
+        return listOf(base + goalSentence, base).firstOrNull {
+            MetriaAgentFactAuditor.audit(it, evidence).acceptedText == it
+        }
+    }
+
+    private fun historicalDay(requiredTool: RequiredAgentTool, response: Map<String, Any?>): String? {
+        val daysAgo = requiredTool.daysAgo?.takeIf { it in 0..90 } ?: return null
+        val metric = requiredTool.metric?.takeIf { it in setOf("protein", "calories") } ?: return null
+        if (requiredTool.period != "historical_day" || response["source"] != "metria_local_vault" ||
+            response["period"] != "historical_day" || response["days_ago"] != daysAgo ||
+            response["requested_metric"] != metric
+        ) return null
+        val evidence = MetriaAgentFactEvidence.from("read_day_nutrition", response)
+        val range = evidence.responseDateRange?.takeIf { it.start == it.endInclusive } ?: return null
+        val asOf = evidence.responseAsOf ?: return null
+        if (range.start != asOf.minusDays(daysAgo.toLong()) || evidence.dayOffset != daysAgo) return null
+        val nutrition = response["nutrition"] as? Map<*, *> ?: return null
+        val spanish = response["reply_language"] == "Spanish"
+        val name = if (metric == "protein") {
+            if (spanish) "proteína" else "protein"
+        } else if (spanish) "calorías" else "calories"
+        val unit = if (metric == "protein") {
+            if (spanish) "g de proteína" else "g protein"
+        } else "kcal"
+        val actualKey = if (metric == "protein") "protein_g" else "calories_kcal"
+        val actualValue = nutrition[actualKey]
+        val actual = actualValue?.toString()?.takeIf(::validNonnegativeNumber)?.let { raw ->
+            raw.toBigDecimalOrNull()?.setScale(if (metric == "protein") 1 else 0, java.math.RoundingMode.HALF_UP)?.toPlainString()
+        } ?: run {
+            if (actualValue != null) return null
+            val missing = if (spanish) {
+                "No hay una estimación de $name en las comidas registradas en Metria el ${range.start}."
+            } else {
+                "No $name estimate is available in meals recorded in Metria on ${range.start}."
+            }
+            return missing.takeIf { MetriaAgentFactAuditor.audit(it, evidence).acceptedText == it }
+        }
+        if (evidence.nutritionFacts.none { it.metric == metric && it.role == "actual" && it.values.any(::validNonnegativeNumber) }) return null
+        val meals = response["meals"] as? Map<*, *>
+        val partialCount = (meals?.get("partial_estimate_count") as? Number)?.toInt() ?: 0
+        val missingCount = (meals?.get("missing_nutrition_count") as? Number)?.toInt() ?: 0
+        val answer = if (spanish) {
+            "Las comidas registradas en Metria el ${range.start} suman una estimación de $actual $unit."
+        } else {
+            "Meals recorded in Metria on ${range.start} total an estimate of $actual $unit."
+        }
+        val qualifiedAnswer = if (missingCount > 0 && spanish) {
+            answer.replace("Las comidas registradas", "Las estimaciones disponibles de las comidas registradas")
+        } else if (missingCount > 0) {
+            "Available estimates from meals recorded in Metria on " + answer.removePrefix("Meals recorded in Metria on ")
+        } else answer
+        val coverage = buildList {
+            if (partialCount > 0) add(
+                if (spanish) "Algunas comidas tienen estimaciones parciales."
+                else "Some meals have partial estimates."
+            )
+            if (missingCount > 0) add(
+                if (spanish) "Algunas comidas registradas no tienen estimaci\u00f3n nutricional."
+                else "Some recorded meals have no nutrition estimate."
+            )
+        }.joinToString(" ")
+        val withCoverage = if (coverage.isNotEmpty()) "$qualifiedAnswer $coverage" else answer
+        val candidates = if (partialCount > 0 || missingCount > 0) listOf(withCoverage) else listOf(answer)
+        return candidates.firstOrNull { MetriaAgentFactAuditor.audit(it, evidence).acceptedText == it }
+    }
+
+    private fun validNonnegativeNumber(value: String): Boolean =
+        value.toBigDecimalOrNull()?.let { it.signum() >= 0 } == true
 }
 
 /** Transitional boundary: explicit writes keep their already-tested route until Gate D. */

@@ -31,4 +31,18 @@ class LocalAnalysisAuditTest {
             outcome = "draft_ready",
         )))
     }
+
+    @Test
+    fun acceptsPartialDraftOutcomeWithFixedOmissionCategory() {
+        val started = Instant.parse("2026-08-09T16:00:00Z")
+        assertTrue(LocalAnalysisAuditValidation.valid(LocalAnalysisAudit(
+            startedAt = started,
+            completedAt = started.plusSeconds(12),
+            durationMillis = 12_000,
+            modelId = "model",
+            operation = "image_meal",
+            outcome = "draft_partial",
+            failureCategory = MealProposalOmissionCategory.MULTIPLE.auditCode,
+        )))
+    }
 }

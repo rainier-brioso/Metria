@@ -59,6 +59,14 @@ class FoodCatalogTest {
         assertEquals("Chicken breast, roasted", FoodCatalog.suggest(catalog, "chicken pieces", "cuts of breast meat")?.description)
     }
 
+    @Test fun `only meal-attributed corrections influence local suggestions`() {
+        val legacy = FoodCorrection("chicken", 4, count = 20)
+        val attributed = legacy.copy(sourceMealId = "meal-1")
+
+        assertEquals("Chicken breast, roasted", FoodCatalog.suggest(catalog, "chicken", corrections = listOf(legacy))?.description)
+        assertEquals("Chicken wing, roasted", FoodCatalog.suggest(catalog, "chicken", corrections = listOf(attributed))?.description)
+    }
+
     @Test fun `dry herbs are not treated as a failed food lookup`() {
         assertTrue(FoodCatalog.isNonMeasuredSeasoning("Herbs/Seasoning"))
         assertTrue(!FoodCatalog.isNonMeasuredSeasoning("Cream sauce"))

@@ -26,6 +26,24 @@ class AssistantActionDispatcherTest {
     }
 
     @Test
+    fun `native historical day nutrition resolves only with a bounded exact offset`() {
+        assertEquals(
+            AssistantAction.QueryDayNutrition(90),
+            AssistantActionDispatcher.resolve(
+                PrivateCoachToolCall("read_day_nutrition", period = "historical_day", daysAgo = 90),
+            ),
+        )
+        assertTrue(
+            AssistantActionDispatcher.resolve(
+                PrivateCoachToolCall("read_day_nutrition", period = "historical_day", daysAgo = 91),
+            ) is AssistantAction.Clarify,
+        )
+        assertTrue(
+            AssistantActionDispatcher.resolve(PrivateCoachToolCall("read_day_nutrition", daysAgo = 4)) is AssistantAction.Clarify,
+        )
+    }
+
+    @Test
     fun `saved dish lookup accepts only a bounded query`() {
         val action = AssistantActionDispatcher.resolve(
             PrivateCoachToolCall(intent = "search_saved_dishes", query = "  San Jacobo  "),

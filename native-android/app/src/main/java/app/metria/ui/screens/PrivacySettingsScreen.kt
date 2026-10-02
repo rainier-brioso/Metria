@@ -8,8 +8,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Archive
 import androidx.compose.material.icons.rounded.CalendarMonth
@@ -32,6 +35,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -46,14 +50,22 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.ui.unit.dp
 import app.metria.BuildConfig
 import app.metria.CycleContext
+import app.metria.EncryptedVault
 import app.metria.LocalAnalysisAudit
+import app.metria.MealCorrectionChange
+import app.metria.MealCorrectionKind
+import app.metria.MealCorrectionMemory
 import app.metria.ModelStatus
+import app.metria.AssistantTraceStore
 import app.metria.NutritionTargets
 import app.metria.PersonalDish
+import app.metria.DebugImageCaptureStore
 import app.metria.ui.theme.MetriaColors
+import java.time.ZoneId
 
 /**
  * Approved direction: a calm, single-screen settings hub. Routine status and choices stay
@@ -64,17 +76,29 @@ fun MetriaPrivacySettingsScreen(
     unit: String,
     nutritionTargets: NutritionTargets?,
     modelStatus: ModelStatus,
+    assistantTraceStatus: AssistantTraceStore.Status,
+    debugImageCaptureStatus: DebugImageCaptureStore.Status,
     analysisAudits: List<LocalAnalysisAudit>,
     cycleContext: CycleContext,
+    assistantStyle: EncryptedVault.AssistantStyle,
     personalDishes: List<PersonalDish>,
+    mealCorrectionMemories: List<MealCorrectionMemory>,
+    foodCorrectionCount: Int,
+    legacyFoodCorrectionCount: Int,
     archiveMessage: String?,
     onChangeUnit: () -> Unit,
     onEditNutritionTargets: () -> Unit,
     onEditCycleContext: () -> Unit,
+    onAssistantStyleChanged: (EncryptedVault.AssistantStyle) -> String?,
     onDeletePersonalDish: (PersonalDish) -> String?,
+    onClearMealLearning: () -> String?,
     onExportArchive: (CharArray) -> Unit,
     onImportArchive: () -> Unit,
     onLock: () -> Unit,
+    onSetAssistantTraceEnabled: (Boolean) -> Unit,
+    onClearAssistantTrace: () -> Unit,
+    onSetDebugImageCaptureEnabled: (Boolean) -> Boolean,
+    onClearDebugImageCapture: () -> Unit,
 ) {
     var exportSheetOpen by rememberSaveable { mutableStateOf(false) }
     var savedDishesOpen by rememberSaveable { mutableStateOf(false) }
@@ -82,6 +106,11 @@ fun MetriaPrivacySettingsScreen(
     var assistantDetailsOpen by rememberSaveable { mutableStateOf(false) }
     var aboutOpen by rememberSaveable { mutableStateOf(false) }
     var diagnosticsOpen by rememberSaveable { mutableStateOf(false) }
+    var assistantStyleOpen by rememberSaveable { mutableStateOf(false) }
+    var assistantStyleError by rememberSaveable { mutableStateOf<String?>(null) }
+    var mealLearningOpen by rememberSaveable { mutableStateOf(false) }
+    var clearMealLearningOpen by rememberSaveable { mutableStateOf(false) }
+    var mealLearningError by rememberSaveable { mutableStateOf<String?>(null) }
 
     Text("Privacy & settings", style = MaterialTheme.typography.displaySmall)
     PrivacyPromiseCard(onLearnMore = { privacyDetailsOpen = true })
@@ -122,11 +151,31 @@ fun MetriaPrivacySettingsScreen(
         )
         SettingsDivider()
         SettingsRow(
+            icon = Icons.Rounded.Tune,
+            title = "Assistant style",
+            supporting = assistantStyle.title,
+            accessibilityLabel = "Assistant style. ${assistantStyle.title}. Choose style",
+            onClick = { assistantStyleOpen = true },
+        )
+        SettingsDivider()
+        SettingsRow(
             icon = Icons.Rounded.Restaurant,
             title = "Saved private dishes",
             supporting = privateDishSummary(personalDishes.size),
             accessibilityLabel = "Saved private dishes. ${privateDishSummary(personalDishes.size)}. Manage dishes",
             onClick = { savedDishesOpen = true },
+        )
+        SettingsDivider()
+        SettingsRow(
+            icon = Icons.Rounded.Restaurant,
+            title = "Meal corrections",
+            supporting = if (mealCorrectionMemories.isEmpty() && foodCorrectionCount == 0) {
+                "No saved corrections yet"
+            } else {
+                "${mealCorrectionMemories.size} corrected meals · $foodCorrectionCount food matches"
+            },
+            accessibilityLabel = "Meal corrections. ${mealCorrectionMemories.size} corrected meals and $foodCorrectionCount food matches. Review or clear corrections",
+            onClick = { mealLearningError = null; mealLearningOpen = true },
         )
     }
 
@@ -186,10 +235,150 @@ fun MetriaPrivacySettingsScreen(
         onBack = { savedDishesOpen = false },
         onDelete = onDeletePersonalDish,
     )
+    if (mealLearningOpen) MealLearningDialog(
+        memories = mealCorrectionMemories,
+        foodCorrectionCount = foodCorrectionCount,
+        legacyFoodCorrectionCount = legacyFoodCorrectionCount,
+        error = mealLearningError,
+        onDismiss = { mealLearningOpen = false },
+        onRequestClear = { clearMealLearningOpen = true },
+    )
+    if (clearMealLearningOpen) AlertDialog(
+        onDismissRequest = { clearMealLearningOpen = false },
+        title = { Text("Clear meal corrections?") },
+        text = { Text("This removes saved correction notes and food-match hints on this phone. Your saved meals and private dishes stay intact. New corrections can be recorded when you save another photo meal.") },
+        confirmButton = { Button(onClick = {
+            clearMealLearningOpen = false
+            mealLearningError = onClearMealLearning()
+        }) { Text("Clear corrections") } },
+        dismissButton = { TextButton(onClick = { clearMealLearningOpen = false }) { Text("Keep corrections") } },
+    )
     if (privacyDetailsOpen) PrivacyDetailsDialog(onDismiss = { privacyDetailsOpen = false })
     if (assistantDetailsOpen) AssistantDetailsDialog(modelStatus, onDismiss = { assistantDetailsOpen = false })
+    if (assistantStyleOpen) AssistantStyleDialog(
+        selected = assistantStyle,
+        error = assistantStyleError,
+        onSelect = { style ->
+            assistantStyleError = onAssistantStyleChanged(style)
+            if (assistantStyleError == null) assistantStyleOpen = false
+        },
+        onDismiss = { assistantStyleOpen = false; assistantStyleError = null },
+    )
     if (aboutOpen) AboutDialog(onDismiss = { aboutOpen = false })
-    if (diagnosticsOpen && BuildConfig.DEBUG) DiagnosticsDialog(analysisAudits, modelStatus, onDismiss = { diagnosticsOpen = false })
+    if (diagnosticsOpen && BuildConfig.DEBUG) DiagnosticsDialog(
+        analysisAudits,
+        modelStatus,
+        assistantTraceStatus,
+        debugImageCaptureStatus,
+        onSetAssistantTraceEnabled,
+        onClearAssistantTrace,
+        onSetDebugImageCaptureEnabled,
+        onClearDebugImageCapture,
+        onDismiss = { diagnosticsOpen = false },
+    )
+}
+
+@Composable
+private fun MealLearningDialog(
+    memories: List<MealCorrectionMemory>,
+    foodCorrectionCount: Int,
+    legacyFoodCorrectionCount: Int,
+    error: String?,
+    onDismiss: () -> Unit,
+    onRequestClear: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Meal corrections") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "When you save a corrected photo meal, Metria keeps small, encrypted notes about your edits on this phone. These notes do not yet change future photo suggestions. Remembering a reusable dish is separate.",
+                    color = MetriaColors.InkMuted,
+                )
+                Text("${memories.size} corrected meals · $foodCorrectionCount food matches")
+                if (legacyFoodCorrectionCount > 0) {
+                    Text(
+                        "$legacyFoodCorrectionCount older food matches have no linked meal. They remain stored here but are not used for suggestions.",
+                        color = MetriaColors.InkMuted,
+                    )
+                }
+                if (memories.isEmpty()) {
+                    Text("No saved meal corrections yet.")
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        items(memories.asReversed(), key = { it.mealId }) { memory ->
+                            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                Text(
+                                    memory.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate().toString(),
+                                    style = MaterialTheme.typography.titleSmall,
+                                )
+                                memory.changes.forEach { change ->
+                                    Text(mealLearningDescription(change), style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                        }
+                    }
+                }
+                Text("Clearing corrections keeps your saved meals and private dishes.", color = MetriaColors.InkMuted)
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
+        dismissButton = {
+            if (memories.isNotEmpty() || foodCorrectionCount > 0) {
+                TextButton(onClick = onRequestClear) { Text("Clear corrections") }
+            }
+        },
+    )
+}
+
+private fun mealLearningDescription(change: MealCorrectionChange): String = when (change.kind) {
+    MealCorrectionKind.ADDED -> "Added ${change.newName ?: "a food"}"
+    MealCorrectionKind.REMOVED -> "Removed ${change.oldName ?: "a food"}"
+    MealCorrectionKind.RENAMED -> "Changed ${change.oldName ?: "a food"} to ${change.newName ?: "another food"}"
+    MealCorrectionKind.REGROUPED -> "Moved a food from ${change.oldGroupName ?: "one dish"} to ${change.newGroupName ?: "another dish"}"
+    MealCorrectionKind.PORTION_CHANGED -> "Adjusted a portion from ${change.oldPortionGrams?.let { "$it g" } ?: "unknown"} to ${change.newPortionGrams?.let { "$it g" } ?: "unknown"}"
+    MealCorrectionKind.CATALOG_MATCH_CHANGED -> "Changed a nutrition match"
+}
+
+@Composable
+private fun AssistantStyleDialog(
+    selected: EncryptedVault.AssistantStyle,
+    error: String?,
+    onSelect: (EncryptedVault.AssistantStyle) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Assistant style") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("Style changes phrasing only. Metria uses the same local records, tools, and safety rules.", color = MetriaColors.InkMuted)
+                EncryptedVault.AssistantStyle.entries.forEach { style ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .selectable(selected = selected == style, role = Role.RadioButton, onClick = { onSelect(style) })
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(selected = selected == style, onClick = null)
+                        Column(Modifier.padding(start = 8.dp)) {
+                            Text(style.title, style = MaterialTheme.typography.titleSmall)
+                            Text(style.description, color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
+    )
 }
 
 @Composable
@@ -366,16 +555,49 @@ private fun AboutDialog(onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun DiagnosticsDialog(audits: List<LocalAnalysisAudit>, modelStatus: ModelStatus, onDismiss: () -> Unit) {
+private fun DiagnosticsDialog(
+    audits: List<LocalAnalysisAudit>,
+    modelStatus: ModelStatus,
+    traceStatus: AssistantTraceStore.Status,
+    imageCaptureStatus: DebugImageCaptureStore.Status,
+    onSetTraceEnabled: (Boolean) -> Unit,
+    onClearTrace: () -> Unit,
+    onSetImageCaptureEnabled: (Boolean) -> Boolean,
+    onClearImageCapture: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var imageCaptureError by rememberSaveable { mutableStateOf<String?>(null) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Developer diagnostics") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Encrypted timing and outcome metadata only. No photo or model response is stored.", color = MetriaColors.InkMuted)
+                Text("Timing and outcome metadata only. The optional app-private assistant trace is not encrypted. No photo, prompt, model response, or record values are stored in it.", color = MetriaColors.InkMuted)
                 Text("Current local runtime", style = MaterialTheme.typography.titleSmall)
                 Text(modelStatus.backendSummary, color = MetriaColors.InkMuted)
                 Text(modelStatus.diagnostics, color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall)
+                Text("Image development capture", style = MaterialTheme.typography.titleSmall)
+                Text("Optional in this debug build. Once enabled, capture stays on until you disable it, even after reopening Metria. Each new analysis replaces the last capture. The reduced photo and model response clear on lock, background, or restart and expire after 30 minutes. A connected development computer can read the latest capture while Metria is open.", color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(if (imageCaptureStatus.enabled) "Enabled until disabled" else "Off")
+                    TextButton(onClick = {
+                        imageCaptureError = if (onSetImageCaptureEnabled(!imageCaptureStatus.enabled)) null
+                        else "Could not save this setting. Try again."
+                    }) {
+                        Text(if (imageCaptureStatus.enabled) "Disable" else "Enable")
+                    }
+                }
+                imageCaptureError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                Text(if (imageCaptureStatus.hasCapture) "Latest image run ready for local developer inspection" else "No image run captured", color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall)
+                OutlinedButton(onClick = onClearImageCapture, enabled = imageCaptureStatus.hasCapture) { Text("Clear image capture") }
+                Text("Assistant metadata trace", style = MaterialTheme.typography.titleSmall)
+                Text("Off by default. Keeps a rolling 24-hour window of whitelisted events in app-private no-backup storage. Expired events are pruned on startup, new activity, and hourly while open. Prompts, replies, records, and payloads are never written.", color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(if (traceStatus.enabled) "Enabled · ${traceStatus.eventCount} events" else "Disabled")
+                    TextButton(onClick = { onSetTraceEnabled(!traceStatus.enabled) }) { Text(if (traceStatus.enabled) "Disable" else "Enable") }
+                }
+                Text("Stored: ${traceStatus.bytes} bytes · no_backup/assistant-debug-trace.tsv", color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall)
+                OutlinedButton(onClick = onClearTrace, enabled = traceStatus.eventCount > 0) { Text("Clear trace") }
                 if (audits.isEmpty()) {
                     Text("No local image analyses recorded yet.")
                 } else {

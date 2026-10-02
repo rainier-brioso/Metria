@@ -62,8 +62,42 @@ These are prototype contracts for the first redesign pass. Visual mockups must b
 6. Persistent bottom save action.
 
 **Primary action:** Save reviewed meal.  
-**Secondary actions:** edit dish, add dish, review estimate details, discard.  
+**Secondary actions:** edit dish, add dish, review estimate details, Leave without saving.
+
 **Rule:** never render every ingredient’s name, description, grams, preparation, role, match, and delete action in one continuous form.
+
+The persistent action area shows **Leave without saving** as a clearly
+secondary action. Leaving an unchanged review exits immediately. If the member
+has changed save-relevant meal details, the footer action and Back both ask
+whether to keep reviewing or leave without saving. Leaving discards only the
+current review edits and makes no vault write; changing a field back to its
+original value removes that warning. Keyboard Back still hides the keyboard
+first, and dish-editor Back still returns to meal review.
+
+Leaving review retains the original unsaved proposal. Both photo and text
+proposal cards offer a secondary **Discard draft** action with a short
+confirmation. Confirming removes only that proposal and its unsaved photo
+thumbnail where applicable; it does not delete saved meals or conversation.
+Dismissal or **Keep draft** leaves the proposal available.
+
+**Correction learning:** successful Save may retain bounded, structured
+draft-to-confirmed edits locally and automatically. Do not add a toggle or a
+second save prompt. Keep "Remember this dish" as a separate reusable-dish
+choice. Privacy offers inspect and clear controls without deleting meals.
+
+Saved-dish suggestions appear immediately after the dish they concern and
+name that target dish. Their placement and reading order must not make a
+suggestion for one dish look attached to a neighbouring dish.
+
+**Rejected-photo fallback:** show a concise explanation and one **Enter meal manually** action. The manual review starts without model-derived foods or an AI-confidence badge; its initial primary action is **Add first dish**. Save remains unavailable until the member has added a valid food. An unmatched manual meal is stored as manual entry, not an AI estimate; a confirmed catalog match retains its catalog provenance. The optional reduced thumbnail still requires member confirmation.
+
+**Partial-photo draft:** if the root is valid and at least one food independently passes strict validation, retain only validated foods. Show a concise, nontechnical notice on both the result and review screens that some suggestions were left out and the member should add any missing foods. A partial draft has low overall confidence; it is not a complete meal or a complete nutrition estimate. Unknown fields, unsupported values, and invalid portions are never guessed into accepted foods. If no foods survive, use the rejected-photo fallback instead.
+
+A separately grouped visible sauce with a valid ingredient is a reviewable
+suggestion, not an omitted dish. Its portion, evidence, and role still pass
+normal ingredient validation; malformed sauce ingredients remain partial.
+
+The similar-meal suggestion button is **Use meal name**. Supporting text must say this changes only the meal title; food names, dish contents, and nutrition remain for separate review.
 
 ## Dish editor
 
@@ -73,9 +107,23 @@ These are prototype contracts for the first redesign pass. Visual mockups must b
 - Components are compact rows with name, portion, evidence state, and match status.
 - Tap a component to edit its details in place or in a subordinate sheet.
 - “Add component” asks whether it was visible or is a possible hidden ingredient in member language.
+- On one expanded food at a time, the member may describe a label correction in ordinary language. The local text model may return only a replacement name; show the old → new preview with explicit **Apply name** and **Discard** actions. Apply updates only that food name and clears its catalog match. It must not alter portion, preparation, components, or nutrition, and nothing is saved until the existing dish Apply and meal Save actions.
+- Busy/unavailable model, invalid response, cancellation, stale request, and keyboard-visible correction states leave direct name editing available. A result for a previous request or different selected food is never applied or presented as current.
 - Components can move between dishes without retyping the destination name.
 - Deleting a component does not dismiss the editor.
 - Save/cancel are persistent and keyboard-safe.
+
+## Saved meal editor
+
+**Purpose:** correct an existing entry while keeping all changes reviewable until one final save.
+
+- Keep direct food-name editing visible. Offer **Ask Metria about this food** beside each food and reveal one correction panel only for the selected food.
+- The local text assistant may propose one replacement food name. Show the old → new names and require **Apply name** or **Discard**. Applying edits only that draft label and clears the old catalog match; the member may separately choose a new local catalog match.
+- Manual nutrition values remain unchanged by a name suggestion and remain identified as member-entered. Catalog nutrition is recalculated from the member-confirmed matches and portions; unmatched foods are excluded and coverage remains visibly partial or unavailable. Before a catalog-backed save loses coverage, ask the member to confirm; block the save if the local catalog or an unchanged saved match cannot be resolved.
+- **Save meal changes** is the only ordinary edit write. A vault write failure is shown inside the editor and retains the draft without replacing the unlocked shell. Removing the reference photo is staged until Save; Cancel/back leaves the stored meal unchanged.
+- Saveable draft fields survive rotation. An in-flight correction is cancelled on editor exit/recreation; request and selected-food checks prevent stale proposals from being applied.
+
+**States:** direct edit, assistant unavailable/busy, loading, result, stale result, apply/discard, manually selected replacement match, partial/no catalog estimate, manual nutrition unchanged, pending reference removal, keyboard visible, rotation, cancel, validation/save failure, save/reopen.
 
 ## Assistant overlay and conversation
 
@@ -84,8 +132,12 @@ These are prototype contracts for the first redesign pass. Visual mockups must b
 - Compact action menu: Speak, Chat, Analyse meal, Scan label, Manual entry.
 - Listening state replaces the central action with visible motion, “Listening”, and Stop.
 - Chat opens as a large sheet or full screen with a familiar message timeline, persistent composer, and cancel-generation control.
+- Stop immediately invalidates the active reply and announces “Stopping…” while local runtime cancellation runs. Keep Send disabled until it finishes, then show “Response stopped” and re-enable the composer. A reset or lock during cancellation must not show a stale stop confirmation.
 - Tool results appear as compact structured cards collapsed by default; the member can expand the
   exact local facts on demand while model prose stays short and conversational.
+  Expanded nutrition evidence uses the member's language and shows the requested
+  date, recorded-meal coverage, and an estimate with sensible display precision;
+  it must not expose internal field names, `null`, or floating-point artifacts.
 - Reopening the conversation never resubmits the previous message.
 - Header exposes a labelled **New conversation** action with destructive confirmation.
 
@@ -99,7 +151,22 @@ These are prototype contracts for the first redesign pass. Visual mockups must b
 
 - Present privacy as understandable settings and status, not a developer diagnostics page.
 - Group: Privacy promise, local assistant, units and goals, cycle context, encrypted recovery, saved private dishes, and About.
+- The Local assistant settings group shows the selected response style and opens a focused,
+  single-choice selector for Balanced, Coach, or Records assistant. Explain that
+  the choice changes tone only: all three use the same private records, evidence
+  checks, and safety rules. The selected option is identified by text and
+  accessibility state, not color alone; closing the selector leaves it unchanged.
 - Development diagnostics are absent from release UI and live behind one explicit development-only entry.
+- In debug builds, Developer diagnostics may offer an off-by-default, bounded
+  metadata-only assistant trace with clear status and a delete action. It must
+  not display or persist member records, prompts, or model prose in that trace.
+- A separate debug-only, explicit-opt-in image development capture may retain
+  one reduced test photo and bounded raw vision response for member-authorized
+  local ADB inspection. Label this as raw private test content, distinguish it
+  from the metadata-only trace, and provide Enable, Disable, and Clear controls.
+  Enable persists locally until explicit Disable; Clear, lock/background, and
+  a new process erase only the raw capture. Release builds never expose it or
+  inherit the debug opt-in.
 - Destructive actions have clear consequences and confirmation.
 
 **Approved first slice:** use one calm, scrollable settings hub. Lead with the encrypted-on-device promise, then group personal settings (units, member-entered goals, cycle context), private features (local assistant status and saved dishes), encrypted archive actions, and About. Routine rows reveal their current state before opening a focused editor or detail. Archive creation and restoration remain separate actions. Locking Metria is visually separate at the end, and development diagnostics appear only as one explicit debug-build row.

@@ -57,6 +57,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -84,17 +85,24 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
 import androidx.core.content.ContextCompat
 import app.metria.ui.navigation.MetriaBottomNavigation
 import app.metria.ui.components.MetriaActionSheet
 import app.metria.ui.screens.MetriaMealReviewSheet
+import app.metria.ui.screens.MealAnalysisFallbackCard
+import app.metria.ui.screens.MealDraftDiscardAction
+import app.metria.ui.screens.MealReviewMode
 import app.metria.ui.screens.MetriaAssistantConversationScreen
 import app.metria.ui.screens.MetriaAssistantHome
 import app.metria.ui.screens.MetriaChatMessage
 import app.metria.ui.screens.MetriaPrivacySettingsScreen
 import app.metria.ui.screens.MetriaProgressScreen
 import app.metria.ui.screens.MetriaTodayScreen
+import app.metria.ui.screens.SavedMealEditorScreen
 import app.metria.ui.theme.MetriaColors
 import app.metria.ui.theme.MetriaTheme
 
@@ -127,8 +135,11 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
     var editMeal by remember { mutableStateOf<MealEntry?>(null) }
     var voiceDraft by remember { mutableStateOf<VoiceWeightDraft?>(null) }
     var modelStatus by remember { mutableStateOf(activity.modelStatus()) }
+    var assistantTraceStatus by remember { mutableStateOf(activity.assistantTraceStatus()) }
+    var debugImageCaptureStatus by remember { mutableStateOf(activity.debugImageCaptureStatus()) }
     val assistantConversationSession = rememberPrivateAssistantConversationSession()
     var mealProposalForConfirmation by remember { mutableStateOf<MealProposal?>(null) }
+    var manualMealReview by rememberSaveable { mutableStateOf(false) }
     var labelDraftForConfirmation by remember { mutableStateOf<LabelNutritionDraft?>(null) }
     var browseFoodCatalog by remember { mutableStateOf(false) }
     var catalogFoodForConfirmation by remember { mutableStateOf<CatalogFood?>(null) }
@@ -168,12 +179,20 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
         if (status is EncryptedVault.Status.Unlocked && voiceDraft != null) addSheet = true
     }
     LaunchedEffect(status) {
+        debugImageCaptureStatus = activity.debugImageCaptureStatus()
         when (val current = status) {
             is EncryptedVault.Status.Unlocked -> {
+                // ModelLifecycle is process-local; restore the persisted phrasing style after
+                // biometric unlock or an activity/process recreation without touching history.
+                activity.setAssistantStyle(current.assistantStyle)
                 assistantConversationSession.synchronize(current.activeConversation, current.conversationExpired)
                 if (current.conversationExpired) status = vault.acknowledgeConversationExpiry()
             }
-            else -> assistantConversationSession.clearForLock()
+            else -> {
+                assistantConversationSession.clearForLock()
+                mealProposalForConfirmation = null
+                manualMealReview = false
+            }
         }
     }
     LaunchedEffect(status is EncryptedVault.Status.Unlocked) {
@@ -212,6 +231,12 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
     LaunchedEffect(quickAssistantStartVoice, modelStatus.state) {
         if (quickAssistantStartVoice && modelStatus.state == "ready") {
             modelStatus = activity.prepareLocalAssistant()
+        }
+    }
+    LaunchedEffect(destination) {
+        if (destination != "Assistant") {
+            assistantTraceStatus = activity.assistantTraceStatus()
+            debugImageCaptureStatus = activity.debugImageCaptureStatus()
         }
     }
     MetriaTheme {
@@ -308,11 +333,17 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                                 editSavedWeight = { editEntry = it },
                                 undoSavedWeight = { entry -> status = vault.deleteWeight(entry.id) },
                                 openFoodCatalog = { browseFoodCatalog = true },
-                                review = { mealProposalForConfirmation = it },
+                                review = { manualMealReview = false; mealProposalForConfirmation = it },
+                                onManualMealReview = {
+                                    manualMealReview = true
+                                    mealProposalForConfirmation = null
+                                },
                                 prepareImage = { uri -> modelStatus = activity.prepareLocalMealImage(uri) },
                                 analyzeImage = { modelStatus = activity.analyzeLocalMealImage() },
                                 readLabel = { modelStatus = activity.readLocalNutritionLabel() },
                                 discardImage = { modelStatus = activity.discardLocalMealImage() },
+                                discardImageMealDraft = { modelStatus = activity.discardImageMealDraft() },
+                                discardAssistantMealDraft = { modelStatus = activity.discardAssistantMealDraft() },
                                 reviewLabel = { labelDraftForConfirmation = it },
                                 newCameraUri = { activity.newLocalCameraCaptureUri() },
                                 prepareCapturedImage = { uri -> modelStatus = activity.prepareLocalCapturedMealImage(uri) },
@@ -325,15 +356,37 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                                 unit = vaultStatus.displayUnit,
                                 nutritionTargets = vaultStatus.nutritionTargets,
                                 modelStatus = modelStatus,
+                                assistantTraceStatus = assistantTraceStatus,
+                                debugImageCaptureStatus = debugImageCaptureStatus,
                                 analysisAudits = vaultStatus.analysisAudits,
                                 cycleContext = vaultStatus.cycleContext,
+                                assistantStyle = vaultStatus.assistantStyle,
                                 personalDishes = vaultStatus.personalDishes,
+                                mealCorrectionMemories = vaultStatus.mealCorrectionMemories,
+                                foodCorrectionCount = vaultStatus.foodCorrections.size,
+                                legacyFoodCorrectionCount = vaultStatus.foodCorrections.count { it.sourceMealId == null },
                                 archiveMessage = archiveMessage,
                                 onChangeUnit = { status = vault.setDisplayUnit(if (vaultStatus.displayUnit == "kg") "lb" else "kg") },
                                 onEditNutritionTargets = { editNutritionTargets = true },
                                 onEditCycleContext = { editCycleContext = true },
+                                onAssistantStyleChanged = { style ->
+                                    val updated = vault.setAssistantStyle(style)
+                                    if (updated is EncryptedVault.Status.Unlocked) {
+                                        status = updated
+                                        activity.setAssistantStyle(updated.assistantStyle)
+                                        modelStatus = activity.modelStatus()
+                                        null
+                                    } else {
+                                        (updated as? EncryptedVault.Status.Failed)?.message
+                                            ?: "Unlock Metria and try again."
+                                    }
+                                },
                                 onDeletePersonalDish = { dish ->
                                     status = vault.deletePersonalDish(dish.id)
+                                    (status as? EncryptedVault.Status.Failed)?.message
+                                },
+                                onClearMealLearning = {
+                                    status = vault.clearLearning()
                                     (status as? EncryptedVault.Status.Failed)?.message
                                 },
                                 onExportArchive = { passphrase ->
@@ -348,6 +401,17 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                                     archiveImportLauncher.launch(arrayOf("application/octet-stream", "application/json", "*/*"))
                                 },
                                 onLock = { activity.lockVault() },
+                                onSetAssistantTraceEnabled = { enabled -> activity.setAssistantTraceEnabled(enabled); assistantTraceStatus = activity.assistantTraceStatus() },
+                                onClearAssistantTrace = { activity.clearAssistantTrace(); assistantTraceStatus = activity.assistantTraceStatus() },
+                                onSetDebugImageCaptureEnabled = { enabled ->
+                                    val changed = activity.setDebugImageCaptureEnabled(enabled)
+                                    debugImageCaptureStatus = activity.debugImageCaptureStatus()
+                                    changed
+                                },
+                                onClearDebugImageCapture = {
+                                    activity.clearDebugImageCapture()
+                                    debugImageCaptureStatus = activity.debugImageCaptureStatus()
+                                },
                             )
                         }
                     }
@@ -419,6 +483,7 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                         editSavedWeight = { editEntry = it; quickAssistantOpen = false },
                         undoSavedWeight = { entry -> status = vault.deleteWeight(entry.id) },
                         reviewMeal = { proposal -> mealProposalForConfirmation = proposal; quickAssistantOpen = false },
+                        discardMealDraft = { modelStatus = activity.discardAssistantMealDraft() },
                     )
                 }
                 if (addSheet || editEntry != null) WeightBottomSheet(
@@ -439,28 +504,70 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                     voiceDraft = null
                 }
                 deleteEntry?.let { entry -> AlertDialog(onDismissRequest = { deleteEntry = null }, title = { Text("Delete entry?") }, text = { Text("This removes ${"%.1f".format(entry.kilograms)} kg from your encrypted vault.") }, confirmButton = { Button(onClick = { status = vault.deleteWeight(entry.id); deleteEntry = null }) { Text("Delete") } }, dismissButton = { Button(onClick = { deleteEntry = null }) { Text("Keep entry") } }) }
-                editMeal?.let { meal -> MealEditSheet(
+                editMeal?.let { meal -> SavedMealEditorScreen(
                     meal,
                     catalog = foodCatalog,
-                    onDismiss = { editMeal = null },
-                    onSave = { updated -> status = vault.updateMeal(updated); editMeal = null },
-                    onRemoveReference = { status = vault.updateMeal(meal.copy(referenceThumbnailBase64 = null)) },
-                    onDelete = { status = vault.deleteMeal(meal.id); editMeal = null },
+                    foodNameCorrection = modelStatus.mealFoodCorrection,
+                    onSuggestFoodName = { currentName, correction ->
+                        activity.suggestMealFoodName(currentName, correction).also { modelStatus = it }.mealFoodCorrection
+                    },
+                    onCancelFoodNameCorrection = { requestId -> modelStatus = activity.cancelMealFoodNameCorrection(requestId) },
+                    onClearFoodNameCorrection = { modelStatus = activity.clearMealFoodNameCorrection() },
+                    onDismiss = { modelStatus = activity.clearMealFoodNameCorrection(); editMeal = null },
+                    onSave = { updated ->
+                        when (val update = vault.updateMeal(updated)) {
+                            is EncryptedVault.Status.Unlocked -> {
+                                status = update
+                                editMeal = null
+                                null
+                            }
+                            is EncryptedVault.Status.Failed -> update.message
+                            else -> "Unlock Metria and try saving again."
+                        }
+                    },
+                    onDelete = {
+                        when (val deleted = vault.deleteMeal(meal.id)) {
+                            is EncryptedVault.Status.Unlocked -> {
+                                status = deleted
+                                editMeal = null
+                                null
+                            }
+                            is EncryptedVault.Status.Failed -> deleted.message
+                            else -> "Unlock Metria and try deleting this meal again."
+                        }
+                    },
                 ) }
-                mealProposalForConfirmation?.let { proposal -> MetriaMealReviewSheet(
+                val activeMealReview = if (manualMealReview) {
+                    MealReviewMode.blankManualProposal()
+                } else mealProposalForConfirmation
+                activeMealReview?.let { proposal -> MetriaMealReviewSheet(
                     proposal = proposal,
+                    manualEntry = manualMealReview,
                     catalog = foodCatalog,
                     corrections = vaultStatus.foodCorrections,
                     referenceThumbnailBase64 = modelStatus.referenceThumbnailBase64,
-                    analysisAuditId = modelStatus.latestImageAudit?.id,
+                    analysisAuditId = modelStatus.latestImageAudit?.id.takeUnless { manualMealReview },
                     savedMeals = vaultStatus.meals,
                     savedPersonalDishes = vaultStatus.personalDishes,
                     findPersonalDishMatches = { query -> PersonalDishMatcher.search(query, vaultStatus.personalDishes) },
-                    onDismiss = { mealProposalForConfirmation = null },
-                    onSave = { meal, corrections, personalDishes ->
-                        status = vault.saveReviewedMeal(meal, corrections, personalDishes)
+                    foodNameCorrection = modelStatus.mealFoodCorrection,
+                    onSuggestFoodName = { currentName, correction ->
+                        activity.suggestMealFoodName(currentName, correction).also { modelStatus = it }.mealFoodCorrection
+                    },
+                    onCancelFoodNameCorrection = { requestId ->
+                        modelStatus = activity.cancelMealFoodNameCorrection(requestId)
+                    },
+                    onClearFoodNameCorrection = { modelStatus = activity.clearMealFoodNameCorrection() },
+                    onDismiss = {
+                        modelStatus = activity.clearMealFoodNameCorrection()
+                        mealProposalForConfirmation = null
+                        manualMealReview = false
+                    },
+                    onSave = { meal, corrections, personalDishes, correctionMemory ->
+                        status = vault.saveReviewedMeal(meal, corrections, personalDishes, correctionMemory)
                         if (status is EncryptedVault.Status.Unlocked) {
                             mealProposalForConfirmation = null
+                            manualMealReview = false
                             modelStatus = activity.clearLocalMealDraft()
                             null
                         } else {
@@ -755,10 +862,13 @@ private fun AssistantScreen(
     undoSavedWeight: (WeightEntry) -> Unit,
     openFoodCatalog: () -> Unit,
     review: (MealProposal) -> Unit,
+    onManualMealReview: () -> Unit,
     prepareImage: (android.net.Uri) -> Unit,
     analyzeImage: () -> Unit,
     readLabel: () -> Unit,
     discardImage: () -> Unit,
+    discardImageMealDraft: () -> Unit,
+    discardAssistantMealDraft: () -> Unit,
     reviewLabel: (LabelNutritionDraft) -> Unit,
     newCameraUri: () -> android.net.Uri,
     prepareCapturedImage: (android.net.Uri) -> Unit,
@@ -886,13 +996,20 @@ private fun AssistantScreen(
                 }
                 proposal.assumptions.forEach { Text("Assumption: $it") }
                 proposal.questions.forEach { Text("Question: $it") }
-                Text("This fast draft lists the strongest visible foods. Add or edit anything else before saving.", color = Color(0xFF655D6E), style = MaterialTheme.typography.bodySmall)
+                Text(
+                    if (proposal.omittedItemCount > 0) "Some suggestions were left out. Add any missing foods during review."
+                    else "This fast draft lists the strongest visible foods. Add or edit anything else before saving.",
+                    color = Color(0xFF655D6E), style = MaterialTheme.typography.bodySmall,
+                )
                 Text("Nothing has been saved. Review every portion before confirming.", color = Plum)
                 Button(onClick = { review(proposal) }, modifier = Modifier.fillMaxWidth()) { Text("Review and confirm meal") }
+                MealDraftDiscardAction(onDiscard = discardAssistantMealDraft)
             }
         }
     }
-    modelStatus.proposalDiagnostic?.let { Text(modelStatus.imageReason, color = Color(0xFFB3261E)) }
+    modelStatus.proposalDiagnostic?.let {
+        MealAnalysisFallbackCard(onEnterManually = onManualMealReview)
+    }
     modelStatus.ocrText?.takeIf { it.isNotBlank() }?.let {
         val draft = modelStatus.labelDraft ?: LabelNutritionDraft(null, null, null, null)
         Card(colors = CardDefaults.cardColors(containerColor = PlumSoft)) {
@@ -926,8 +1043,13 @@ private fun AssistantScreen(
                 }
                 proposal.assumptions.forEach { Text("Assumption: $it") }
                 proposal.questions.forEach { Text("Question: $it") }
-                Text("The temporary image was discarded. Review every portion before confirming.", color = Plum)
+                Text(
+                    if (proposal.omittedItemCount > 0) "Some suggestions were left out. Add any missing foods and review portions before confirming. The temporary image was discarded."
+                    else "The temporary image was discarded. Review every portion before confirming.",
+                    color = Plum,
+                )
                 Button(onClick = { review(proposal) }, modifier = Modifier.fillMaxWidth()) { Text("Review and confirm meal") }
+                MealDraftDiscardAction(onDiscard = discardImageMealDraft)
             }
         }
     }
@@ -945,12 +1067,15 @@ internal class AssistantPendingSubmissionGate {
     private var nextToken = 0L
     private var activeToken: Long? = null
     private var lifecycleRequestId: Long? = null
+    private var observedTerminalRequestId: Long? = null
 
     @Synchronized
     fun begin(): Long? {
         if (activeToken != null) return null
         val token = ++nextToken
         activeToken = token
+        lifecycleRequestId = null
+        observedTerminalRequestId = null
         return token
     }
 
@@ -966,25 +1091,34 @@ internal class AssistantPendingSubmissionGate {
         operation: String?,
     ): Long? {
         if (activeToken != token) return null
-        val accepted = requestId != null && requestId != previousRequestId && state == "thinking" &&
+        val accepted = requestId != null && requestId != previousRequestId && state in setOf("thinking", "loaded") &&
             operation?.let { it.startsWith("coach") || it.startsWith("agent") } == true
         if (!accepted) {
             activeToken = null
             lifecycleRequestId = null
+            observedTerminalRequestId = null
             return null
         }
         lifecycleRequestId = requestId
+        if (observedTerminalRequestId == requestId || state == "loaded") {
+            activeToken = null
+            lifecycleRequestId = null
+            observedTerminalRequestId = null
+        }
         return requestId
     }
 
     @Synchronized
     fun observeLifecycle(requestId: Long?, state: String): Boolean {
-        if (
-            activeToken == null || lifecycleRequestId == null || requestId != lifecycleRequestId ||
-            state !in setOf("thinking", "loaded")
-        ) return false
+        if (activeToken == null || state !in setOf("thinking", "loaded")) return false
+        if (lifecycleRequestId == null) {
+            if (state == "loaded") observedTerminalRequestId = requestId
+            return false
+        }
+        if (requestId != lifecycleRequestId) return false
         activeToken = null
         lifecycleRequestId = null
+        observedTerminalRequestId = null
         return true
     }
 
@@ -993,7 +1127,50 @@ internal class AssistantPendingSubmissionGate {
         if (token == null || activeToken != token) return false
         activeToken = null
         lifecycleRequestId = null
+        observedTerminalRequestId = null
         return true
+    }
+}
+
+/** Keeps Stop responsive while a native cancellation may wait for LiteRT to leave inference. */
+internal class AssistantCancellationGate {
+    private var generation = 0L
+    private var activeToken: Long? = null
+
+    @Synchronized
+    fun begin(): Long? {
+        if (activeToken != null) return null
+        return (++generation).also { activeToken = it }
+    }
+
+    @Synchronized
+    fun reset() {
+        generation += 1
+    }
+
+    @Synchronized
+    fun isInFlight(): Boolean = activeToken != null
+
+    /** Returns true only when this completion still belongs to the current conversation. */
+    @Synchronized
+    fun complete(token: Long): Boolean {
+        if (activeToken != token) return false
+        activeToken = null
+        return generation == token
+    }
+}
+
+/** Serializes native assistant starts and teardown, including callers queued before Stop. */
+internal class AssistantModelOperationMutex {
+    private val mutex = Mutex()
+
+    suspend fun <T> withLock(block: suspend () -> T): T {
+        mutex.lock()
+        try {
+            return block()
+        } finally {
+            mutex.unlock()
+        }
     }
 }
 
@@ -1005,6 +1182,7 @@ internal data class PendingAssistantSubmission(
 
 @Stable
 private class PrivateAssistantConversationSession(
+    val recoverableDiagnostic: MutableState<String?>,
     initialInput: String = "",
     initialSubmittedQuestion: String = "",
     initialSubmittedContext: String = "",
@@ -1027,18 +1205,51 @@ private class PrivateAssistantConversationSession(
     val voiceMessage = mutableStateOf(initialVoiceMessage)
     val messages = mutableStateOf(initialMessages)
     val pendingSubmission = mutableStateOf<PendingAssistantSubmission?>(null)
+    val assistantStopping = mutableStateOf(false)
+    val responseStopped = mutableStateOf(false)
     private val pendingSubmissionGate = AssistantPendingSubmissionGate()
+    private val assistantCancellationGate = AssistantCancellationGate()
+    private val assistantModelOperationMutex = AssistantModelOperationMutex()
     private var pendingSubmissionJob: Job? = null
     val pendingContinuation = mutableStateOf(false)
     private val pendingContinuationGate = AssistantPendingSubmissionGate()
     private var pendingContinuationToken: Long? = null
 
     fun beginPendingSubmission(text: String, previousRequestId: Long?): PendingAssistantSubmission? {
+        if (assistantCancellationGate.isInFlight()) return null
         val token = pendingSubmissionGate.begin() ?: return null
+        responseStopped.value = false
         return PendingAssistantSubmission(token, text, previousRequestId).also { pendingSubmission.value = it }
     }
 
+    fun beginAssistantCancellation(): Long? {
+        val token = assistantCancellationGate.begin() ?: return null
+        pendingSubmissionGate.cancel(pendingSubmission.value?.token)
+        pendingSubmission.value = null
+        pendingSubmissionJob?.cancel()
+        pendingSubmissionJob = null
+        pendingContinuationGate.cancel(pendingContinuationToken)
+        pendingContinuation.value = false
+        pendingContinuationToken = null
+        activeRequestId.value = null
+        handledToolRequestId.value = null
+        handledReplyRequestId.value = null
+        recoverableDiagnostic.value = null
+        responseStopped.value = false
+        assistantStopping.value = true
+        return token
+    }
+
+    fun finishAssistantCancellation(token: Long) {
+        val belongsToCurrentConversation = assistantCancellationGate.complete(token)
+        assistantStopping.value = assistantCancellationGate.isInFlight()
+        if (belongsToCurrentConversation) responseStopped.value = true
+    }
+
     fun isPendingSubmission(token: Long): Boolean = pendingSubmissionGate.isActive(token)
+
+    suspend fun <T> withAssistantModelOperation(block: suspend () -> T): T =
+        assistantModelOperationMutex.withLock(block)
 
     fun reconcilePendingSubmission(token: Long, result: ModelStatus): Long? {
         val requestId = pendingSubmissionGate.reconcile(
@@ -1048,7 +1259,11 @@ private class PrivateAssistantConversationSession(
             state = result.state,
             operation = result.assistantOperation,
         )
-        if (requestId == null && !pendingSubmissionGate.isActive(token)) pendingSubmission.value = null
+        if (requestId == null && !pendingSubmissionGate.isActive(token)) {
+            pendingSubmission.value = null
+        } else if (requestId != null && !pendingSubmissionGate.isActive(token)) {
+            pendingSubmission.value = null
+        }
         return requestId
     }
 
@@ -1074,6 +1289,8 @@ private class PrivateAssistantConversationSession(
         return token
     }
 
+    fun isPendingContinuation(token: Long): Boolean = pendingContinuationGate.isActive(token)
+
     fun reconcilePendingContinuation(token: Long, previousRequestId: Long?, result: ModelStatus): Long? {
         val requestId = pendingContinuationGate.reconcile(
             token = token,
@@ -1085,15 +1302,22 @@ private class PrivateAssistantConversationSession(
         if (requestId == null && !pendingContinuationGate.isActive(token)) {
             pendingContinuation.value = false
             pendingContinuationToken = null
+        } else if (requestId != null && !pendingContinuationGate.isActive(token)) {
+            // A terminal lifecycle poll may have arrived before request-ID reconciliation.
+            // The gate remembers that matching terminal state and retires the optimistic UI now.
+            pendingContinuation.value = false
+            pendingContinuationToken = null
         }
         return requestId
     }
 
-    fun failPendingContinuation(token: Long) {
+    fun failPendingContinuation(token: Long): Boolean {
         if (pendingContinuationGate.cancel(token)) {
             pendingContinuation.value = false
             pendingContinuationToken = null
+            return true
         }
+        return false
     }
 
     fun cancelPendingContinuation() {
@@ -1114,6 +1338,9 @@ private class PrivateAssistantConversationSession(
     }
 
     fun reset() {
+        assistantCancellationGate.reset()
+        assistantStopping.value = assistantCancellationGate.isInFlight()
+        responseStopped.value = false
         input.value = ""
         submittedQuestion.value = ""
         submittedContext.value = ""
@@ -1122,6 +1349,7 @@ private class PrivateAssistantConversationSession(
         handledReplyRequestId.value = null
         savedWeightId.value = null
         voiceMessage.value = null
+        recoverableDiagnostic.value = null
         pendingSubmissionGate.cancel()
         pendingSubmission.value = null
         pendingSubmissionJob?.cancel()
@@ -1176,8 +1404,12 @@ private class PrivateAssistantConversationSession(
 }
 
 @Composable
-private fun rememberPrivateAssistantConversationSession(): PrivateAssistantConversationSession =
-    remember { PrivateAssistantConversationSession() }
+private fun rememberPrivateAssistantConversationSession(): PrivateAssistantConversationSession {
+    // Only a generic error is saved across configuration changes. Conversation content stays
+    // in the encrypted vault, never in Android's saved-instance-state bundle.
+    val recoverableDiagnostic = rememberSaveable { mutableStateOf<String?>(null) }
+    return remember(recoverableDiagnostic) { PrivateAssistantConversationSession(recoverableDiagnostic) }
+}
 
 @Composable
 private fun PrivateAssistantChat(
@@ -1205,6 +1437,7 @@ private fun PrivateAssistantChat(
     editSavedWeight: (WeightEntry) -> Unit,
     undoSavedWeight: (WeightEntry) -> Unit,
     reviewMeal: (MealProposal) -> Unit,
+    discardMealDraft: () -> Unit,
 ) {
     val context = LocalContext.current
     var input by conversationSession.input
@@ -1237,22 +1470,60 @@ private fun PrivateAssistantChat(
     fun trackPendingRequest(token: Long, result: ModelStatus) {
         activeAssistantRequestId = conversationSession.reconcilePendingSubmission(token, result)
     }
-    suspend fun trackNativeRequest(block: () -> ModelStatus) {
+    fun trackNativeRequest(block: () -> ModelStatus) {
         val previousRequestId = activeAssistantRequestId
         val token = conversationSession.beginPendingContinuation() ?: return
-        try {
-            val result = withContext(Dispatchers.Default) { block() }
-            activeAssistantRequestId = conversationSession.reconcilePendingContinuation(
-                token,
-                previousRequestId,
-                result,
-            )
-        } catch (error: CancellationException) {
-            conversationSession.failPendingContinuation(token)
-            throw error
-        } catch (error: Exception) {
-            conversationSession.failPendingContinuation(token)
-            throw error
+        // The tool-call effect is keyed to polled ModelStatus fields. Keep the handoff in the
+        // composition-owned scope so a fast poll cannot cancel it before the new request ID is
+        // reconciled. The pending token still lets explicit cancellation invalidate late results.
+        assistantScope.launch {
+            try {
+                val result = conversationSession.withAssistantModelOperation {
+                    if (!conversationSession.isPendingContinuation(token)) return@withAssistantModelOperation null
+                    withContext(Dispatchers.Default) { block() }
+                } ?: return@launch
+                val stillPending = conversationSession.isPendingContinuation(token)
+                if (!stillPending) return@launch
+                val requestId = conversationSession.reconcilePendingContinuation(
+                    token,
+                    previousRequestId,
+                    result,
+                )
+                activeAssistantRequestId = requestId
+                if (requestId == null && stillPending) {
+                    conversationSession.recoverableDiagnostic.value = continuationFailureDiagnostic(result.coachDiagnostic)
+                } else if (result.state == "loaded" && result.coachDiagnostic != null) {
+                    conversationSession.recoverableDiagnostic.value = result.coachDiagnostic
+                }
+            } catch (_: CancellationException) {
+                conversationSession.failPendingContinuation(token)
+            } catch (_: Exception) {
+                if (conversationSession.failPendingContinuation(token)) {
+                    activeAssistantRequestId = null
+                    conversationSession.recoverableDiagnostic.value = continuationFailureDiagnostic(null)
+                }
+            }
+        }
+    }
+    fun stopAssistant(showConfirmation: Boolean = true) {
+        val token = conversationSession.beginAssistantCancellation() ?: return
+        assistantScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            try {
+                withContext(NonCancellable + Dispatchers.Default) {
+                    conversationSession.withAssistantModelOperation { cancelAssistant() }
+                }
+            } catch (_: Exception) {
+                // The request has already been invalidated for presentation; lifecycle polling
+                // remains authoritative for whether the runtime is ready for another turn.
+            } finally {
+                // The native cancellation can outlive this screen. Complete the presentation
+                // even if navigation disposes this coroutine, while the session gate rejects
+                // stale confirmation after a reset or a newer cancellation.
+                withContext(NonCancellable + Dispatchers.Main.immediate) {
+                    conversationSession.finishAssistantCancellation(token)
+                    if (!showConfirmation) conversationSession.responseStopped.value = false
+                }
+            }
         }
     }
     fun setVoiceRecording(value: Boolean) {
@@ -1388,6 +1659,25 @@ private fun PrivateAssistantChat(
                         Write recognition, factual comparison, and one gentle optional next focus.""".trimIndent(), scopedSnapshot, submittedConversationContext))
                 }
             }
+            is AssistantAction.QueryDayNutrition -> {
+                val replyLanguage = coachReplyLanguage(submittedQuestion, submittedConversationContext)
+                val requestedMetric = MetriaAgentGroundingPolicy.historicalNutritionMetric(submittedQuestion)
+                val result = HistoricalDayNutritionResult.from(meals, today, action.daysAgo, requestedMetric)
+                val facts = HistoricalDayNutritionEvidenceText.format(result, replyLanguage)
+                messages = messages + PrivateChatMessage(facts, false, localEvidence = true)
+                if (nativeAgentTool) {
+                    trackNativeRequest {
+                        continueAgentTool(call.intent, result + mapOf("reply_language" to replyLanguage, "summary" to facts))
+                    }
+                } else {
+                    trackRequest(askCoach("""MEMBER_LANGUAGE: $replyLanguage
+                        MEMBER_QUESTION: $submittedQuestion
+                        [LOCAL_FACTS]
+                        $facts
+                        [/LOCAL_FACTS]
+                        Answer the exact historical day question using only these recorded estimates. State the recorded estimate total and disclose complete, partial, and missing coverage as relevant. Mention that unrecorded meals are unknown; do not infer a goal or complete intake.""".trimIndent(), snapshot, submittedConversationContext))
+                }
+            }
             is AssistantAction.QueryWeightHistory -> {
                 val replyLanguage = coachReplyLanguage(submittedQuestion, submittedConversationContext)
                 val oldest = today.minusDays(action.fromDaysAgo.toLong())
@@ -1406,6 +1696,7 @@ private fun PrivateAssistantChat(
                     trackNativeRequest { continueAgentTool(call.intent, mapOf(
                         "source" to "metria_local_vault",
                         "reply_language" to replyLanguage,
+                        "as_of" to today.toString(),
                         "from" to oldest.toString(),
                         "to" to newest.toString(),
                         "total_count" to boundedWeights.totalCount,
@@ -1466,6 +1757,7 @@ private fun PrivateAssistantChat(
                     trackNativeRequest { continueAgentTool(call.intent, mapOf(
                         "source" to "metria_local_vault",
                         "reply_language" to replyLanguage,
+                        "as_of" to today.toString(),
                         "from" to oldest.toString(),
                         "to" to newest.toString(),
                         "meal_slot" to action.mealSlot,
@@ -1550,12 +1842,25 @@ private fun PrivateAssistantChat(
             }
         }
     }
-    LaunchedEffect(modelStatus.assistantRequestId, modelStatus.coachReply) {
+    LaunchedEffect(modelStatus.assistantRequestId, modelStatus.coachReply, activeAssistantRequestId, handledReplyRequestId) {
         val requestId = modelStatus.assistantRequestId ?: return@LaunchedEffect
         val reply = modelStatus.coachReply ?: return@LaunchedEffect
         if (!shouldConsumeAssistantResult(activeAssistantRequestId, handledReplyRequestId, requestId)) return@LaunchedEffect
         handledReplyRequestId = requestId
         messages = messages + PrivateChatMessage(reply, false)
+    }
+    LaunchedEffect(modelStatus.assistantRequestId, modelStatus.coachDiagnostic, activeAssistantRequestId,
+        conversationSession.pendingSubmission.value, conversationSession.pendingContinuation.value) {
+        if (shouldLatchAssistantDiagnostic(
+                activeRequestId = activeAssistantRequestId,
+                resultRequestId = modelStatus.assistantRequestId,
+                modelState = modelStatus.state,
+                diagnostic = modelStatus.coachDiagnostic,
+                localPending = conversationSession.pendingSubmission.value != null ||
+                    conversationSession.pendingContinuation.value,
+            )) {
+            conversationSession.recoverableDiagnostic.value = modelStatus.coachDiagnostic
+        }
     }
     LaunchedEffect(modelStatus.assistantRequestId, modelStatus.state) {
         conversationSession.observePendingLifecycle(modelStatus.assistantRequestId, modelStatus.state)
@@ -1574,6 +1879,7 @@ private fun PrivateAssistantChat(
             conversationSession.beginPendingSubmission(text, activeAssistantRequestId)
         }
         if (pending == null) return
+        conversationSession.recoverableDiagnostic.value = null
         val messageSnapshot = messages
         messages = messages + PrivateChatMessage(text, true)
         input = ""
@@ -1595,9 +1901,12 @@ private fun PrivateAssistantChat(
                 }
                 if (!conversationSession.isPendingSubmission(pending.token)) return@launch
                 submittedConversationContext = context
-                val result = withContext(Dispatchers.Default) {
-                    if (useLegacyRoute) understandCoach(text, context) else startAgent(text, history)
-                }
+                val result = conversationSession.withAssistantModelOperation {
+                    if (!conversationSession.isPendingSubmission(pending.token)) return@withAssistantModelOperation null
+                    withContext(Dispatchers.Default) {
+                        if (useLegacyRoute) understandCoach(text, context) else startAgent(text, history)
+                    }
+                } ?: return@launch
                 trackPendingRequest(pending.token, result)
             } catch (_: CancellationException) {
                 conversationSession.failPendingSubmission(pending.token)
@@ -1630,11 +1939,16 @@ private fun PrivateAssistantChat(
             modelState = modelStatus.state,
             operation = modelStatus.assistantOperation,
         ),
+        assistantStopping = conversationSession.assistantStopping.value,
+        responseStopped = conversationSession.responseStopped.value,
         mealDraftThinking = modelResultIsCurrent && modelStatus.state == "thinking" &&
             modelStatus.assistantOperation?.let { !it.startsWith("coach") && !it.startsWith("agent") } == true,
         streamingReply = modelStatus.coachStreamingReply.takeIf { modelResultIsCurrent },
         assistantDiagnostic = modelStatus.assistantDiagnostic.takeIf { modelResultIsCurrent },
-        coachDiagnostic = modelStatus.coachDiagnostic.takeIf { modelResultIsCurrent },
+        coachDiagnostic = if (conversationSession.pendingSubmission.value != null ||
+            conversationSession.pendingContinuation.value) null
+            else conversationSession.recoverableDiagnostic.value
+                ?: modelStatus.coachDiagnostic.takeIf { modelResultIsCurrent },
         savedWeight = savedWeight,
         mealProposal = modelStatus.assistantProposal.takeIf { modelResultIsCurrent },
         recordingVoice = recordingVoice,
@@ -1643,14 +1957,11 @@ private fun PrivateAssistantChat(
         modelReady = modelStatus.state == "loaded",
         onBack = onBack,
         onNewConversation = {
-            cancelAssistant()
+            stopAssistant(showConfirmation = false)
             onNewConversation()
         },
         onCancelAssistant = {
-            conversationSession.cancelPendingSubmission()
-            conversationSession.cancelPendingContinuation()
-            cancelAssistant()
-            activeAssistantRequestId = null
+            stopAssistant()
         },
         onEditSavedWeight = editSavedWeight,
         onUndoSavedWeight = { entry ->
@@ -1659,6 +1970,7 @@ private fun PrivateAssistantChat(
             messages = messages + PrivateChatMessage("${"%.1f".format(entry.kilograms)} kg entry removed.", false)
         },
         onReviewMeal = reviewMeal,
+        onDiscardMealDraft = discardMealDraft,
         onToggleVoice = ::toggleVoice,
         onSend = ::submitText,
     )
@@ -1678,6 +1990,16 @@ private fun privateConversationContext(messages: List<PrivateChatMessage>): Stri
 
 internal fun shouldConsumeAssistantResult(activeRequestId: Long?, handledRequestId: Long?, resultRequestId: Long?): Boolean =
     resultRequestId != null && resultRequestId == activeRequestId && resultRequestId != handledRequestId
+
+internal fun shouldLatchAssistantDiagnostic(
+    activeRequestId: Long?, resultRequestId: Long?, modelState: String,
+    diagnostic: String?, localPending: Boolean,
+): Boolean = !localPending && diagnostic != null && modelState == "loaded" &&
+    resultRequestId != null && resultRequestId == activeRequestId
+
+internal fun continuationFailureDiagnostic(modelDiagnostic: String?): String =
+    modelDiagnostic?.takeIf(String::isNotBlank)
+        ?: "Metria could not complete that local reply. Try asking again."
 
 internal fun shouldPresentAssistantThinking(
     localPending: Boolean,
@@ -2413,190 +2735,6 @@ private fun nutritionSummary(nutrition: MealNutrition): String = listOfNotNull(
 ).joinToString(" - ").ifBlank { "No nutrition values entered." }
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun MealEditSheet(meal: MealEntry, catalog: OfflineFoodCatalog?, onDismiss: () -> Unit, onSave: (MealEntry) -> Unit, onRemoveReference: () -> Unit, onDelete: () -> Unit) {
-    var items by remember(meal) { mutableStateOf(meal.items.map { EditableMealItem(it.name, it.description.orEmpty(), it.grams?.toString().orEmpty(), it.preparation.orEmpty(), it.groupLabel, it.role) }) }
-    var title by remember(meal) { mutableStateOf(meal.title ?: MealIdentity.titleFor(meal.items)) }
-    var date by remember(meal) { mutableStateOf(meal.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate().toString()) }
-    val recordedTime = remember(meal) { meal.recordedAt.atZone(ZoneId.systemDefault()).toLocalTime().withSecond(0).withNano(0) }
-    var mealSlot by remember(meal) { mutableStateOf(meal.mealSlot) }
-    var calories by remember(meal) { mutableStateOf(meal.nutrition?.caloriesKcal?.toString().orEmpty()) }
-    var protein by remember(meal) { mutableStateOf(meal.nutrition?.proteinGrams?.toString().orEmpty()) }
-    var carbs by remember(meal) { mutableStateOf(meal.nutrition?.carbohydrateGrams?.toString().orEmpty()) }
-    var fat by remember(meal) { mutableStateOf(meal.nutrition?.fatGrams?.toString().orEmpty()) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var confirmReferenceRemoval by remember { mutableStateOf(false) }
-    var confirmMealDeletion by remember { mutableStateOf(false) }
-    var referenceThumbnail by remember(meal) { mutableStateOf(meal.referenceThumbnailBase64) }
-    var calculateWithCatalog by remember(meal) { mutableStateOf(meal.nutrition?.source == "member_confirmed_catalog") }
-    val isCatalogMeal = calculateWithCatalog
-    var catalogMatches by remember(meal, catalog) { mutableStateOf(meal.items.map { item ->
-        val foodId = item.catalogFoodId ?: meal.nutrition?.catalogFoodId.takeIf { meal.items.size == 1 }
-        foodId?.let { id -> catalog?.foods?.firstOrNull { it.fdcId == id } } ?: catalog?.let { FoodCatalog.suggest(it, item.name, item.description.orEmpty()) }
-    }) }
-    var catalogSearchIndex by remember { mutableStateOf<Int?>(null) }
-    val parsedCatalogGrams = items.map { it.grams.replace(',', '.').toIntOrNull()?.takeIf { grams -> grams in 1..2_000 } }
-    val catalogValues = items.indices.map { index ->
-        catalogMatches.getOrNull(index)?.let { food -> parsedCatalogGrams[index]?.let { FoodCatalog.calculate(food, it) } }
-    }
-    val includedCatalogIndexes = catalogValues.indices.filter { index ->
-        val nutrition = catalogValues[index]
-        nutrition?.caloriesKcal != null && nutrition.proteinGrams != null &&
-            nutrition.carbohydrateGrams != null && nutrition.fatGrams != null
-    }
-    val catalogTotals = includedCatalogIndexes.takeIf { isCatalogMeal && it.isNotEmpty() }?.map { catalogValues[it]!! }?.let { values -> CatalogNutrition(
-        values.sumOf { it.caloriesKcal!! }, values.sumOf { it.proteinGrams!! },
-        values.sumOf { it.carbohydrateGrams!! }, values.sumOf { it.fatGrams!! },
-        values.any { it.caloriesDerivedFromMacros },
-    ) }
-    val isPartialCatalogEstimate = catalogTotals != null && includedCatalogIndexes.size != items.size
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(Modifier.padding(24.dp).padding(bottom = 72.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Edit meal", style = MaterialTheme.typography.headlineMedium)
-            OutlinedTextField(title, { title = it }, label = { Text("Meal name (optional)") }, modifier = Modifier.fillMaxWidth())
-            MealSlotSelector(mealSlot, MealSlots.suggestedFor(recordedTime).takeIf { meal.recordedTimeKnown }) { mealSlot = it }
-            referenceThumbnail?.let { reference ->
-                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    Box(Modifier.size(152.dp)) {
-                        ReferenceThumbnail(reference, 152.dp)
-                        Surface(
-                            color = Color.White.copy(alpha = 0.72f),
-                            shape = CircleShape,
-                            modifier = Modifier.align(Alignment.TopEnd).padding(8.dp).size(36.dp),
-                        ) {
-                            IconButton(onClick = { confirmReferenceRemoval = true }, modifier = Modifier.fillMaxSize()) {
-                                Icon(Icons.Default.Delete, contentDescription = "Remove private reference photo", tint = Ink)
-                            }
-                        }
-                    }
-                }
-            }
-            items.forEachIndexed { index, item ->
-                OutlinedTextField(item.name, { value ->
-                    items = items.toMutableList().also { it[index] = item.copy(name = value) }
-                    if (isCatalogMeal) catalogMatches = catalogMatches.toMutableList().also { it[index] = null }
-                }, label = { Text("Food") }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(
-                    item.description,
-                    { value -> items = items.toMutableList().also { it[index] = item.copy(description = value) } },
-                    label = { Text("What Metria saw (optional)") },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                OutlinedTextField(item.grams, { value -> items = items.toMutableList().also { it[index] = item.copy(grams = value) } }, label = { Text("Portion in grams") }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(item.preparation, { value -> items = items.toMutableList().also { it[index] = item.copy(preparation = value) } }, label = { Text("Preparation (optional)") }, modifier = Modifier.fillMaxWidth())
-                if (isCatalogMeal) {
-                    val match = catalogMatches.getOrNull(index)
-                    Text(
-                        if (match == null) "Choose this food to include it in the estimate."
-                        else "Included food: ${FoodCatalog.memberDisplayName(match)}",
-                        color = if (match == null) Color(0xFFB3261E) else Plum,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    Button(onClick = { catalogSearchIndex = index }, modifier = Modifier.fillMaxWidth()) {
-                        Text(if (match == null) "Find this food" else "Change food")
-                    }
-                }
-            }
-            if (isCatalogMeal) {
-                Text(if (isPartialCatalogEstimate) "Partial local estimate" else "Member-confirmed catalog estimate", style = MaterialTheme.typography.titleMedium)
-                if (catalogTotals == null) {
-                    Text("Choose at least one food and its portion to calculate an estimate.", color = Color(0xFFB3261E))
-                } else {
-                    Text(nutritionSummary(MealNutrition(
-                        catalogTotals.caloriesKcal, catalogTotals.proteinGrams,
-                        catalogTotals.carbohydrateGrams, catalogTotals.fatGrams,
-                        "member_confirmed_catalog", catalogRelease = catalog!!.sourceRelease,
-                    )), color = Plum)
-                    if (isPartialCatalogEstimate) Text(
-                        "Includes: ${includedCatalogIndexes.joinToString { items[it].name }}. Other foods are excluded from this estimate and full totals.",
-                        color = Color(0xFF655D6E), style = MaterialTheme.typography.bodySmall,
-                    )
-                    if (catalogTotals.caloriesDerivedFromMacros) Text("Calories are calculated from available macros for one selected food.", color = Color(0xFF655D6E), style = MaterialTheme.typography.bodySmall)
-                }
-            } else {
-                Text("No nutrition estimate", style = MaterialTheme.typography.titleMedium)
-                Text(
-                    "This meal was saved without complete nutrition values. It is not included in nutrition summaries.",
-                    color = Color(0xFF655D6E),
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                Button(onClick = { calculateWithCatalog = true }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Calculate from offline catalog")
-                }
-                Text("Metria will suggest local matches for the foods and portions above. Review them before saving.", color = Color(0xFF655D6E), style = MaterialTheme.typography.bodySmall)
-                OutlinedTextField(calories, { calories = it }, label = { Text("Calories (kcal)") }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(protein, { protein = it }, label = { Text("Protein (g)") }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(carbs, { carbs = it }, label = { Text("Carbohydrates (g)") }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(fat, { fat = it }, label = { Text("Fat (g)") }, modifier = Modifier.fillMaxWidth())
-            }
-            OutlinedTextField(date, { date = it }, label = { Text("Date - YYYY-MM-DD") }, modifier = Modifier.fillMaxWidth())
-            error?.let { Text(it, color = Color(0xFFB3261E)) }
-            Button(onClick = {
-                val recordedAt = mealInstantForDate(date, recordedTime)
-                val updatedItems = items.mapIndexed { index, item -> MealEntryItem(
-                    item.name.trim(),
-                    if (isCatalogMeal) parsedCatalogGrams[index] else item.grams.replace(',', '.').toIntOrNull(),
-                    item.preparation.trim().takeIf(String::isNotEmpty),
-                    catalogMatches.getOrNull(index)?.fdcId.takeIf { index in includedCatalogIndexes },
-                    catalog?.sourceRelease?.takeIf { index in includedCatalogIndexes },
-                    item.groupLabel,
-                    item.description.trim().takeIf(String::isNotEmpty), item.role,
-                ) }
-                val rawNutrition = listOf(calories, protein, carbs, fat)
-                val values = rawNutrition.map { it.replace(',', '.').toDoubleOrNull() }
-                val invalidNutrition = rawNutrition.zip(values).any { (raw, value) -> raw.isNotBlank() && value == null }
-                val nutrition = when {
-                    isCatalogMeal -> catalogTotals?.let { totals -> MealNutrition(
-                        totals.caloriesKcal, totals.proteinGrams, totals.carbohydrateGrams, totals.fatGrams,
-                        "member_confirmed_catalog", catalogRelease = catalog?.sourceRelease,
-                        estimateCoverage = if (isPartialCatalogEstimate) "partial" else "full",
-                    ) }
-                    rawNutrition.all(String::isBlank) -> null
-                    else -> MealNutrition(values[0], values[1], values[2], values[3], "manual_entry")
-                }
-                val updated = if (recordedAt == null) null else meal.copy(
-                    recordedAt = recordedAt,
-                    title = title.trim().takeIf(String::isNotEmpty),
-                    mealSlot = mealSlot,
-                    items = updatedItems,
-                    source = if (isCatalogMeal) "member_confirmed_catalog" else meal.source,
-                    nutrition = nutrition,
-                    referenceThumbnailBase64 = referenceThumbnail,
-                )
-                if (invalidNutrition || updated == null || !MealEntryValidation.valid(updated)) error = "Choose at least one food and a valid portion, then review the date." else onSave(updated)
-            }, modifier = Modifier.fillMaxWidth()) { Text("Save meal changes") }
-            Button(onClick = { confirmMealDeletion = true }, modifier = Modifier.fillMaxWidth()) { Text("Delete meal") }
-        }
-    }
-    catalogSearchIndex?.let { index -> OfflineCatalogSearchSheet(
-        catalog = catalog,
-        initialQuery = items.getOrNull(index)?.name.orEmpty(),
-        onDismiss = { catalogSearchIndex = null },
-        onSelect = { food ->
-            catalogMatches = catalogMatches.toMutableList().also { it[index] = food }
-            catalogSearchIndex = null
-        },
-    ) }
-    if (confirmReferenceRemoval) {
-        AlertDialog(
-            onDismissRequest = { confirmReferenceRemoval = false },
-            title = { Text("Remove private reference?") },
-            text = { Text("This removes only the encrypted thumbnail. The meal details stay in your vault.") },
-            confirmButton = { Button(onClick = { onRemoveReference(); referenceThumbnail = null; confirmReferenceRemoval = false }) { Text("Remove photo") } },
-            dismissButton = { Button(onClick = { confirmReferenceRemoval = false }) { Text("Keep photo") } },
-        )
-    }
-    if (confirmMealDeletion) {
-        AlertDialog(
-            onDismissRequest = { confirmMealDeletion = false },
-            title = { Text("Delete meal?") },
-            text = { Text("This permanently removes the meal and its optional private reference from your encrypted vault.") },
-            confirmButton = { Button(onClick = onDelete) { Text("Delete") } },
-            dismissButton = { Button(onClick = { confirmMealDeletion = false }) { Text("Keep meal") } },
-        )
-    }
-}
-
 @Composable
 private fun MealSlotSelector(selected: String?, suggested: String? = null, choose: (String?) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {

@@ -42,6 +42,12 @@ class MetriaAgentToolsTest {
         assertNull(MetriaNativeToolCallAdapter.adapt("read_weight", mapOf("from_days_ago" to 2, "to_days_ago" to 4)))
         assertNull(MetriaNativeToolCallAdapter.adapt("read_meals", mapOf("days_ago" to 91)))
         assertNull(MetriaNativeToolCallAdapter.adapt("read_meals", mapOf("days_ago" to 1, "meal_slot" to "brunch")))
+        assertEquals(
+            PrivateCoachToolCall("read_day_nutrition", period = "historical_day", daysAgo = 90),
+            MetriaNativeToolCallAdapter.adapt("read_day_nutrition", mapOf("days_ago" to 90)),
+        )
+        assertNull(MetriaNativeToolCallAdapter.adapt("read_day_nutrition", mapOf("days_ago" to 91)))
+        assertNull(MetriaNativeToolCallAdapter.adapt("read_day_nutrition", mapOf("days_ago" to -1)))
     }
 
     @Test
@@ -272,6 +278,41 @@ class MetriaAgentToolsTest {
     }
 
     @Test
+    fun `record dates without as of never establish today for relative claims`() {
+        val evidence = MetriaAgentFactEvidence.from(
+            "read_meals",
+            mapOf(
+                "source" to "metria_local_vault",
+                "from" to "2026-09-19",
+                "to" to "2026-09-19",
+                "meals" to listOf(mapOf("date" to "2026-09-19", "title" to "Arroz", "slot" to "lunch")),
+            ),
+        )
+        assertEquals(
+            "El 2026-09-19 registraste Arroz.",
+            MetriaAgentFactAuditor.audit("El 2026-09-19 registraste Arroz.", evidence).acceptedText,
+        )
+        assertTrue(MetriaAgentFactAuditor.audit("Hoy registraste Arroz.", evidence).retryable)
+        val recordsOnly = MetriaAgentFactEvidence.from(
+            "read_meals",
+            mapOf(
+                "source" to "metria_local_vault",
+                "meals" to listOf(mapOf("date" to "2026-09-19", "title" to "Arroz", "slot" to "lunch")),
+            ),
+        )
+        assertTrue(MetriaAgentFactAuditor.audit("Hoy registraste Arroz.", recordsOnly).retryable)
+        val noRange = MetriaAgentFactEvidence.from(
+            "read_meals",
+            mapOf(
+                "source" to "metria_local_vault",
+                "as_of" to "2026-09-23",
+                "meals" to listOf(mapOf("date" to "2026-09-19", "title" to "Arroz", "slot" to "lunch")),
+            ),
+        )
+        assertTrue(MetriaAgentFactAuditor.audit("Hoy registraste Arroz.", noRange).retryable)
+    }
+
+    @Test
     fun `fact auditor binds nutrition values and goals to metric and period`() {
         val evidence = MetriaAgentFactEvidence.from(
             "read_nutrition_summary",
@@ -311,6 +352,53 @@ class MetriaAgentToolsTest {
                 "Tu objetivo diario es 1920 kcal.",
                 evidence,
             ).retryable,
+        )
+        assertEquals(
+            "Esta semana: 1250 kcal frente a un objetivo de 1920 kcal y 82 g de proteína frente a un objetivo de 105 g de proteína.",
+            MetriaAgentFactAuditor.audit(
+                "Esta semana: 1250 kcal frente a un objetivo de 1920 kcal y 82 g de proteína frente a un objetivo de 105 g de proteína.",
+                evidence,
+            ).acceptedText,
+        )
+        assertTrue(
+            MetriaAgentFactAuditor.audit(
+                "Esta semana: 1920 kcal frente a un objetivo de 1250 kcal.",
+                evidence,
+            ).retryable,
+        )
+        assertEquals(
+            "This week you logged 82 g protein against a goal of 105 g protein.",
+            MetriaAgentFactAuditor.audit(
+                "This week you logged 82 g protein against a goal of 105 g protein.",
+                evidence,
+            ).acceptedText,
+        )
+        assertTrue(
+            MetriaAgentFactAuditor.audit(
+                "This week you logged 105 g protein against a goal of 82 g protein.",
+                evidence,
+            ).retryable,
+        )
+        assertEquals(
+            "Goal: 1920 kcal.",
+            MetriaAgentFactAuditor.audit("Goal: 1920 kcal.", evidence).acceptedText,
+        )
+        assertEquals(
+            "Your 1920 kcal goal is weekly.",
+            MetriaAgentFactAuditor.audit("Your 1920 kcal goal is weekly.", evidence).acceptedText,
+        )
+        assertTrue(
+            MetriaAgentFactAuditor.audit(
+                "Según tus registros, no hay comidas registradas la semana pasada.",
+                evidence,
+            ).retryable,
+        )
+        assertEquals(
+            "Según tus registros, no hay comidas registradas en los últimos 7 días.",
+            MetriaAgentFactAuditor.audit(
+                "Según tus registros, no hay comidas registradas en los últimos 7 días.",
+                evidence,
+            ).acceptedText,
         )
     }
 
@@ -455,7 +543,141 @@ class MetriaAgentToolsTest {
             RequiredAgentTool("read_progress_overview", "today"),
             MetriaAgentGroundingPolicy.requiredTool("How am I doing today?"),
         )
-        assertNull(MetriaAgentGroundingPolicy.requiredTool("¿Qué comí hace cuatro días?"))
+        assertEquals(
+            RequiredAgentTool("read_meals", daysAgo = 4),
+            MetriaAgentGroundingPolicy.requiredTool("¿Qué comí hace cuatro días?"),
+        )
+    }
+
+    @Test
+    fun `explicit nutrition goal comparisons require fresh matching summary`() {
+        assertEquals(
+            RequiredAgentTool("read_nutrition_summary", "week", metric = "protein"),
+            MetriaAgentGroundingPolicy.requiredTool("¿Cumplí mi objetivo de proteína esta semana?"),
+        )
+        assertEquals(
+            RequiredAgentTool("read_nutrition_summary", "week", metric = "protein"),
+            MetriaAgentGroundingPolicy.requiredTool("cumplí mi objetivo de proteína de esta semana?"),
+        )
+        assertEquals(
+            RequiredAgentTool("read_nutrition_summary", "week", metric = "protein"),
+            MetriaAgentGroundingPolicy.requiredTool("cumplí mi objetivos de proteína de esta semana?"),
+        )
+        assertEquals(
+            RequiredAgentTool("read_nutrition_summary", "today", metric = "calories"),
+            MetriaAgentGroundingPolicy.requiredTool("Did I meet my calorie target today?"),
+        )
+        assertEquals(
+            RequiredAgentTool("read_nutrition_summary", "week", metric = "protein"),
+            MetriaAgentGroundingPolicy.requiredTool("Have I hit my protein goal this week?"),
+        )
+        assertEquals(
+            RequiredAgentTool("read_nutrition_summary", "today", metric = "calories"),
+            MetriaAgentGroundingPolicy.requiredTool("¿He cumplido mi meta de calorías hoy?"),
+        )
+        assertEquals(
+            RequiredAgentTool("read_nutrition_summary", "week", metric = "protein"),
+            MetriaAgentGroundingPolicy.requiredTool("¿Cumplí mi objetivo semanal de proteína?"),
+        )
+        assertEquals(
+            RequiredAgentTool("read_nutrition_summary", "week", metric = "protein"),
+            MetriaAgentGroundingPolicy.requiredTool("Did I meet my weekly protein goal?"),
+        )
+        assertNull(
+            MetriaAgentGroundingPolicy.requiredTool("¿Cuál es mi objetivo de proteína esta semana?"),
+        )
+        assertNull(
+            MetriaAgentGroundingPolicy.requiredTool("Did I set my protein goal today?"),
+        )
+        assertNull(
+            MetriaAgentGroundingPolicy.requiredTool("Did I meet my protein goal last week?"),
+        )
+        assertNull(
+            MetriaAgentGroundingPolicy.requiredTool("¿Cumplí mi objetivo de proteína hoy esta semana?"),
+        )
+        assertEquals(
+            RequiredAgentTool("read_nutrition_summary", "week"),
+            MetriaAgentGroundingPolicy.requiredTool("Did I meet my calorie and protein goals this week?"),
+        )
+        assertNull(
+            MetriaAgentGroundingPolicy.requiredTool("¿Cumplí mi objetivo de proteína cada día esta semana?"),
+        )
+        assertNull(MetriaAgentGroundingPolicy.requiredTool("Did I meet my daily protein goal this week?"))
+        assertNull(MetriaAgentGroundingPolicy.requiredTool("Did I meet my protein goal every day this week?"))
+        assertNull(MetriaAgentGroundingPolicy.requiredTool("Did I meet my protein goal last week and this week?"))
+    }
+
+    @Test
+    fun `explicit recorded nutrition totals require one supported current period and metric`() {
+        val todayQuestion = "¿Cuántas calorías tengo registradas hoy?"
+        val todayRequired = RequiredAgentTool("read_nutrition_summary", "today", metric = "calories")
+        assertEquals(todayRequired, MetriaAgentGroundingPolicy.requiredTool(todayQuestion))
+        assertEquals(
+            todayRequired,
+            MetriaAgentGroundingPolicy.requiredTool("How many calories do I have recorded today?"),
+        )
+        assertEquals(
+            todayRequired,
+            MetriaAgentGroundingPolicy.requiredTool("How many calories do I register today?"),
+        )
+        assertTrue(todayRequired.accepts(PrivateCoachToolCall("read_nutrition_summary", period = "today")))
+        assertFalse(todayRequired.accepts(PrivateCoachToolCall("read_nutrition_summary", period = "week")))
+        assertFalse(todayRequired.accepts(PrivateCoachToolCall("read_progress_overview", period = "today")))
+
+        val weekProtein = RequiredAgentTool("read_nutrition_summary", "week", metric = "protein")
+        assertEquals(weekProtein, MetriaAgentGroundingPolicy.requiredTool("¿Cuánta proteína tengo registrada esta semana?"))
+        assertEquals(weekProtein, MetriaAgentGroundingPolicy.requiredTool("¿Cuánta proteína registré esta semana?"))
+        assertEquals(
+            weekProtein,
+            MetriaAgentGroundingPolicy.requiredTool("How much protein did I log in the last 7 days?"),
+        )
+        assertEquals(
+            weekProtein,
+            MetriaAgentGroundingPolicy.requiredTool("How much protein did I log in the last seven days?"),
+        )
+
+        listOf(
+            "How many calories should I register today?",
+            "How many calories should I log today?",
+            "How many calories should I record today?",
+            "How many calories did I record this month?",
+            "How many calories did I record this month and today?",
+            "How many calories did I record last week?",
+            "How many calories did I record today and this week?",
+            "How many calories did I record today and in the last 7 days?",
+            "How many calories and grams of protein did I record today?",
+            "How many calories did I record per day this week?",
+            "How many calories did I record daily this week?",
+            "¿Cuántas calorías consumí al día esta semana?",
+            "¿Cuántas calorías registré diariamente esta semana?",
+            "¿Cuántas calorías tengo registradas este mes y hoy?",
+            "¿Cuántas calorías tengo registradas hoy y en los últimos 7 días?",
+            "¿Cuántas calorías debería registrar hoy?",
+        ).forEach { question ->
+            assertNull(question, MetriaAgentGroundingPolicy.requiredTool(question))
+        }
+        assertEquals(
+            RequiredAgentTool("read_day_nutrition", period = "historical_day", metric = "calories", daysAgo = 4),
+            MetriaAgentGroundingPolicy.requiredTool("How many calories did I eat four days ago?"),
+        )
+    }
+
+    @Test
+    fun `recorded nutrition total fallback keeps missing estimate period and metric bound`() {
+        val required = RequiredAgentTool("read_nutrition_summary", "today", metric = "calories")
+        val response = mapOf<String, Any?>(
+            "source" to "metria_local_vault",
+            "period" to "today",
+            "reply_language" to "Spanish",
+            "meals" to mapOf("recorded_count" to 2),
+            "nutrition" to mapOf("calories_kcal" to null, "calorie_goal_kcal" to 1800),
+        )
+
+        val reply = MetriaNutritionReplyFallback.from(required, response)
+        assertTrue(reply!!.contains("No hay una estimación de calorías hoy"))
+        assertTrue(reply.contains("1800 kcal"))
+        assertNull(MetriaNutritionReplyFallback.from(required, response + ("period" to "week")))
+        assertNull(MetriaNutritionReplyFallback.from(required.copy(metric = "protein"), response))
     }
 
     @Test
@@ -481,6 +703,411 @@ class MetriaAgentToolsTest {
         assertEquals(
             RequiredAgentTool("search_saved_dishes", query = "San Jacobo"),
             MetriaAgentGroundingPolicy.requiredTool("¿Y qué lleva?", history),
+        )
+    }
+
+    @Test
+    fun `nutrition follow up inherits period from the recent member question`() {
+        val weekHistory = listOf(
+            PrivateConversationMessage("¿Cómo va mi semana?", fromMember = true),
+            PrivateConversationMessage("Esta semana llevas 1250 kcal.", fromMember = false),
+        )
+        assertEquals(
+            RequiredAgentTool("read_nutrition_summary", "week", metric = "protein"),
+            MetriaAgentGroundingPolicy.requiredTool("¿Y de proteína?", weekHistory),
+        )
+
+        val todayHistory = listOf(
+            PrivateConversationMessage("How am I doing today?", fromMember = true),
+        )
+        assertEquals(
+            RequiredAgentTool("read_nutrition_summary", "today", metric = "protein"),
+            MetriaAgentGroundingPolicy.requiredTool("And protein?", todayHistory),
+        )
+
+        val requiredWeek = RequiredAgentTool("read_nutrition_summary", "week")
+        assertTrue(requiredWeek.accepts(PrivateCoachToolCall("read_nutrition_summary", period = "week")))
+        assertFalse(requiredWeek.accepts(PrivateCoachToolCall("read_nutrition_summary", period = "today")))
+
+        val stalePeriodHistory = listOf(
+            PrivateConversationMessage("How am I doing this week?", fromMember = true),
+            PrivateConversationMessage("Earlier reply", fromMember = false),
+            PrivateConversationMessage("What did I eat yesterday?", fromMember = true),
+            PrivateConversationMessage("Unrelated answer", fromMember = false),
+        )
+        assertNull(MetriaAgentGroundingPolicy.requiredTool("And protein?", stalePeriodHistory))
+
+        val previousWeekHistory = listOf(
+            PrivateConversationMessage("Did I meet my protein goal last week?", fromMember = true),
+        )
+        assertNull(MetriaAgentGroundingPolicy.requiredTool("And calories?", previousWeekHistory))
+
+        val chainedFollowUpHistory = weekHistory + listOf(
+            PrivateConversationMessage("¿Y de proteína?", fromMember = true),
+            PrivateConversationMessage("Respuesta sobre proteína.", fromMember = false),
+        )
+        assertEquals(
+            RequiredAgentTool("read_nutrition_summary", "week", metric = "calories"),
+            MetriaAgentGroundingPolicy.requiredTool("¿Y calorías?", chainedFollowUpHistory),
+        )
+    }
+
+    @Test
+    fun `typed nutrition follow up crosses voice transcript and ignores recording placeholder`() {
+        val history = listOf(
+            PrivateConversationMessage("¿Cómo van mis objetivos de nutrición esta semana?", fromMember = true),
+            PrivateConversationMessage("Respuesta semanal", fromMember = false),
+            PrivateConversationMessage("Voice request received locally.", fromMember = true),
+            PrivateConversationMessage("Voice: y de proteína?", fromMember = true),
+            PrivateConversationMessage("Respuesta de voz", fromMember = false),
+        )
+        assertEquals(
+            RequiredAgentTool("read_nutrition_summary", "week", metric = "protein"),
+            MetriaAgentGroundingPolicy.requiredTool("¿Y de proteína?", history),
+        )
+        assertNull(MetriaAgentGroundingPolicy.requiredTool(
+            "¿Y de proteína?",
+            history + PrivateConversationMessage("What did I eat yesterday?", fromMember = true),
+        ))
+    }
+
+    @Test
+    fun `short nutrition fallback uses only the fresh matching tool result`() {
+        val required = RequiredAgentTool("read_nutrition_summary", "week", metric = "protein")
+        val response = mapOf<String, Any?>(
+            "source" to "metria_local_vault",
+            "period" to "last_7_days_including_today",
+            "reply_language" to "Spanish",
+            "meals" to mapOf("recorded_count" to 0),
+            "nutrition" to mapOf("protein_g" to null, "protein_goal_g" to 1260),
+        )
+        val reply = MetriaNutritionReplyFallback.from(required, response)
+        assertTrue(reply!!.contains("No hay una estimación de proteína"))
+        assertTrue(reply.contains("1260 g de proteína"))
+        assertEquals(reply, MetriaAgentFactAuditor.audit(
+            reply,
+            MetriaAgentFactEvidence.from("read_nutrition_summary", response),
+        ).acceptedText)
+        assertNull(MetriaNutritionReplyFallback.from(required, response + ("period" to "today")))
+        assertNull(MetriaNutritionReplyFallback.from(required, response + ("source" to "unknown")))
+        assertNull(MetriaNutritionReplyFallback.from(required, response - "nutrition"))
+        assertNull(MetriaNutritionReplyFallback.from(required,
+            response + ("nutrition" to mapOf("protein_g" to -1, "protein_goal_g" to 1260))))
+
+        val withProtein = response + ("nutrition" to mapOf("protein_g" to 82, "protein_goal_g" to 1260))
+        assertTrue(MetriaNutritionReplyFallback.from(required, withProtein)!!.contains("82 g de proteína"))
+    }
+
+    @Test
+    fun `historical day questions route to exact bounded read tools`() {
+        assertEquals(
+            RequiredAgentTool("read_meals", daysAgo = 4),
+            MetriaAgentGroundingPolicy.requiredTool("¿Qué comí hace cuatro días?"),
+        )
+        assertEquals(
+            RequiredAgentTool("read_meals", daysAgo = 4),
+            MetriaAgentGroundingPolicy.requiredTool("What did I eat 4 days ago?"),
+        )
+        assertEquals(
+            RequiredAgentTool("read_weight", fromDaysAgo = 1, toDaysAgo = 1),
+            MetriaAgentGroundingPolicy.requiredTool("¿Cuánto pesaba ayer?"),
+        )
+        assertEquals(
+            RequiredAgentTool("read_weight", fromDaysAgo = 4, toDaysAgo = 4),
+            MetriaAgentGroundingPolicy.requiredTool("What was my weight four days ago?"),
+        )
+        assertNull(MetriaAgentGroundingPolicy.requiredTool("What did I eat 91 days ago?"))
+        assertEquals(
+            RequiredAgentTool("read_day_nutrition", period = "historical_day", metric = "calories", daysAgo = 4),
+            MetriaAgentGroundingPolicy.requiredTool("¿Cuántas calorías consumí hace cuatro días?"),
+        )
+        assertEquals(
+            RequiredAgentTool("read_day_nutrition", period = "historical_day", metric = "protein", daysAgo = 4),
+            MetriaAgentGroundingPolicy.requiredTool("How much protein did I eat 4 days ago?"),
+        )
+        assertEquals(
+            RequiredAgentTool("read_day_nutrition", period = "historical_day", metric = "calories", daysAgo = 90),
+            MetriaAgentGroundingPolicy.requiredTool("How many calories did I eat 90 days ago?"),
+        )
+        assertNull(MetriaAgentGroundingPolicy.requiredTool("What did I eat 91 days ago?"))
+        assertNull(MetriaAgentGroundingPolicy.requiredTool("How much protein did I eat 91 days ago?"))
+    }
+
+    @Test
+    fun `calendar date nutrition question binds the requested day and rejects another day`() {
+        val today = java.time.LocalDate.of(2026, 9, 23)
+        val question = "¿Cuántas calorías consumí el 27 de agosto?"
+        val required = MetriaAgentGroundingPolicy.requiredTool(question, today = today)
+        assertEquals(
+            RequiredAgentTool("read_day_nutrition", period = "historical_day", metric = "calories",
+                daysAgo = 27, targetDate = java.time.LocalDate.of(2026, 8, 27)),
+            required,
+        )
+        assertTrue(required!!.accepts(PrivateCoachToolCall("read_day_nutrition", "historical_day", daysAgo = 27)))
+        assertFalse(required.accepts(PrivateCoachToolCall("read_day_nutrition", "historical_day", daysAgo = 26)))
+        assertNull(MetriaAgentGroundingPolicy.historicalClarification(question, today))
+    }
+
+    @Test
+    fun `calendar date weight and meal reads stay exact and unsupported dates clarify`() {
+        val today = java.time.LocalDate.of(2026, 9, 23)
+        assertEquals(RequiredAgentTool("read_meals", daysAgo = 27, targetDate = java.time.LocalDate.of(2026, 8, 27)),
+            MetriaAgentGroundingPolicy.requiredTool("¿Qué comí el 27 de agosto?", today = today))
+        assertEquals(RequiredAgentTool("read_weight", fromDaysAgo = 27, toDaysAgo = 27,
+            targetDate = java.time.LocalDate.of(2026, 8, 27)),
+            MetriaAgentGroundingPolicy.requiredTool("What was my weight on August 27?", today = today))
+        listOf("¿Cuántas calorías consumí el 27/08/2026?", "¿Cuántas calorías consumí el 27 de agosto de 2025?",
+            "How many calories did I eat on August 27 compared with August 28?").forEach { question ->
+            assertNull(question, MetriaAgentGroundingPolicy.requiredTool(question, today = today))
+            assertTrue(question, MetriaAgentGroundingPolicy.historicalClarification(question, today) != null)
+        }
+    }
+
+    @Test
+    fun `natural calendar date in nutrition reply is accepted only for exact evidence day`() {
+        val evidence = MetriaAgentFactEvidence.from("read_day_nutrition", mapOf(
+            "source" to "metria_local_vault", "as_of" to "2026-09-23", "period" to "historical_day",
+            "days_ago" to 27, "from" to "2026-08-27", "to" to "2026-08-27",
+            "requested_metric" to "calories", "nutrition" to mapOf("calories_kcal" to 450.0),
+        ))
+        val answer = "El 27 de agosto, las comidas registradas suman una estimación de 450 kcal."
+        assertEquals(answer, MetriaAgentFactAuditor.audit(answer, evidence).acceptedText)
+        assertTrue(MetriaAgentFactAuditor.audit("El 28 de agosto, las comidas registradas suman 450 kcal.", evidence).retryable)
+        assertTrue(MetriaAgentFactAuditor.audit("El 27 de agosto, las comidas registradas suman 450 g de proteína.", evidence).retryable)
+    }
+
+    @Test
+    fun `exact day fallback discloses partial and missing coverage truthfully`() {
+        val today = java.time.LocalDate.of(2026, 9, 23)
+        val required = RequiredAgentTool("read_day_nutrition", period = "historical_day", metric = "calories", daysAgo = 27)
+        fun recordedMeal(label: String, nutrition: MealNutrition?) = MealEntry(
+                recordedAt = java.time.Instant.parse("2026-08-27T12:00:00Z"),
+                items = listOf(MealEntryItem(label, 100, null)), assumptions = emptyList(),
+                confidence = "high", source = "manual_entry", nutrition = nutrition,
+            )
+        fun responseFor(dayMeals: List<MealEntry>) = HistoricalDayNutritionResult.from(
+            dayMeals, today, 27, "calories",
+        ) + ("reply_language" to "English")
+        val complete = recordedMeal("Complete", MealNutrition(2210.0750000000003, 82.345, 0.0, 0.0))
+        val missing = recordedMeal("Missing", null)
+        val partialMeal = recordedMeal("Partial", MealNutrition(50.0, 3.0, 2.0, 1.0, estimateCoverage = "partial"))
+        val response = responseFor(listOf(complete))
+        assertEquals(2210.0, (response["nutrition"] as Map<*, *>)["calories_kcal"])
+        val fallback = MetriaNutritionReplyFallback.from(required, response)!!
+        assertTrue(fallback.contains("2210 kcal"))
+        assertFalse(fallback.contains("Some meals have partial estimates"))
+        assertFalse(fallback.contains("no nutrition estimate"))
+        assertEquals(fallback, MetriaAgentFactAuditor.audit(
+            fallback, MetriaAgentFactEvidence.from("read_day_nutrition", response),
+        ).acceptedText)
+        assertNull(MetriaNutritionReplyFallback.from(required.copy(metric = "protein"), response))
+        assertNull(MetriaNutritionReplyFallback.from(required, response + ("from" to "2026-08-28") + ("to" to "2026-08-28")))
+
+        val missingOnly = responseFor(listOf(complete, missing))
+        val missingReply = MetriaNutritionReplyFallback.from(required, missingOnly)!!
+        assertTrue(missingReply.contains("Available estimates from meals recorded"))
+        assertTrue(missingReply.contains("Some recorded meals have no nutrition estimate"))
+        assertFalse(missingReply.contains("partial estimates"))
+        assertEquals(missingReply, MetriaAgentFactAuditor.audit(
+            missingReply, MetriaAgentFactEvidence.from("read_day_nutrition", missingOnly),
+        ).acceptedText)
+
+        val partialAndMissing = responseFor(listOf(complete, partialMeal, missing))
+        val partialMissingReply = MetriaNutritionReplyFallback.from(required, partialAndMissing)!!
+        assertTrue(partialMissingReply.contains("Some meals have partial estimates"))
+        assertTrue(partialMissingReply.contains("Some recorded meals have no nutrition estimate"))
+        assertEquals(partialMissingReply, MetriaAgentFactAuditor.audit(
+            partialMissingReply, MetriaAgentFactEvidence.from("read_day_nutrition", partialAndMissing),
+        ).acceptedText)
+        val spanishProtein = required.copy(metric = "protein")
+        val proteinResult = (response + mapOf(
+            "requested_metric" to "protein", "reply_language" to "Spanish",
+            "nutrition" to mapOf("calories_kcal" to 2210.0, "protein_g" to 82.3),
+        ))
+        assertTrue(MetriaNutritionReplyFallback.from(spanishProtein, proteinResult)!!.contains("82.3 g de proteína"))
+    }
+
+    @Test
+    fun spelledRelativeOffsetsFromEightThroughNinetyBindToTheExactReadDay() {
+        val cases = listOf(
+            "What did I eat eight days ago?" to 8,
+            "What did I eat ten days ago?" to 10,
+            "What did I eat thirty days ago?" to 30,
+            "What did I eat ninety days ago?" to 90,
+            "¿Qué comí hace ocho días?" to 8,
+            "¿Qué comí hace diez días?" to 10,
+            "¿Qué comí hace treinta días?" to 30,
+            "¿Qué comí hace noventa días?" to 90,
+        )
+
+        cases.forEach { (question, expectedOffset) ->
+            val required = MetriaAgentGroundingPolicy.requiredTool(question)
+            assertEquals(question, expectedOffset, required?.daysAgo)
+            assertTrue(question, required!!.accepts(PrivateCoachToolCall(required.name, daysAgo = expectedOffset)))
+            assertFalse(question, required.accepts(PrivateCoachToolCall(required.name, daysAgo = expectedOffset - 1)))
+            assertFalse(question, required.accepts(PrivateCoachToolCall(required.name, daysAgo = expectedOffset + 1)))
+        }
+    }
+
+    @Test
+    fun unparsedSpelledRelativeDaysGetADeterministicNoReadClarification() {
+        assertNull(MetriaAgentGroundingPolicy.requiredTool("How much protein did I eat a hundred days ago?"))
+        assertTrue(
+            MetriaAgentGroundingPolicy.historicalClarification("How much protein did I eat a hundred days ago?")!!.contains("90"),
+        )
+        assertNull(MetriaAgentGroundingPolicy.requiredTool("¿Qué comí hace varios días?"))
+        assertTrue(MetriaAgentGroundingPolicy.historicalClarification("¿Qué comí hace varios días?")!!.contains("90"))
+    }
+
+    @Test
+    fun SpanishSpelledOffsetsAboveNinetyClarifyInsteadOfSelectingAnInnerNumber() {
+        val question = "¿Cuánta proteína consumí hace ciento veinte días?"
+        assertNull(MetriaAgentGroundingPolicy.requiredTool(question))
+        assertTrue(MetriaAgentGroundingPolicy.historicalClarification(question)!!.contains("90"))
+    }
+
+    @Test
+    fun twoDistinctRelativeDayOffsetsClarifyInsteadOfRoutingTheFirstDay() {
+        val question = "How much protein did I eat four days ago compared with three days ago?"
+        assertNull(MetriaAgentGroundingPolicy.requiredTool(question))
+        assertTrue(MetriaAgentGroundingPolicy.historicalClarification(question)!!.contains("one specific day"))
+    }
+
+    @Test
+    fun `unsupported historical requests get deterministic no-read clarification`() {
+        assertTrue(MetriaAgentGroundingPolicy.historicalClarification("¿Qué comí hace 91 días?")!!.contains("90"))
+        assertTrue(MetriaAgentGroundingPolicy.historicalClarification("What did I eat 91 days ago?")!!.contains("90"))
+        assertTrue(MetriaAgentGroundingPolicy.historicalClarification("How much protein did I eat 91 days ago?")!!.contains("90"))
+        assertNull(MetriaAgentGroundingPolicy.historicalClarification("¿Cuántas calorías consumí hace cuatro días?"))
+        assertNull(MetriaAgentGroundingPolicy.historicalClarification("How many calories did I eat 4 days ago?"))
+        assertNull(MetriaAgentGroundingPolicy.historicalClarification("How was my nutrition 4 days ago?"))
+        assertNull(MetriaAgentGroundingPolicy.historicalClarification("¿Cómo va mi nutrición hace cuatro días?"))
+        assertNull(MetriaAgentGroundingPolicy.historicalClarification("¿Cuántas calorías consumí hoy?"))
+        assertNull(MetriaAgentGroundingPolicy.historicalClarification("How many calories today?"))
+        assertNull(MetriaAgentGroundingPolicy.historicalClarification("¿Cómo va mi nutrición hoy?"))
+        assertNull(MetriaAgentGroundingPolicy.historicalClarification("¿Qué comí hace cuatro días?"))
+    }
+
+    @Test
+    fun `historical required tools accept only exact read offset`() {
+        val meals = RequiredAgentTool("read_meals", daysAgo = 4)
+        assertTrue(meals.accepts(PrivateCoachToolCall("read_meals", daysAgo = 4)))
+        assertFalse(meals.accepts(PrivateCoachToolCall("read_meals", daysAgo = 3)))
+        assertFalse(meals.accepts(PrivateCoachToolCall("read_weight", daysAgo = 4)))
+        assertTrue(meals.retryInstruction.contains("days_ago=4"))
+
+        val weight = RequiredAgentTool("read_weight", fromDaysAgo = 4, toDaysAgo = 4)
+        assertTrue(weight.accepts(PrivateCoachToolCall("read_weight", fromDaysAgo = 4, toDaysAgo = 4)))
+        assertFalse(weight.accepts(PrivateCoachToolCall("read_weight", fromDaysAgo = 5, toDaysAgo = 4)))
+        assertFalse(weight.accepts(PrivateCoachToolCall("read_weight", fromDaysAgo = 4, toDaysAgo = 3)))
+
+        val nutrition = RequiredAgentTool("read_day_nutrition", "historical_day", daysAgo = 4)
+        assertTrue(nutrition.accepts(PrivateCoachToolCall("read_day_nutrition", "historical_day", daysAgo = 4)))
+        assertFalse(nutrition.accepts(PrivateCoachToolCall("read_day_nutrition", "historical_day", daysAgo = 3)))
+        assertFalse(nutrition.accepts(PrivateCoachToolCall("read_day_nutrition", "today", daysAgo = 4)))
+        assertTrue(nutrition.retryInstruction.contains("days_ago=4"))
+        assertTrue(weight.retryInstruction.contains("from_days_ago=4") && weight.retryInstruction.contains("to_days_ago=4"))
+    }
+
+    @Test
+    fun `historical nutrition audit binds exact day period metric and partial role`() {
+        val response = mapOf<String, Any?>(
+            "source" to "metria_local_vault",
+            "as_of" to "2026-08-10",
+            "period" to "historical_day",
+            "days_ago" to 4,
+            "from" to "2026-08-06",
+            "to" to "2026-08-06",
+            "requested_metric" to "protein",
+            "nutrition" to mapOf(
+                "calories_kcal" to 1_100.0,
+                "complete_calories_kcal" to 900.0,
+                "protein_g" to 100.0,
+                "complete_protein_g" to 80.0,
+                "partial_protein_g" to 20.0,
+            ),
+        )
+        val evidence = MetriaAgentFactEvidence.from("read_day_nutrition", response)
+
+        assertEquals(
+            "Hace 4 días se registraron comidas con una estimación de 100 g de proteína.",
+            MetriaAgentFactAuditor.audit("Hace 4 días se registraron comidas con una estimación de 100 g de proteína.", evidence).acceptedText,
+        )
+        assertEquals(
+            "Hace 4 días había 80 g de proteína en comidas con nutrición completa.",
+            MetriaAgentFactAuditor.audit("Hace 4 días había 80 g de proteína en comidas con nutrición completa.", evidence).acceptedText,
+        )
+        assertEquals(
+            "Hace 4 días, la estimación parcial fue de 20 g de proteína.",
+            MetriaAgentFactAuditor.audit("Hace 4 días, la estimación parcial fue de 20 g de proteína.", evidence).acceptedText,
+        )
+        assertTrue(MetriaAgentFactAuditor.audit("Hace 3 días había 100 g de proteína.", evidence).retryable)
+        assertTrue(MetriaAgentFactAuditor.audit("El 2026-08-05 había 100 g de proteína.", evidence).retryable)
+        assertTrue(MetriaAgentFactAuditor.audit("En los últimos 7 días había 100 g de proteína.", evidence).retryable)
+        assertTrue(MetriaAgentFactAuditor.audit("Hace 4 días había 1.100 kcal.", evidence).retryable)
+        assertTrue(MetriaAgentFactAuditor.audit("Hace 4 días el objetivo era 100 g de proteína.", evidence).retryable)
+        assertTrue(MetriaAgentFactAuditor.audit("Había 100 g de proteína.", evidence).retryable)
+    }
+
+    @Test
+    fun `historical nutrition audit rejects internally mismatched exact day evidence`() {
+        val response = mapOf<String, Any?>(
+            "source" to "metria_local_vault",
+            "as_of" to "2026-08-10",
+            "period" to "historical_day",
+            "days_ago" to 4,
+            "from" to "2026-08-05",
+            "to" to "2026-08-05",
+            "nutrition" to mapOf("protein_g" to 80.0),
+        )
+        val evidence = MetriaAgentFactEvidence.from("read_day_nutrition", response)
+        assertTrue(MetriaAgentFactAuditor.audit("Hace 5 días había 80 g de proteína.", evidence).retryable)
+    }
+
+    @Test
+    fun `historical audit rejects dates outside exact host response range`() {
+        val evidence = MetriaAgentFactEvidence.from(
+            "read_meals",
+            mapOf(
+                "source" to "metria_local_vault",
+                "as_of" to "2026-09-23",
+                "from" to "2026-09-19",
+                "to" to "2026-09-19",
+                "meals" to listOf(mapOf("date" to "2026-09-19", "title" to "Arroz", "slot" to "lunch")),
+            ),
+        )
+        assertEquals(
+            "El 2026-09-19 registraste Arroz.",
+            MetriaAgentFactAuditor.audit("El 2026-09-19 registraste Arroz.", evidence).acceptedText,
+        )
+        assertTrue(
+            MetriaAgentFactAuditor.audit("El 2026-09-20 registraste Arroz.", evidence).retryable,
+        )
+        assertTrue(
+            MetriaAgentFactAuditor.audit("Ayer registraste Arroz.", evidence).retryable,
+        )
+        assertEquals(
+            "Hace cuatro días registraste Arroz.",
+            MetriaAgentFactAuditor.audit("Hace cuatro días registraste Arroz.", evidence).acceptedText,
+        )
+    }
+
+    @Test
+    fun `historical weight audit rejects relative day outside exact range`() {
+        val evidence = MetriaAgentFactEvidence.from(
+            "read_weight",
+            mapOf(
+                "source" to "metria_local_vault",
+                "as_of" to "2026-09-23",
+                "from" to "2026-09-19",
+                "to" to "2026-09-19",
+                "entries" to listOf(mapOf("date" to "2026-09-19", "kilograms" to 90.5)),
+            ),
+        )
+        assertTrue(MetriaAgentFactAuditor.audit("Ayer pesabas 90.5 kg.", evidence).retryable)
+        assertEquals(
+            "Four days ago you weighed 90.5 kg.",
+            MetriaAgentFactAuditor.audit("Four days ago you weighed 90.5 kg.", evidence).acceptedText,
         )
     }
 }
