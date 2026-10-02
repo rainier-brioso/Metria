@@ -474,10 +474,7 @@ class EncryptedVault(context: Context) {
         ).put("activeConversation", activeConversation?.let { conversation -> JSONObject()
             .put("updatedAt", conversation.updatedAt.toString())
             .put("messages", JSONArray().apply {
-                conversation.messages.forEach { message -> put(JSONObject()
-                    .put("text", message.text)
-                    .put("fromMember", message.fromMember)
-                    .put("localEvidence", message.localEvidence))
+                conversation.messages.forEach { message -> put(PrivateConversationMessageCodec.encode(message))
                 }
             })
         }).toString().toByteArray(Charsets.UTF_8)
@@ -651,11 +648,7 @@ class EncryptedVault(context: Context) {
             val messageValues = conversation.getJSONArray("messages")
             val record = PrivateConversationRecord(
                 messages = List(messageValues.length()) { index -> messageValues.getJSONObject(index).let { message ->
-                    PrivateConversationMessage(
-                        text = message.getString("text"),
-                        fromMember = message.getBoolean("fromMember"),
-                        localEvidence = message.optBoolean("localEvidence", false),
-                    )
+                    PrivateConversationMessageCodec.decode(message)
                 } },
                 updatedAt = Instant.parse(conversation.getString("updatedAt")),
             )
@@ -792,6 +785,7 @@ class EncryptedVault(context: Context) {
         corrections: List<FoodCorrection>,
         dishes: List<PersonalDish>,
         correctionMemory: MealCorrectionMemory? = null,
+        recordInConversation: Boolean = false,
     ): Status {
         if (sessionKey == null) return Status.Locked
         if (!MealEntryValidation.valid(entry)) return Status.Failed("This reviewed meal contains invalid values.")
@@ -810,6 +804,8 @@ class EncryptedVault(context: Context) {
         val previousCorrections = foodCorrections.toList()
         val previousMemories = mealCorrectionMemories.toList()
         val previousDishes = personalDishes.toList()
+        val previousConversation = activeConversation
+        val previousConversationExpired = conversationExpired
         return try {
             meals.add(entry)
             applyFoodCorrections(corrections.map { it.copy(sourceMealId = entry.id) })
@@ -817,6 +813,12 @@ class EncryptedVault(context: Context) {
                 mealCorrectionMemories = MealCorrectionMemoryPolicy.withRecord(mealCorrectionMemories, memory).toMutableList()
             }
             require(dishes.all(::mergePersonalDish)) { "Private dish memory is full." }
+            if (recordInConversation) {
+                AssistantMealSaveReceipt.append(activeConversation, entry, Instant.now())?.let {
+                    activeConversation = it
+                    conversationExpired = false
+                }
+            }
             persist()
             unlockedStatus()
         } catch (error: Exception) {
@@ -824,6 +826,8 @@ class EncryptedVault(context: Context) {
             foodCorrections = previousCorrections.toMutableList()
             mealCorrectionMemories = previousMemories.toMutableList()
             personalDishes = previousDishes.toMutableList()
+            activeConversation = previousConversation
+            conversationExpired = previousConversationExpired
             Status.Failed(
                 if (error.message == "Private dish memory is full.") {
                     "Your private dish memory is full. Remove a saved dish before adding another."

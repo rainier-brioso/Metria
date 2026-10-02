@@ -11,6 +11,7 @@ sealed interface AssistantAction {
     data class QueryMealHistory(val fromDaysAgo: Int, val toDaysAgo: Int, val mealSlot: String? = null) : AssistantAction
     data class QueryNutrition(val period: String?) : AssistantAction
     data class QueryDayNutrition(val daysAgo: Int) : AssistantAction
+    data object QueryLatestMeal : AssistantAction
     data class QueryProgressOverview(val period: String) : AssistantAction
     data class SearchSavedDishes(val query: String) : AssistantAction
     data class DraftWeight(val kilograms: Double) : AssistantAction
@@ -21,6 +22,7 @@ sealed interface AssistantAction {
 
 object AssistantActionDispatcher {
     fun resolve(call: PrivateCoachToolCall): AssistantAction = when (call.intent) {
+        "read_latest_meal" -> AssistantAction.QueryLatestMeal
         "get_nutrition_summary", "read_goal_progress", "read_nutrition_summary" -> AssistantAction.QueryNutrition(call.period)
         "read_day_nutrition" -> call.daysAgo
             ?.takeIf { it in 0..90 }

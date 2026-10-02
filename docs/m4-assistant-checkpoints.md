@@ -1,5 +1,409 @@
 # M4 local assistant checkpoints
 
+## Validated meal-list answer APK installed — 2026-10-02
+
+- After explicit member approval and the complete 272-test Android gate,
+  installed the host-composed meal-list answer update on the connected Samsung
+  SM-S928B using `adb install -r`: `Success`. Force-stop and launch returned
+  `Status: ok`, `LaunchState: COLD`. Existing app storage was preserved in
+  place; no data clear, uninstall, signing change, or biometric automation
+  occurred.
+- Installation and launch are confirmed. Physical acceptance of the actual
+  meal-list answer remains pending; no successful answer is claimed yet.
+- Next bounded task: member unlock and repeat the recorded-meal question,
+  expecting a concise saved-meal list for the requested day. Test general food
+  advice separately; it must not create a draft. Gate C/D remain open.
+
+## Correct meal read but irrelevant final answer — 2026-10-02
+
+- Authorized phone/trace inspection showed the routing update selecting
+  `read_meals` and a grounded meal evidence card. The model's final answer was
+  an irrelevant English explanation about unavailable weight/goal information
+  and internal tools. It passed the factual audit because it asserted no
+  unsupported values. This is an answer-relevance failure, not a successful
+  member answer. The temporary screenshot was deleted; no raw member data is
+  retained here.
+- Explicit exact-day meal-list contracts now use a deterministic host answer
+  from that fresh result. Source, requested/as-of dates, calendar binding,
+  counts, coverage, row dates/titles, and record bounds are validated before
+  the answer passes the unchanged factual audit. Empty and partial lists are
+  explicit; same-titled saved records are not silently merged. Invalid data
+  fails closed, and native context retires under the existing worker lease.
+- Complete Android gate passed: 272 tests, 0 failures/errors, debug APK built;
+  `git diff --check` passed. Tests cover bilingual meal names, empty days,
+  relative-day binding, invalid/stale/mismatched payloads, and partial records.
+  The APK is not installed; physical answer acceptance remains pending.
+- Next bounded task: approved in-place installation and repeat the recorded
+  meal question. Then separately test general food advice without a draft.
+  Gate C/D and broader acceptance remain open.
+
+## Recorded-meal routing APK installed — 2026-10-02
+
+- After explicit member approval and the complete 268-test Android gate,
+  installed the recorded-meal question routing fix on the connected Samsung
+  SM-S928B using `adb install -r`: `Success`. Force-stop and launch returned
+  `Status: ok`, `LaunchState: COLD`. Existing app storage was preserved in
+  place; no data clear, uninstall, signing change, or biometric automation
+  occurred.
+- Installation and launch are confirmed. Physical acceptance of the corrected
+  saved-meal question remains pending; no successful answer is claimed yet.
+- Next bounded task: member unlock and repeat the exact recorded-meal question,
+  expecting the saved meal list rather than nutrition totals. If rejected,
+  keep Metria foregrounded for authorized latest-response inspection. Test the
+  general rice/protein question separately; it must not create a meal draft.
+
+## Recorded-meal list question routed to nutrition — 2026-10-02
+
+- The member reported rejection after the suggested Spanish recorded-meal
+  question. Authorized local screen, transient response, and metadata-trace
+  inspection showed `read_nutrition_summary` selected for today, followed by
+  `unsupported_personal_fact` rejection. The response gave nutrition totals
+  rather than a list of saved meals. Raw response, member data, screenshots,
+  device IDs, and hierarchy files are not retained in this checkpoint.
+- The host grounding contract recognized “What did I eat?” but missed the
+  explicit recorded-meal wording. It now covers that bilingual wording for
+  today, yesterday, and supported named dates through the existing exact-day
+  `read_meals` correction/binding path. The agent system instruction also
+  distinguishes meal lists from nutrition totals. No factual-audit relaxation,
+  vault mutation, or model-authored save claim is introduced.
+- Regression tests cover the failed wording and equivalent English questions,
+  wrong-tool/draft rejection, named-day and unsupported-day boundaries, and
+  general/hypothetical food questions remaining outside required record reads.
+- Physical acceptance of this routing change remains pending. Next bounded
+  task: approved in-place install, repeat the saved
+  meal question, and separately verify the general rice/protein question.
+  Gate C/D and broader assistant acceptance remain open.
+- Complete Android gate passed: 268 tests, 0 failures/errors, debug APK built;
+  `git diff --check` passed. This routing APK is not yet installed.
+
+## Saved-meal Chat link after reopening — 2026-10-02
+
+- The member confirmed “yes it works!” after the requested reopen check of
+  the saved-meal confirmation and View meal link on the installed navigation
+  build. This passes targeted member-observed persistence after reopening.
+- The reply did not distinguish navigation reopening, biometric relock, or
+  process restart, and did not separately confirm duplicate-record inventory.
+  Explicit relock/process-restart, no-replay/no-duplication, deleted-target,
+  keyboard, rotation, font scaling, and TalkBack checks remain open.
+- Next bounded task: continue the assistant acceptance matrix with a
+  non-recording food question and a saved-meal history question, verifying the
+  former does not create a draft and the latter reads current saved records.
+  Gate D and the varied-photo reliability evidence gap remain open.
+
+## Return-to-Chat and View meal member check — 2026-10-02
+
+- On the installed 265-test navigation/link build, the member reported
+  “worked!” in response to the requested save-to-Chat, View meal, and editor
+  return check. This is a targeted member-observed pass on Samsung SM-S928B;
+  the reply did not separately describe each interaction.
+- Deleted-target handling, relock/restart link persistence, keyboard, rotation,
+  enlarged text, and TalkBack remain unverified. This does not complete Gate D
+  or the broader assistant acceptance matrix.
+- Next bounded task: verify saved-meal confirmation/link persistence after
+  relock and restart, without replay or duplication, then continue the remaining
+  assistant acceptance checks. The varied-photo pilot remains the broader meal
+  analysis reliability evidence gap.
+
+## Return-to-Chat and View meal APK installed — 2026-10-02
+
+- After explicit member approval and the complete 265-test Android gate,
+  installed the navigation/link update on the connected Samsung SM-S928B with
+  `adb install -r`: `Success`. Force-stop and launch returned `Status: ok`,
+  `LaunchState: COLD`. Existing app storage was preserved in place; no data
+  clear, uninstall, signing change, or biometric automation occurred.
+- Installation and launch are confirmed. Physical acceptance of direct Chat
+  return after save, View meal, editor return, deleted-target handling, and
+  link persistence remains pending. Older confirmations without a saved-meal
+  ID are readable but do not gain an inferred link.
+- Next bounded task: on the next genuine meal saved from Chat, verify direct
+  return, View meal opening the exact saved entry, and closing the editor
+  returning to Chat. Avoid saving an unwanted duplicate solely for testing.
+
+## Stay in Chat after save and open saved meal — 2026-10-02
+
+- The member requested returning to Chat after meal save and opening the saved
+  meal from the confirmation, as from Today. Chat-origin review now returns to
+  Chat on successful save (after synchronizing the persisted transcript), and
+  also on leave without saving with the original draft retained.
+- New host acknowledgements store an optional local saved-meal ID in the
+  encrypted transcript. **View meal** resolves it against the current unlocked
+  meal list and opens the same existing saved-meal editor over Chat. Closing,
+  editing/saving, or deleting returns to Chat. Deleted targets show a concise
+  unavailable label rather than an active action. Existing confirmations with
+  no ID remain readable; links are not retroactively inferred from names.
+- Link metadata is excluded from model prompts and URLs. Member/evidence
+  messages and malformed identifiers cannot retain a receipt link. No meal
+  write occurs when opening it, and receipt/save atomicity is unchanged.
+- Complete Android gate passed: 265 tests, 0 failures/errors, debug APK built;
+  `git diff --check` passed. New tests cover link serialization/retention, older
+  payload compatibility, and invalid/member/evidence link removal. No Compose
+  instrumentation infrastructure exists; physical navigation and layout
+  acceptance remain pending. No installation or physical pass is claimed.
+- Next bounded task: approved in-place install, genuine Chat meal save, verify
+  direct return and View meal against Today, close/edit/delete return, then
+  keyboard, rotation, font scaling, TalkBack, and link persistence after relock
+  and restart. Gate D remains open.
+
+## Chat meal-save acknowledgement APK installed — 2026-10-02
+
+- After explicit member approval and the complete 262-test Android gate,
+  installed the chat acknowledgement update on the connected Samsung SM-S928B
+  with `adb install -r`: `Success`. Force-stop and launch returned `Status: ok`,
+  `LaunchState: COLD`. Existing app storage was preserved in place; no data
+  clear, uninstall, signing change, or biometric automation occurred.
+- Installation and launch are confirmed. Member verification of a new Chat
+  meal save and its acknowledgement after reopening, relock, and restart is
+  pending. Earlier saves are not retroactively inserted into the transcript.
+- Next bounded task: verify the acknowledgement on the next genuine meal save
+  from Chat without creating an unwanted duplicate solely for testing. Gate D
+  and broader physical acceptance remain open.
+
+## Native draft saved on phone; chat acknowledgement added — 2026-10-02
+
+- On the installed structured-generator build, the member reported a good
+  meal draft, visible buttons, and a successful save. This passes that targeted
+  member-observed draft/review/save scenario on Samsung SM-S928B. Separate
+  Stop, enlarged text, keyboard, rotation, relock, and false-intent checks remain
+  open; no broad Gate D completion is claimed.
+- The member reported that saving left no trace in Chat. Chat-origin review
+  now requests a host-authored acknowledgement with the final confirmed title
+  and foods, persisted in the same encrypted vault transaction as the meal and
+  its accepted learning. Failed saves roll everything back. Discard/leave and
+  other entry paths add no Chat acknowledgement. Expired chats are not revived.
+- The acknowledgement uses existing transcript storage and retention; no new
+  schema or model-generated save claim is introduced. It is historical chat
+  continuity and never replaces a fresh record read.
+- Complete Android gate passed: 262 tests, 0 failures/errors, debug APK built;
+  `git diff --check` passed. New tests cover final reviewed content, retention
+  limits, untitled meals, and absence/expiry of a conversation. The transaction
+  rollback path was reviewed; physical save-failure checks remain open.
+- Phone acceptance of this new acknowledgement remains pending. Next bounded
+  task: approved in-place install, save a reviewed Chat meal, reopen Chat, then
+  verify the confirmation survives relock/restart without replay or duplication.
+
+## Structured native draft APK installed — 2026-10-02
+
+- After explicit member approval and the complete 259-test Android gate,
+  installed the separate structured-generator and loading-state update on the
+  connected Samsung SM-S928B using `adb install -r`: `Success`. Force-stop
+  and launch returned `Status: ok`, `LaunchState: COLD`.
+- Existing app storage was preserved in place. No data clear, uninstall,
+  signing change, vault/model removal, or biometric automation occurred.
+  Installation and launch are confirmed; member unlock, record verification,
+  meal-draft success, and spinner/Stop physical acceptance remain pending.
+- Next bounded task: repeat the natural meal description and verify a visible
+  loading state followed by an unsaved Review/Discard proposal. If rejected,
+  keep Metria foregrounded and inspect the authorized latest response/category
+  before another request. Gate D remains open.
+
+## Native draft prose failure diagnosed — 2026-10-02
+
+- Authorized inspection on Samsung SM-S928B showed the new diagnostics refresh
+  working: latest text draft category `invalid_json`, with a prose announcement
+  instead of structured meal data. The member also reported that preparation
+  looked like a static message. Raw response, member text, and device screen
+  are not retained in repository evidence; the temporary screenshot was deleted.
+- Native intent detection remains model-selected. Its host action now retires
+  chat KV and starts a separate tool-free structured task using only the current
+  member message and a dedicated system contract/example. Chat style and read
+  evidence are excluded. The existing parser, request ID, timeout, cancellation
+  leases, Review/Discard, and member-confirmed save remain in force.
+- Draft preparation uses an explicit spinner, status text, and the existing
+  Stop response action. Keyboard/insets and composer behavior are unchanged.
+- Complete Android gate passed: 259 tests, 0 failures/errors, debug APK built.
+  `git diff --check` passed. Phone verification of this new generator/loading
+  state remains pending; no successful draft or completed Gate D is claimed.
+- Next bounded task: approved in-place installation and member repetition.
+  Inspect another failed output if needed; verify review, Stop, keyboard,
+  rotation, and accessibility on the phone without saving unwanted duplicates.
+
+## Text draft diagnostics APK installed — 2026-10-02
+
+- After explicit member approval and the complete 259-test Android gate,
+  installed the diagnostics update on the connected Samsung SM-S928B with
+  `adb install -r`: `Success`. Force-stop and launch returned `Status: ok`,
+  `LaunchState: COLD`. No data clear, uninstall, signing change, or biometric
+  automation occurred; existing app storage was preserved in place.
+- Installation and launch are confirmed. The previous in-memory response
+  cleared on process restart. Member unlock, existing-record confirmation,
+  reproduction, and inspection of the refreshed response/category remain
+  pending. No successful draft or physical diagnostics acceptance is claimed.
+- Next bounded task: repeat the failed description, keep Metria foregrounded,
+  and inspect Privacy → Developer diagnostics for the authorized run before
+  another model operation. Diagnose the actual validation mismatch.
+
+## Text draft rejection inspection — 2026-10-02
+
+- The member's next attempt reached the native meal-draft path but displayed
+  the proposal-validation error. This establishes intent routing for that
+  attempt, not successful meal drafting. The exact malformed output has not
+  been inspected; no schema relaxation is justified yet.
+- Developer diagnostics already held the latest bounded model response in
+  memory, but the parent screen retained an old model-status snapshot after
+  leaving Chat. Navigation now refreshes that status. Text draft results also
+  expose a fixed parser category beside the response, including extra tool
+  calls and empty/oversized output. Raw response storage remains memory only.
+- Complete Android gate passed: 259 tests, 0 failures/errors, debug APK
+  assembled. Regression coverage distinguishes valid output, invalid JSON,
+  root shape, ranges, extra tools, and response bounds. `git diff --check`
+  passed. This diagnostics APK is not yet installed or physically verified.
+- Next bounded task: approved in-place install, member reproduction, then
+  authorized foreground inspection in Privacy → Developer diagnostics.
+  Diagnose the exact mismatch before changing the proposal contract. Gate D
+  and broader assistant acceptance remain open. No private response or raw
+  device hierarchy is retained in this checkpoint.
+
+## Native meal-draft tool APK installed — 2026-10-02
+
+- After explicit member approval and the complete 258-test Android gate,
+  selected the current Samsung SM-S928B transport and installed the working-tree
+  native meal-draft build with `adb install -r`. ADB returned `Success`;
+  force-stop and launch returned `Status: ok`, `LaunchState: COLD`.
+- No data clear, uninstall, signing change, vault/model removal, or biometric
+  automation occurred. Installation and launch are confirmed; the member still
+  needs to unlock, check existing records, and verify native intent selection.
+- Next bounded task: repeat the natural meal description, expect an unsaved
+  Review/Discard proposal, and verify its foods before saving any real meal.
+  Test saved-meal reads, non-recording food questions, cancellation, and restart
+  separately. Gate D and broader B–E acceptance remain open; installation
+  alone does not establish native meal-draft behavior.
+
+## Native agent meal-draft intent slice — 2026-10-02
+
+- Authorized current-screen inspection showed the red factual-verification
+  error after a natural Spanish description of food eaten. The current route
+  sent messages without explicit write words into a native agent exposing only
+  read tools. No raw hierarchy or member meal description is retained here.
+- The member explicitly preferred exposing a draft tool so the agent can infer
+  intent. Added declared native `draft_meal()` rather than a meal keyword
+  classifier. The tool has no arguments or save permission; the host uses the
+  current message, sends an unsaved-proposal contract back into the same native
+  conversation, and validates the reply with the existing meal parser.
+- Required record reads cannot switch into drafting. Further tool calls during
+  proposal generation are rejected. Current request ID/lifetime checks gate
+  presentation; completion clears native KV state. Existing Review/Discard and
+  final reviewed Save remain the only meal persistence path. No UI source,
+  production dependency, cloud capability, or direct vault-write tool was added.
+- Four regression tests cover no-argument native adaptation and rejected
+  replacement/save fields, current-member-message/required-read binding,
+  malformed/extra-tool proposal rejection, and non-record unsaved receipt.
+  Complete Android gate passed: 258 tests, 0 failures/errors, debug APK assembled.
+  `git diff --check` passed. Not installed; model intent selection on the phone
+  is still unverified. Gate D and the broader B–E gates remain open.
+- Next bounded task: after approved in-place installation, member unlock and
+  test natural meal descriptions in Spanish/English, a saved-meal read question,
+  an advice/hypothetical-food question, Review/Discard, Stop/late response,
+  lock/reopen, and no duplicate or unconfirmed saved meal. Record outcomes before
+  claiming native draft-tool acceptance. Decimal-display phone acceptance also
+  remains pending for a newly generated overview.
+
+## Decimal-display correction installed — 2026-10-02
+
+- After explicit member approval and the complete 254-test Android gate,
+  installed the working-tree decimal-display correction on the connected
+  Samsung SM-S928B using `adb install -r`. Installation returned `Success`;
+  force-stop and launch returned `Status: ok`, `LaunchState: COLD`.
+- No data clear, uninstall, signing change, vault/model removal, or biometric
+  automation occurred. Installation and launch are confirmed; record
+  preservation and new-answer formatting still require member verification.
+- Next bounded task: member unlock, check existing records, send a new weekly
+  progress question, and compare whole kcal / at-most-one-decimal protein in
+  the answer and expandable records card. Previously retained chat is not
+  rewritten. No new formatting or full M4 physical acceptance is claimed yet.
+
+## Progress recovery phone check and decimal correction — 2026-10-02
+
+- On the installed Samsung SM-S928B (Android 16 / API 36), the member reported
+  that the two questions now worked but nutrition had long decimals. Authorized
+  current-screen inspection confirmed a visible Spanish weekly overview answer
+  and a yesterday response; it also confirmed floating-point artifacts in the
+  host-composed overview. The hierarchy inspection failed, so a temporary
+  annotated screenshot was used and removed outside the repository. No member
+  values or raw screen evidence are retained here.
+- This is targeted progress-reply and follow-up presentation evidence only;
+  it does not independently verify yesterday's record completeness, numeric
+  accuracy, lifecycle behavior, or accessibility. Gates B–E remain open.
+- Corrected overview display at the evidence boundary: whole kcal and one
+  decimal for protein, half-up rounded before model/factual-audit use. The
+  expandable overview uses matching display precision. Saved meal values,
+  underlying arithmetic, weight precision, and host progress calculations
+  remain unchanged. This corrects the raw-decimal presentation introduced by
+  the new overview fallback, without weakening numeric validation.
+- Regression coverage exercises today/week, English/Spanish, fractional
+  totals and goals, matching evidence display, unchanged underlying totals,
+  accepted rounded prose and rejected raw-value claims. The complete Android
+  gate passed with 254 tests, 0 failures/errors, and an assembled debug APK;
+  `git diff --check` passed. This decimal-correction APK is not installed.
+- Next bounded task: after explicit in-place installation approval, unlock,
+  repeat the weekly-progress question, compare answer and expandable evidence,
+  and verify concise decimals. Old retained chat text is not rewritten.
+
+## Progress-overview recovery APK installed — 2026-10-02
+
+- After explicit member approval and the complete 253-test Android gate,
+  selected the current Samsung SM-S928B transport and installed the debug APK
+  with `adb install -r`. ADB returned `Success`; force-stop and launch returned
+  `Status: ok`, `LaunchState: COLD`. This is the working-tree build based on
+  `778f457` with the progress-overview fallback change.
+- The shell exit-code guard had a quoting error after the successful install;
+  installation and launch success are independently confirmed by ADB output.
+  No data clear, uninstall, signing-key change, vault/model removal, or biometric
+  automation occurred. Existing record preservation still needs member check.
+- Installation/launch only are accepted. Next bounded task: member unlock,
+  check existing records, repeat the English/Spanish weekly-progress question,
+  compare the answer with the expandable records card, and exercise the
+  yesterday follow-up separately. No new physical reply acceptance is claimed.
+
+## Progress-overview reply recovery — 2026-10-02
+
+- With explicit member authorization to inspect the current Metria screen,
+  used the Android CLI skill on the connected Samsung SM-S928B. Weekly-progress
+  requests in English and Spanish reached records cards, but the latest answer
+  showed the factual-verification error. This was an overview failure before
+  the proposed yesterday follow-up. No record values or raw hierarchy/capture
+  are retained here; the temporary annotated image was removed outside the repo.
+- The screen establishes successful record retrieval and rejected answer
+  presentation, not the precise invalid model claim. No raw model response was
+  inspected. Existing nutrition-only fallback did not cover an overview.
+- Added a bounded bilingual host-composed overview fallback scoped to the
+  current native tool result. It validates source, tool/required period, dates,
+  count/coverage consistency, numeric values and language, then passes the
+  unchanged final factual audit. It includes estimate coverage and the
+  recorded-meals-only boundary, never infers zero intake from absent estimates,
+  and never supplies an invented weight trend. Rejected model context is
+  discarded under the existing lifecycle policy.
+- Five regression tests cover bilingual recovery from rejected prose, native
+  today selection, empty records, wrong source/tool/period/dates/language,
+  malformed counts and nonfinite nutrition. The complete Android test/build
+  gate passed with 253 tests, 0 failures and 0 errors, and assembled the debug
+  APK. `git diff --check` passed.
+- Not installed; new physical acceptance is pending. Prior device evidence
+  does not validate this APK. Next bounded task: after explicit in-place
+  installation approval, have the member unlock and repeat a weekly-progress
+  question in both languages, verify the answer against the records card, and
+  exercise Stop/reopen and the yesterday follow-up separately. Gates B–E remain
+  open; this fallback does not establish model-language reliability.
+
+## Hackathon and optional-cloud design — 2026-10-02
+
+- The member wants a stronger assistant experience and a Nebius hackathon
+  presentation, and explicitly selected designing optional real-data cloud
+  assistance with consent and revised privacy disclosure.
+- `hackathon-assistant-plan.md` records verified event requirements and a
+  bounded local-demo schedule. `optional-cloud-assistant-spec.md` proposes a
+  default-off, app-initiated relay for a previewed question and selected
+  seven-day summaries, with read-only validated answers. WhatsApp is deferred.
+- Updated plan, architecture, safety, and design references distinguish this
+  proposed cloud flow from the active local contract and future external MCP.
+  Provider retention, service identity, shipping consent, and implementation
+  acceptance remain open. No real data was transmitted.
+- Documentation only; `git diff --check` passed. No Android source, build,
+  installation, device capture, or new physical acceptance in this turn.
+  Prior 248-test/device evidence remains unchanged. Gates B–E remain open.
+- Next bounded task: run the consented varied-photo pilot and four local
+  assistant journeys in the hackathon plan; verify Nebius provider retention
+  and broker authentication before implementing the optional online adapter.
+
 ## Gate A native agent and conversation — 2026-08-28
 
 **Outcome:** Gate A implementation and target-device acceptance passed. Gates B–E remain open.
@@ -1647,3 +2051,176 @@ target-phone interaction recheck pending.
   tracking visual correctness, omissions, correction effort, duration, and
   thermal behavior separately. Do not read raw capture without authorization
   for that diagnostic run.
+
+### General food question corrective retry — 2026-10-02
+
+- The member confirmed the first recorded-meal question worked on the installed
+  build, but the subsequent general rice/protein question was filtered. Authorized
+  phone inspection showed the latest in-memory response acknowledging internal
+  tool/record instructions instead of answering the question. The factual audit
+  rejected its personal-record wording. The initial pre-retry response was not
+  retained, so its precise failure is unverified. Temporary screenshots were deleted.
+- The no-evidence retry now includes the original bounded question as quoted,
+  untrusted content and asks for a direct answer, without acknowledging internal
+  corrections. Prompts explicitly permit qualitative general food education in
+  the member's language while reserving personal-record claims for approved local
+  reads. Audit acceptance rules, privacy, and meal review requirements are unchanged.
+- The complete `:app:testDebugUnitTest :app:assembleDebug --no-daemon` gate
+  passed: 274 tests, 0 failures, 0 errors, and a debug APK. Regression tests cover
+  original-question preservation, the separate evidence-backed retry, a permitted
+  qualitative answer, and continued rejection of unsupported personal claims.
+  This newest APK is not installed; physical acceptance remains pending.
+- Next bounded task: approved in-place installation, member unlock and record
+  preservation check, then repeat the recorded-meal question followed by the
+  general food question. Confirm both answer the actual question in Spanish.
+  Broader Gates B–E remain open.
+
+### General food retry APK installed — 2026-10-02
+
+- After explicit member approval and the 274-test complete Android gate,
+  installed the debug APK in place on the Samsung SM-S928B (Android 16 / API 36).
+  `adb install -r` returned `Success`; force-stop and `am start -W` returned
+  `Status: ok` and `LaunchState: COLD`.
+- No data clear, uninstall, signing change, vault/model removal, or biometric
+  automation occurred. Installation and launch are confirmed; the member must
+  unlock and confirm existing records and both question results. Physical
+  acceptance of this correction remains pending.
+
+### General food retry member check — 2026-10-02
+
+- After the approved in-place installation of the 274-test build on the
+  Samsung SM-S928B (Android 16 / API 36), the member reported that the requested
+  two-question sequence worked: today's recorded meals followed by the general
+  rice/protein question. This is a targeted member-observed phone pass.
+- The reply did not separately confirm existing-record inventory, exact answer
+  wording, offline mode, restart, accessibility, or cancellation. Those checks
+  and broader Gates B–E remain open.
+- Next bounded task: test a context-dependent follow-up after a general food
+  answer and then switch back to a personal-record question, verifying that the
+  latter performs a fresh local read and uses the requested date.
+
+### Food follow-up and personal-record context switch member check — 2026-10-02
+
+- On the installed 274-test build, the member reported that the requested
+  sequence worked: the lentil follow-up after the rice answer, followed by
+  yesterday's recorded-meal question. This passes the targeted member-observed
+  follow-up and context-switch check on the Samsung SM-S928B (Android 16 / API 36).
+- No diagnostic trace was inspected for this turn, so a fresh tool invocation
+  is not independently verified. Exact wording, empty-day behavior, cancellation,
+  offline use, restart, and broader Gates B–E remain open.
+- Next bounded task: exercise a recorded-meal question for a known empty day
+  and confirm the answer explicitly reports no saved meals for that date.
+
+### Empty-day meal history member check — 2026-10-02
+
+- The member reported that the requested known-empty-day meal-history check
+  worked on the installed 274-test build on the Samsung SM-S928B (Android 16 /
+  API 36). This is a targeted member-observed pass for the empty result state.
+- The exact date and answer were not independently inspected. This does not
+  establish offline operation, cancellation, restart behavior, or completion
+  of broader Gates B–E.
+- Next bounded task: repeat a general food question and a saved-meal question
+  with airplane mode enabled and Wi-Fi disabled, then restore connectivity.
+
+### Offline assistant member check — 2026-10-02
+
+- The member reported that both requested questions worked during the offline
+  check (airplane mode enabled and Wi-Fi disabled): general food education and
+  today's saved-meal question, on the installed 274-test build on the Samsung
+  SM-S928B (Android 16 / API 36). This passes targeted member-observed offline
+  functionality for those two paths.
+- No network instrumentation was collected; this functional check does not
+  independently establish the full privacy gate. Connectivity restoration,
+  cancellation, restart, repeated-run performance, and broader Gates B–E are
+  not confirmed by this reply.
+- Next bounded task: cancel one answer while thinking, verify no late reply or
+  action appears, and ask a new question to confirm the chat remains usable.
+
+### Cancellation recovery and latest-meal nutrition read — 2026-10-02
+
+- The member could continue chatting after Stop; its transient confirmation
+  disappeared when the next question began. That is the existing presentation
+  policy, now documented explicitly. The next latest-meal calorie question was
+  discarded. Metadata inspection showed cancellation followed by a new request
+  rejected for unsupported personal facts, without a read-tool event. The latest
+  raw model response was not inspected, so its wording is unverified. No late
+  result from the cancelled request appears in that trace; this does not prove
+  every cancellation race is resolved.
+- Added the no-argument native `read_latest_meal` read and bilingual required-tool
+  routing for explicit latest-meal nutrition questions. The host selects one meal
+  by recorded date/time within day offsets 0–90, excludes future dates, and
+  returns only its title/date and saved display-rounded calorie/protein estimates.
+  Tied latest times or multiple latest-day meals with an unknown time produce a
+  clarification. Daily totals, chat history, goals, photos, notes, and model
+  nutrition calculations cannot supply this answer. No vault write or dependency
+  was added.
+- Host-composed results validate source, search bounds, selected date, language,
+  value ranges, and coverage, then pass the factual audit. Missing values remain
+  missing, partial estimates are labelled, and an empty bounded history is explicit.
+  Added typed latest-meal nutrition evidence without relaxing existing audits.
+- Final complete Android gate passed: 280 tests, 0 failures, 0 errors, and a
+  debug APK. Six new tests exercise selection versus day totals, rounding without
+  storage changes, metric binding, old/future exclusion, empty/missing/partial
+  states, ambiguous times, malformed results, and bilingual intent boundaries.
+  `git diff --check` passed. The newest APK is not installed; physical acceptance
+  remains pending and broader Gates B–E remain open.
+- Next bounded task: approved in-place installation; member compares latest-meal
+  estimates with its saved entry, then repeats Stop followed by that question and
+  checks that no late cancelled reply appears.
+
+### Latest-meal nutrition APK installed — 2026-10-02
+
+- After explicit member approval and the complete 280-test Android gate,
+  installed the debug APK in place on the Samsung SM-S928B (Android 16 / API 36).
+  `adb install -r` returned `Success`; force-stop and `am start -W` returned
+  `Status: ok` and `LaunchState: COLD`.
+- No data clear, uninstall, signing change, vault/model removal, or biometric
+  automation occurred. Installation and launch are confirmed; existing-record
+  inventory and latest-meal/cancellation physical acceptance await member checks.
+
+### Latest-meal language contract failure and correction — 2026-10-02
+
+- The member reported the installed latest-meal test failed. Authorized metadata
+  inspection confirmed `read_latest_meal` was selected and continued, followed by
+  host-result rejection. Screen inspection confirmed the meal-answer verification
+  error. The temporary screenshot was kept outside the repository and deleted.
+- Found a reproducible integration mismatch: the old shared language helper
+  omitted the member's Spanish calorie/latest-meal wording and could return
+  “the member's language”, while the host answer validator accepts only concrete
+  Spanish/English values. The trace does not contain the rejected payload, so
+  this cause is supported by the caller/validator reproduction rather than a
+  captured runtime field value. Unit fixtures had supplied supported languages
+  directly and missed this caller boundary.
+- Extracted shared language selection outside UI code; it recognizes accented
+  and unaccented Spanish, returns supported concrete values, prioritizes the
+  current question, and uses recent member context for neutral follow-ups.
+  Added an end-to-end host-result test using the exact reported question, plus
+  bilingual/context-switch tests. No factual audit rule or vault storage changed.
+- Complete Android gate passed: 283 tests, 0 failures, 0 errors, and a debug APK.
+  `git diff --check` passed. This APK is not installed and no physical pass is
+  claimed. Next bounded task: approved in-place install, then the exact Spanish
+  latest-meal calorie question and cancellation/retry sequence against the saved
+  entry. Broader Gates B–E remain open.
+
+### Language correction installed; phone cooldown — 2026-10-02
+
+- With explicit member approval, installed the 283-test debug APK in place on
+  the Samsung SM-S928B (Android 16 / API 36). `adb install -r` returned `Success`.
+  Metria was force-stopped and left closed for the member's requested cooldown;
+  no inference or additional phone test was started.
+- No data clear, uninstall, signing change, vault/model removal, or biometric
+  automation occurred. Launch and physical acceptance of this newest build are
+  pending. Resume with the exact Spanish latest-meal question after cooldown,
+  comparing the answer with the saved entry; then test cancellation recovery.
+
+### Latest-meal language correction member pass — 2026-10-02
+
+- The member reported the latest-meal question worked after installing the
+  283-test language correction build on the Samsung SM-S928B (Android 16 /
+  API 36). This is a targeted member-observed pass. Cancellation recovery,
+  exact saved-value comparison, and broader Gates B–E are not separately
+  confirmed by that reply.
+- The member requested a phone cooldown, authorized a local commit, and asked
+  to begin Nebius work that can be developed and tested without the phone.
+  Next bounded task: optional-cloud request/consent contracts and synthetic
+  desktop tests. No real-data transfer or deployment is enabled by this step.

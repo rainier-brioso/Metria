@@ -54,7 +54,7 @@ private fun traceReason(rejection: String?): String = when (rejection) {
 }
 
 private fun traceToolName(name: String?): String = when (name?.trim()?.lowercase()) {
-    "read_progress_overview", "read_nutrition_summary", "read_day_nutrition", "read_weight", "read_meals", "search_saved_dishes" -> name.trim().lowercase()
+    "read_progress_overview", "read_nutrition_summary", "read_day_nutrition", "read_weight", "read_meals", "read_latest_meal", "search_saved_dishes" -> name.trim().lowercase()
     else -> "none"
 }
 
@@ -102,6 +102,7 @@ data class ModelStatus(
     val diagnostics: String,
     val latestImageAudit: LocalAnalysisAudit?,
     val mealFoodCorrection: MealFoodNameCorrectionStatus,
+    val debugLatestMealDraftCategory: String? = null,
 )
 
 @OptIn(ExperimentalApi::class)
@@ -114,7 +115,8 @@ class ModelLifecycle(
 ) : AutoCloseable {
     private val metriaSystemPrompt = """You are Metria, a private on-device health and nutrition assistant.
         Tone: warm, motivating, clear, concise, and never judgmental. Respond in the member's language.
-        Use only facts returned by Metria's approved tools. Never invent meals, weights, goals, dates, nutrition values, or trends.
+        Use only facts returned by Metria's approved tools when stating the member's personal records.
+        Never invent personal meals, weights, goals, dates, nutrition values, or trends.
         Never save or change data directly; request a draft action and let Metria ask for confirmation.
         For progress, state the relevant factual comparison and any coverage limit. Add a next step only when the member requests one.
         For meal estimates, identify uncertainty, portions, oils or sauces, and require member review.
@@ -127,6 +129,12 @@ class ModelLifecycle(
         Brief greetings and small talk are allowed. For unrelated requests, respond briefly and guide
         the member back to Metria; never pretend to browse the web or know current external events.
 
+        General food education is allowed without a record read. Answer the actual question directly
+        in the member's language, using a short qualitative explanation. Do not add precise nutrition
+        estimates, personal intake claims, record-access explanations, or a meal draft.
+        For example, "¿El arroz tiene proteína?" asks about rice generally, not saved meals or goals.
+        Do not infer personal records merely because the food appeared earlier in the conversation.
+
         Use exactly one declared read tool at a time whenever an answer needs the member's personal
         records. Conversation history is continuity, not record evidence. Never repeat or infer a
         personal fact unless it appears in the latest tool response. After a tool response, answer the
@@ -136,6 +144,23 @@ class ModelLifecycle(
         never calculate a new personal value. End after the direct answer and coverage limit; do not
         append a generic offer or question. A relevant optional next step belongs only in Coach style.
         Ask one concise clarification when a date, period, or request is genuinely ambiguous.
+
+        When asked which meals are recorded, call read_meals for that day, not
+        read_nutrition_summary. For example "¿Qué comidas tengo registradas hoy?"
+        needs read_meals(days_ago=0, meal_slot=null). List the returned meal names;
+        calorie/protein totals do not answer a meal-list question.
+
+        For calories or protein in "mi última comida" or "my last meal", call
+        read_latest_meal with no arguments. It reads one most recent recorded meal,
+        not today's nutrition totals. Never infer its nutrition from visible chat.
+
+        When the member describes food they ate or wants to record a meal, choose draft_meal,
+        even if they do not say log or save. Infer intent from the whole message and conversation,
+        not just keywords. Questions about what was already recorded still require a read tool.
+        Advice, hypothetical food, and medical concerns are not meal-recording requests.
+        draft_meal creates only an unsaved editable proposal from the current member message.
+        The host generates and validates the proposal in a separate structured task.
+        Never announce a completed draft or claim it was saved; the member reviews and saves.
 
         For broad personal progress questions, call read_progress_overview. Examples:
         "How am I doing today?" means period=today. "How is my week?" and "¿Cómo va mi semana?"
@@ -230,6 +255,7 @@ class ModelLifecycle(
     // Debug builds expose only the latest response in-memory to diagnose strict-parser rejects.
     // It is cleared on the next operation, lock/background, and process death; never logged or saved.
     private var debugLatestModelResponse: String? = null
+    private var debugLatestMealDraftCategory: String? = null
     private var latestImageAudit: LocalAnalysisAudit? = null
     private var activeImageAuditStart: Pair<Instant, Long>? = null
     private var latestImagePreparationMillis: Long? = null
@@ -1165,7 +1191,7 @@ class ModelLifecycle(
                 ConversationConfig(
                     systemInstruction = Contents.of(Content.Text(metriaAgentSystemPrompt + assistantStylePrompt(assistantStyle))),
                     initialMessages = initialMessages,
-                    tools = listOf(tool(MetriaReadToolSet())),
+                    tools = listOf(tool(MetriaReadToolSet()), tool(MetriaMealDraftToolSet())),
                     automaticToolCalling = false,
                 ),
             ).also { conversation ->
@@ -1266,11 +1292,18 @@ class ModelLifecycle(
                     response = sendPrivateAgentMessage(
                         conversation,
                         conversationLifetime,
-                        Message.user(MetriaAgentFactAuditor.retryInstruction(hasLatestToolEvidence = false)),
+                        Message.user(MetriaAgentFactAuditor.retryInstruction(hasLatestToolEvidence = false, memberQuestion = memberText)),
                         requestId,
                     )
                     factCorrectionAttempted = true
                 }
+            }
+            val mealDescription = NativeMealDraftPolicy.description(
+                response.toolCalls.singleOrNull()?.let(MetriaNativeToolCallAdapter::adapt), requiredTool, memberText,
+            )
+            if (mealDescription != null) {
+                runNativeMealDraft(loadedEngine, conversation, mealDescription, requestId, startedAt)
+                return
             }
             consumePrivateAgentResponse(
                 loadedEngine,
@@ -1315,6 +1348,77 @@ class ModelLifecycle(
         }
     }
 
+    private fun runNativeMealDraft(
+        loadedEngine: Engine,
+        conversation: Conversation,
+        description: String,
+        requestId: Long,
+        startedAt: Long,
+    ) {
+        val draftLifetime = synchronized(this) {
+            if (engine !== loadedEngine || assistantRequestId != requestId || privateAgentConversation !== conversation) return
+            assistantOperation = "meal"
+            assistantProposal = null
+            assistantDiagnostic = null
+            coachToolCall = null
+            coachReply = null
+            coachStreamingReply = null
+            coachDiagnostic = null
+            reason = "Preparing an unsaved meal draft from the native assistant request."
+            // Intent is already selected. Chat style/tool-result instructions must not
+            // turn this structured task into prose. Retire KV without closing leased work.
+            clearPrivateAgentConversationLocked()
+            val previousConstrainedDecoding = ExperimentalFlags.enableConversationConstrainedDecoding
+            val draftConversation = try {
+                ExperimentalFlags.enableConversationConstrainedDecoding = false
+                loadedEngine.createConversation(ConversationConfig(
+                    systemInstruction = Contents.of(Content.Text(NativeMealDraftPolicy.generationInstruction)),
+                    automaticToolCalling = false,
+                ))
+            } finally {
+                ExperimentalFlags.enableConversationConstrainedDecoding = previousConstrainedDecoding
+            }
+            NativeConversationLifetime(
+                conversation = draftConversation,
+                cancel = ::cancelPrivateAgentConversation,
+                close = { it.close() },
+            ).also {
+                check(it.acquire())
+                privateAgentConversation = draftConversation
+                privateAgentConversationLifetime = it
+                activeConversation = draftConversation
+            }
+        }
+        try {
+            val response = sendPrivateAgentMessage(
+                draftLifetime.conversation, draftLifetime,
+                Message.user(description),
+                requestId,
+            )
+            val output = response.contents.contents.filterIsInstance<Content.Text>().joinToString("") { it.text }.trim()
+            val outcome = NativeMealDraftPolicy.outcome(output, response.toolCalls.isNotEmpty())
+            val proposal = outcome.proposal
+            synchronized(this) {
+                if (engine !== loadedEngine || assistantRequestId != requestId || privateAgentConversation !== draftLifetime.conversation) return
+                debugLatestModelResponse = output.take(16_000).takeIf { BuildConfig.DEBUG }
+                debugLatestMealDraftCategory = outcome.category.takeIf { BuildConfig.DEBUG }
+                state = "loaded"
+                assistantProposal = proposal
+                assistantDiagnostic = if (proposal == null) "Local analysis completed, but its draft was not safe to display. Try clearer details." else null
+                reason = if (proposal == null) "Native meal draft was rejected safely." else "Local meal draft ready for review. Nothing was saved."
+                diagnostics = measurement("native meal draft", startedAt)
+                // Never retain proposal JSON or a pending tool in the conversational context.
+                // The worker lease keeps native cancellation/close safe until this turn exits.
+                clearPrivateAgentConversationLocked()
+            }
+        } finally {
+            synchronized(this) {
+                if (privateAgentConversation === draftLifetime.conversation) clearPrivateAgentConversationLocked()
+            }
+            draftLifetime.release()
+        }
+    }
+
     private fun runPrivateAgentToolResult(
         conversation: Conversation,
         lifetime: NativeConversationLifetime<Conversation>,
@@ -1329,6 +1433,27 @@ class ModelLifecycle(
         try {
             synchronized(this) { activeConversation = conversation }
             val evidence = MetriaAgentFactEvidence.from(toolName, response)
+            if ((toolName == "read_meals" && requiredTool?.name == "read_meals") || toolName == "read_latest_meal") {
+                val reply = if (toolName == "read_latest_meal") LatestMealNutritionReply.from(response)
+                    else MetriaMealRecordReply.from(requiredTool!!, response)
+                synchronized(this) {
+                    if (engine !== loadedEngine || assistantRequestId != requestId || privateAgentConversation !== conversation) return
+                    state = "loaded"
+                    coachToolCall = null
+                    coachStreamingReply = null
+                    coachReply = reply
+                    coachDiagnostic = if (reply == null) "Metria could not verify that meal answer against your latest local records. Try asking again." else null
+                    assistantOperation = "agent_reply"
+                    reason = if (reply == null) "The local meal-read contract was rejected safely." else "Recorded meal answer composed from the validated local result."
+                    diagnostics = measurement("local meal answer", startedAt)
+                    assistantTraceStore?.record(
+                        if (reply == null) "reply_rejected" else "reply_audited", "agent_tool_result",
+                        if (reply == null) "rejected" else "accepted", tool = toolName, requestId = requestId,
+                    )
+                    clearPrivateAgentConversationLocked()
+                }
+                return
+            }
             var message = sendPrivateAgentMessage(
                 conversation,
                 lifetime,
@@ -1358,7 +1483,8 @@ class ModelLifecycle(
                 startedAt,
                 factEvidence = evidence,
                 factCorrectionAttempted = factCorrectionAttempted,
-                groundedFallback = MetriaNutritionReplyFallback.from(requiredTool, response),
+                groundedFallback = MetriaProgressReplyFallback.from(toolName, requiredTool, response)
+                    ?: MetriaNutritionReplyFallback.from(requiredTool, response),
             )
         } catch (error: Exception) {
             synchronized(this) {
@@ -1424,7 +1550,7 @@ class ModelLifecycle(
                     val nativeCall = response.toolCalls.single()
                     val adapted = MetriaNativeToolCallAdapter.adapt(nativeCall)
                     if (
-                        adapted == null || privateAgentToolRounds > 2 ||
+                        adapted == null || adapted.intent == "draft_meal" || privateAgentToolRounds > 2 ||
                         (requiredTool != null && !requiredTool.accepts(adapted))
                     ) {
                         assistantTraceStore?.record(
@@ -1498,7 +1624,7 @@ class ModelLifecycle(
                     }
                     assistantOperation = "agent_reply"
                     reason = when {
-                        usedFallback -> "Latest local nutrition facts used after model wording was rejected."
+                        usedFallback -> "Latest local record facts used after model wording was rejected."
                         accepted != null -> "Private local reply ready."
                         unsupportedFact && factCorrectionAttempted -> "Unsupported personal facts remained after one local correction; reply rejected."
                         unsupportedFact -> "Unsupported personal facts were rejected."
@@ -1786,7 +1912,9 @@ class ModelLifecycle(
                 if (engine !== loadedEngine || assistantRequestId != requestId) return
                 debugLatestModelResponse = output.take(16_000).takeIf { BuildConfig.DEBUG }
                 state = "loaded"
-                assistantProposal = MealProposalParser.parse(output)
+                val outcome = NativeMealDraftPolicy.outcome(output, response.toolCalls.isNotEmpty())
+                assistantProposal = outcome.proposal
+                debugLatestMealDraftCategory = outcome.category.takeIf { BuildConfig.DEBUG }
                 assistantDiagnostic = if (assistantProposal == null) {
                     "Local analysis completed, but its draft was not safe to display. Try clearer details."
                 } else {
@@ -2389,6 +2517,7 @@ class ModelLifecycle(
             mealFoodCorrectionName,
             mealFoodCorrectionDiagnostic,
         ),
+        debugLatestMealDraftCategory.takeIf { BuildConfig.DEBUG },
     )
 
     private fun recordImageAuditLocked(
@@ -2413,5 +2542,6 @@ class ModelLifecycle(
 
     private fun clearDeveloperResponseLocked() {
         debugLatestModelResponse = null
+        debugLatestMealDraftCategory = null
     }
 }

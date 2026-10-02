@@ -611,6 +611,9 @@ private fun DiagnosticsDialog(
                 modelStatus.debugLatestModelResponse?.let { response ->
                     Text("Latest in-memory response", style = MaterialTheme.typography.titleSmall)
                     Text("Clears on the next operation, vault lock, backgrounding, or restart.", color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall)
+                    modelStatus.debugLatestMealDraftCategory?.let { category ->
+                        Text("Meal draft validation: $category", style = MaterialTheme.typography.bodySmall)
+                    }
                     Text(response, style = MaterialTheme.typography.bodySmall)
                 }
             }

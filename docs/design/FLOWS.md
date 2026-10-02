@@ -2,6 +2,16 @@
 
 These flows define member intent and state transitions. They do not prescribe a specific composable hierarchy.
 
+## Proposed optional online assistance
+
+The member selected this design direction on 2026-10-02; it is not implemented
+or physically accepted. See `../optional-cloud-assistant-spec.md` for the
+complete consent, data bounds, state, and revocation contract. A separate online
+composer leads to an exact question/summary preview and explicit **Send online**.
+It never uploads local conversation automatically, has no write tools, and
+never becomes a fallback for local model failure. The local Ask Metria flow
+below remains the active contract until the new privacy and acceptance gates pass.
+
 ## 1. Add weight
 
 **Intent:** record a weight in seconds.
@@ -106,6 +116,15 @@ Similar-meal suggestions use **Use meal name** and say that only the meal title 
 
 **Intent:** use local language or voice to navigate, record, or understand data.
 
+**Native text meal-draft slice, 2026-10-02:** an ordinary description of food
+eaten may cause the agent to request an unsaved meal draft without requiring
+"log" or "save". The existing proposal card leads to Review or Discard;
+the meal remains unsaved until final member confirmation. Questions about
+already recorded meals remain fresh bounded reads. The host validates the
+draft and rejects late results after Stop/lock; completed draft context is
+rebuilt from visible chat rather than retained proposal JSON. Physical intent,
+review, cancellation, and restoration acceptance remain pending.
+
 1. Member opens the central Metria action from any main screen.
 2. Compact choices appear: Speak, Chat, Analyse meal, Scan label, Manual entry.
 3. Listening is unmistakable and automatically stops after speech or timeout.
@@ -113,7 +132,7 @@ Similar-meal suggestions use **Use meal name** and say that only the meal title 
 5. General prose is allowed when safe, but it must not pretend to have read records without a matching approved tool result.
 6. The active conversation is encrypted inside the member vault and survives screen close, app switching, biometric relock, and process restart without replaying the last request.
 7. Typed chat uses one native LiteRT conversation while unlocked. After restart or token rollover, Metria rebuilds it from a bounded window of visible encrypted turns; local evidence and hidden reasoning are excluded.
-8. A native tool call is executed manually by the host and returned to that same conversation. The unlocked shell owns the session shared by every Chat entry point. Each model operation has a monotonically increasing request ID; only the matching active result may be consumed, and it may be consumed once.
+8. A native read tool call is executed manually by the host and returned to that same conversation. A meal-draft intent instead starts a separate structured task using only the current description, without chat style/history. Draft preparation displays a spinner, a concise status, and Stop response; nothing saves until review. The unlocked shell owns the session shared by every Chat entry point. Each model operation has a monotonically increasing request ID; only the matching active result may be consumed, and it may be consumed once.
 9. The encrypted timeline keeps at most 50 visible messages and expires after 24 hours without a new visible message. Expiry starts a clean conversation with a short explanation; **New conversation** deletes it immediately after confirmation.
 10. Locking, cancellation after a runtime failure, and **New conversation** destroy model KV state. Recovery archives exclude conversation text. App-data deletion or uninstall removes it with the vault.
 11. The member can choose Balanced, Coach, or Records assistant in Local assistant
@@ -139,8 +158,22 @@ Similar-meal suggestions use **Use meal name** and say that only the meal title 
 14. If a turn fails verification, its generic recoverable error stays visible
     until the member starts another request, locks, or starts a new conversation.
     Rotation retains that error without placing conversation text in saved UI state.
+15. After saving a meal opened from Chat, the active timeline contains a short
+    confirmation with the final reviewed name and foods. It persists atomically
+    with the meal and survives chat reopening, relock, and restart within the
+    usual conversation retention window. Failed saves and discarded drafts
+    never show a saved confirmation; an expired conversation is not revived.
+    Successful save returns directly to Chat with the confirmation visible.
+    **View meal** opens the existing saved-meal editor over Chat; dismissing it
+    returns to the conversation. Leaving review without saving also returns
+    to Chat with the original draft retained. A deleted meal has no active link.
 
 **Cancellation:** tapping Stop immediately invalidates the active request so late model output cannot be added. While LiteRT shuts down in the background, show an accessible “Stopping…” status and keep Send disabled. Once cancellation completes, show a calm “Response stopped” confirmation and make the composer actionable. Starting a new conversation or locking during shutdown invalidates that confirmation.
+
+The stop confirmation is a transient status and clears when another question is
+submitted. That question is a new request: personal facts still require a fresh
+local read. A latest-meal nutrition question reads one recorded meal rather than
+a daily total, with explicit missing, partial, empty, and ambiguous states.
 
 **States:** model warming, listening, no speech, background noise, unsupported request, tool selection, tool result, cancellation and stop confirmation, keyboard visible, rotation, navigation away and return, biometric relock, process restart, expired conversation, new conversation, style change while idle or after a completed turn.
 

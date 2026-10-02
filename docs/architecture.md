@@ -32,11 +32,44 @@ Initial read-only tools:
 - `read_nutrition_summary`
 - `read_weight`
 - `read_meals`
+- `read_latest_meal` (later bounded single-meal extension)
 - `search_saved_dishes`
+
+Explicit exact-day meal-list questions use a host-composed answer after the
+model selects `read_meals` and the host executes it. Validate dates, source,
+counts, record bounds, and coverage, then run the same factual audit on the
+rendered meal list. This avoids irrelevant model explanations passing a
+value-only check. The native context is retired afterward; other read tools
+retain their existing model continuation.
 
 A later low-risk weight tool may save directly with a durable idempotency key and visible
 Undo/Edit. Meal output remains a reviewed draft. Delete, bulk edit, goals, privacy, recovery,
 and model management are not initial assistant tools.
+
+The native `draft_meal()` extension requests an unsaved proposal from the
+current member message. After native intent selection, the host retires the
+chat context and uses a separate tool-free structured conversation with only
+that message and the proposal contract. It validates the returned structure with the existing meal parser,
+and presents Review/Discard without a vault write. It does not accept a
+model-authored replacement description or save flag. Draft completion clears
+native KV state; request IDs, cancellation, and worker leases prevent stale
+results. Required record reads cannot become draft actions. Its physical
+acceptance is pending; this does not complete the native-write Gate D.
+
+A reviewed meal opened from Chat adds a host-authored acknowledgement of the
+final confirmed name and foods to the active encrypted conversation in the same
+vault transaction as the meal, accepted corrections, and remembered dishes.
+Failure rolls back the acknowledgement as well as those records. No transcript
+schema migration is required; an optional saved-meal ID on host receipts is
+backward compatible with transcripts that omit it. The normal 50-message/24-hour retention and archive
+exclusion apply. An expired conversation is not revived. This acknowledgement
+is historical chat continuity, never evidence for a later personal factual
+answer without a fresh bounded record read.
+The ID is a local navigation reference, excluded from model prompts and never
+interpreted as a URL or model-authored tool request. Member/evidence messages
+cannot retain it. View meal resolves against the current unlocked meal list;
+deleted targets have no action. The existing editor overlays Chat and returns
+there on dismissal, save, or deletion.
 
 ## Android voice handoff
 
@@ -74,6 +107,17 @@ integration may share UI and vault primitives, but Metria's personal records
 must remain separately scoped and never become gym-visible by accident.
 
 ## Future external assistant integrations
+
+### App-initiated Nebius design
+
+On 2026-10-02 the member selected designing optional cloud assistance with
+explicit consent and a revised privacy contract. The proposed first scope in
+`optional-cloud-assistant-spec.md` uses a default-off, app-initiated one-request
+relay with a previewed question and bounded selected summaries. It is read-only,
+has no remote vault tools, and excludes photos and local chat. Provider retention,
+service identity, shipping disclosure, and acceptance are still open; real-data
+sharing is not enabled. This is distinct from the later externally queryable
+MCP integration below and does not waive that integration's prerequisites.
 
 External-assistant access is not part of Metria's initial local-only release.
 A future, default-off integration may let a member connect ChatGPT or another

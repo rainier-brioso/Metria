@@ -14,6 +14,18 @@ revised first.
 
 ## Data boundary
 
+**Optional-cloud design direction — 2026-10-02:** The member selected designing
+default-off Nebius assistance for real data with explicit consent and revised
+privacy disclosure. `optional-cloud-assistant-spec.md` defines a previewed,
+one-request question plus selected bounded summaries; photos, notes, local chat,
+cycle context, keys, and correction memory are excluded. Cloud answers are
+read-only and host-validated. This is a design direction, not an enabled data
+transfer or a completed privacy gate. Until processor retention, service
+identity, shipping consent/copy, and acceptance are verified, the implemented
+local boundary and disclosure below remain in force. Public demos use fictional
+records. An enabled future mode must clearly qualify the local-only promise at
+onboarding and every explicit sharing decision.
+
 | Data | Default location | Who can access it |
 | --- | --- | --- |
 | Weight entries, notes, meals, and trends | Encrypted vault on the member's device | The member after vault unlock |

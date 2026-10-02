@@ -83,6 +83,8 @@ data class MetriaChatMessage(
     val text: String,
     val fromMember: Boolean,
     val localEvidence: Boolean = false,
+    val savedMealId: String? = null,
+    val savedMealAvailable: Boolean = false,
 )
 
 @Composable
@@ -204,6 +206,7 @@ fun MetriaAssistantConversationScreen(
     onEditSavedWeight: (WeightEntry) -> Unit,
     onUndoSavedWeight: (WeightEntry) -> Unit,
     onReviewMeal: (MealProposal) -> Unit,
+    onOpenSavedMeal: (String) -> Unit,
     onDiscardMealDraft: () -> Unit,
     onToggleVoice: () -> Unit,
     onSend: () -> Unit,
@@ -244,7 +247,7 @@ fun MetriaAssistantConversationScreen(
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 20.dp, vertical = 18.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                itemsIndexed(messages) { _, message -> ChatBubble(message) }
+                itemsIndexed(messages) { _, message -> ChatBubble(message, onOpenSavedMeal) }
                 if (assistantThinking) {
                     item {
                         ThinkingBubble(streamingReply = streamingReply, onCancel = onCancelAssistant)
@@ -258,7 +261,11 @@ fun MetriaAssistantConversationScreen(
                 }
                 if (mealDraftThinking) {
                     item {
-                        StatusCard("Preparing a meal draft", "You will review it before anything is saved.")
+                        ThinkingBubble(
+                            streamingReply = null,
+                            onCancel = onCancelAssistant,
+                            preparingMeal = true,
+                        )
                     }
                 }
                 savedWeight?.let { entry ->
@@ -353,7 +360,7 @@ private fun AssistantHeader(onBack: () -> Unit, onNewConversation: () -> Unit) {
 }
 
 @Composable
-private fun ChatBubble(message: MetriaChatMessage) {
+private fun ChatBubble(message: MetriaChatMessage, onOpenSavedMeal: (String) -> Unit) {
     Box(
         Modifier.fillMaxWidth(),
         contentAlignment = if (message.fromMember) Alignment.CenterEnd else Alignment.CenterStart,
@@ -373,8 +380,17 @@ private fun ChatBubble(message: MetriaChatMessage) {
                 shape = MaterialTheme.shapes.medium,
                 modifier = Modifier.widthIn(max = 340.dp),
             ) {
-                Box(Modifier.padding(horizontal = 16.dp, vertical = 13.dp)) {
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 13.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     SafeMarkdownText(message.text, MetriaColors.Ink)
+                    message.savedMealId?.let { id ->
+                        if (message.savedMealAvailable) {
+                            FilledTonalButton(onClick = { onOpenSavedMeal(id) }, modifier = Modifier.heightIn(min = 48.dp)) {
+                                Text("View meal")
+                            }
+                        } else {
+                            Text("Meal no longer available", color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
                 }
             }
         }
@@ -414,19 +430,27 @@ internal fun evidenceStateDescription(expanded: Boolean): String =
     if (expanded) "Record details expanded" else "Record details collapsed"
 
 @Composable
-private fun ThinkingBubble(streamingReply: String?, onCancel: () -> Unit) {
+private fun ThinkingBubble(streamingReply: String?, onCancel: () -> Unit, preparingMeal: Boolean = false) {
     Surface(
         color = MetriaColors.Surface,
         shape = MaterialTheme.shapes.medium,
         modifier = Modifier.widthIn(max = 340.dp).semantics {
             liveRegion = LiveRegionMode.Polite
-            contentDescription = "Metria is thinking locally"
+            contentDescription = if (preparingMeal) "Metria is preparing a meal draft" else "Metria is thinking locally"
         },
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            streamingReply?.takeIf(String::isNotBlank)?.let { SafeMarkdownText(it, MetriaColors.Ink) } ?: TypingDots()
+            if (preparingMeal) {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Text("Preparing a meal draft", modifier = Modifier.weight(1f), color = MetriaColors.Ink)
+                }
+                Text("You will review it before anything is saved.", color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall)
+            } else {
+                streamingReply?.takeIf(String::isNotBlank)?.let { SafeMarkdownText(it, MetriaColors.Ink) } ?: TypingDots()
+            }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text(if (streamingReply.isNullOrBlank()) "Thinking locally" else "Finishing this reply", color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall)
+                Text(if (preparingMeal) "Preparing locally" else if (streamingReply.isNullOrBlank()) "Thinking locally" else "Finishing this reply", color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall)
                 FilledTonalButton(onClick = onCancel, modifier = Modifier.heightIn(min = 48.dp)) {
                     Icon(Icons.Rounded.Stop, contentDescription = null, modifier = Modifier.padding(end = 4.dp).size(18.dp))
                     Text("Stop response")

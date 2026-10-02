@@ -6,9 +6,32 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.json.JSONObject
 
 class PrivateConversationRecordTest {
     private val now = Instant.parse("2026-08-28T12:00:00Z")
+
+    @Test fun `saved meal receipt link survives encrypted payload message encoding`() {
+        val receipt = PrivateConversationMessage("Meal saved", false, savedMealId = "meal-123")
+        assertEquals(receipt, PrivateConversationMessageCodec.decode(PrivateConversationMessageCodec.encode(receipt)))
+        val updated = PrivateConversationPolicy.updated(listOf(PrivateConversationMessage("meal", true), receipt), now)!!
+        assertEquals("meal-123", PrivateConversationPolicy.active(updated, now.plusSeconds(1))!!.messages.last().savedMealId)
+    }
+
+    @Test fun `old conversation messages remain readable without link fields`() {
+        val old = JSONObject("""{"text":"Old reply","fromMember":false}""")
+        assertEquals(PrivateConversationMessage("Old reply", false), PrivateConversationMessageCodec.decode(old))
+    }
+
+    @Test fun `member evidence and malformed identifiers cannot become receipt links`() {
+        val messages = listOf(
+            PrivateConversationMessage("member", true, savedMealId = "meal-123"),
+            PrivateConversationMessage("evidence", false, true, "meal-123"),
+            PrivateConversationMessage("reply", false, savedMealId = "https://example.com/meal"),
+            PrivateConversationMessage("reply", false, savedMealId = "x".repeat(81)),
+        )
+        assertTrue(PrivateConversationPolicy.updated(messages, now)!!.messages.all { it.savedMealId == null })
+    }
 
     @Test
     fun `conversation remains active until 24 hours of inactivity`() {

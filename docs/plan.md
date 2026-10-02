@@ -297,6 +297,17 @@ delete the shared copy. No external assistant can mutate the vault directly.
 
 ## Delivery order
 
+### Hackathon delivery proposal
+
+The member intends to present Metria at the Nebius x NVIDIA Global AI Hackathon.
+See [hackathon-assistant-plan.md](hackathon-assistant-plan.md) for the proposed
+local assistant slice, verified submission requirements, and deferred WhatsApp
+feasibility. The member selected designing optional real-data Nebius assistance
+with explicit consent; [optional-cloud-assistant-spec.md](optional-cloud-assistant-spec.md)
+defines its proposed bounded request and privacy contract. Actual cloud sharing
+is not enabled, M7 external-integration prerequisites remain, and no release
+acceptance gates are closed by this design.
+
 ### Recovery archive decision (M6)
 
 Metria recovery is a member-held `.metria` archive encrypted with a

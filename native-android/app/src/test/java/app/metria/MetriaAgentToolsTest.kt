@@ -7,6 +7,51 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MetriaAgentToolsTest {
+    @Test fun `no evidence correction preserves the original food question instead of becoming a new request`() {
+        val instruction = MetriaAgentFactAuditor.retryInstruction(false, "¿El arroz tiene proteína?")
+        assertTrue(instruction.contains("ORIGINAL_MEMBER_QUESTION: \"¿El arroz tiene proteína?\""))
+        assertTrue(instruction.contains("Do not acknowledge the correction"))
+        assertTrue(instruction.contains("direct qualitative answer"))
+        assertFalse(MetriaAgentFactAuditor.retryInstruction(true, "irrelevant").contains("ORIGINAL_MEMBER_QUESTION"))
+    }
+
+    @Test fun `qualitative food education passes while unsupported personal statements still fail`() {
+        val general = "Sí, el arroz contiene algo de proteína, aunque destaca principalmente por sus carbohidratos."
+        assertEquals(general, MetriaAgentFactAuditor.audit(general, null).acceptedText)
+        assertEquals("unsupported_personal_fact", MetriaAgentFactAuditor.audit("Tus comidas de hoy contienen 30 g de proteína.", null).rejection)
+        assertEquals("unsupported_personal_fact", MetriaAgentFactAuditor.audit("I will access your personal records to help with your meals.", null).rejection)
+    }
+
+    @Test fun `recorded meal list wording requires exact day meal evidence`() {
+        listOf("¿Qué comidas tengo registradas hoy?", "Que comidas tengo guardadas hoy?",
+            "What meals have I logged today?", "Which meals do I have saved today?").forEach { question ->
+            assertEquals(question, RequiredAgentTool("read_meals", daysAgo = 0),
+                MetriaAgentGroundingPolicy.requiredTool(question))
+        }
+        listOf("¿Cuáles son mis comidas registradas ayer?", "Which meals did I record yesterday?").forEach { question ->
+            assertEquals(question, RequiredAgentTool("read_meals", daysAgo = 1),
+                MetriaAgentGroundingPolicy.requiredTool(question))
+        }
+        val required = MetriaAgentGroundingPolicy.requiredTool("¿Qué comidas tengo registradas hoy?")!!
+        assertFalse(required.accepts(PrivateCoachToolCall(intent = "read_nutrition_summary", period = "today")))
+        assertFalse(required.accepts(PrivateCoachToolCall(intent = "draft_meal")))
+    }
+
+    @Test fun `recorded meal wording retains calendar and unsupported day boundaries`() {
+        val today = java.time.LocalDate.of(2026, 10, 2)
+        assertEquals(RequiredAgentTool("read_meals", daysAgo = 1, targetDate = today.minusDays(1)),
+            MetriaAgentGroundingPolicy.requiredTool("¿Qué comidas tengo registradas el 1 de octubre?", today = today))
+        assertNull(MetriaAgentGroundingPolicy.requiredTool("Which meals have I logged 91 days ago?", today = today))
+        assertTrue(MetriaAgentGroundingPolicy.historicalClarification("Which meals have I logged 91 days ago?", today) != null)
+    }
+
+    @Test fun `general food and hypothetical meal questions do not require meal record reads`() {
+        listOf("¿El arroz tiene proteína?", "What meals should I log today?",
+            "¿Qué comidas debería preparar hoy?", "Today I ate rice and beans").forEach { question ->
+            assertNull(question, MetriaAgentGroundingPolicy.requiredTool(question))
+        }
+    }
+
     @Test
     fun `native weight call preserves bounded integer arguments`() {
         val adapted = MetriaNativeToolCallAdapter.adapt(

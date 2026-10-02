@@ -2,12 +2,30 @@ package app.metria
 
 import java.time.Duration
 import java.time.Instant
+import org.json.JSONObject
 
 data class PrivateConversationMessage(
     val text: String,
     val fromMember: Boolean,
     val localEvidence: Boolean = false,
+    val savedMealId: String? = null,
 )
+
+/** Optional local receipt link; old transcripts decode without a link. */
+object PrivateConversationMessageCodec {
+    fun encode(message: PrivateConversationMessage): JSONObject = JSONObject()
+        .put("text", message.text)
+        .put("fromMember", message.fromMember)
+        .put("localEvidence", message.localEvidence)
+        .apply { message.savedMealId?.let { put("savedMealId", it) } }
+
+    fun decode(value: JSONObject): PrivateConversationMessage = PrivateConversationMessage(
+        text = value.getString("text"),
+        fromMember = value.getBoolean("fromMember"),
+        localEvidence = value.optBoolean("localEvidence", false),
+        savedMealId = value.optString("savedMealId", "").takeIf(String::isNotEmpty),
+    )
+}
 
 data class PrivateConversationRecord(
     val messages: List<PrivateConversationMessage>,
@@ -39,7 +57,13 @@ object PrivateConversationPolicy {
 
     private fun normalizedMessages(messages: List<PrivateConversationMessage>): List<PrivateConversationMessage> =
         messages.asSequence()
-            .map { message -> message.copy(text = message.text.trim().take(maxMessageCharacters)) }
+            .map { message -> message.copy(
+                text = message.text.trim().take(maxMessageCharacters),
+                savedMealId = message.savedMealId?.takeIf {
+                    !message.fromMember && !message.localEvidence &&
+                        it.matches(Regex("[A-Za-z0-9][A-Za-z0-9._:-]{0,79}"))
+                },
+            ) }
             .filter { it.text.isNotEmpty() }
             .toList()
             .takeLast(maxMessages)

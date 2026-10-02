@@ -75,12 +75,41 @@ member message
 
 ## Gate A tools
 
+**Native meal-draft extension — 2026-10-02:** `draft_meal()` is a bounded
+proposal capability alongside the read tools. The agent infers the meal-entry
+intent from the member's message, including ordinary descriptions without
+"log" or "save". The tool takes no model-authored arguments: the host uses
+only that current member message, bounded to 600 characters. A required record
+read cannot be replaced by this draft tool, and read-result continuations may
+not switch into drafting.
+
+After intent selection, the host retires the native chat context and creates a
+tool-free structured task containing only the current member description and
+the proposal contract as its system instruction. This avoids chat style and
+natural tool-result instructions converting the proposal to an announcement.
+Both conversations retain worker leases through completion/cancellation; the
+same request ID and timeout protect the task. Its reply passes the existing meal parser; additional
+tool calls, invalid output, cancellation, and stale request results fail closed.
+A validated proposal appears through the existing Review/Discard card and
+never writes a meal or correction signal. Request IDs and the current worker
+lease bound execution; restart/lock never replays the draft request. Draft
+completion discards native KV state so proposal JSON and pending tools are not
+reused as conversation evidence. Future conversation rebuild uses the existing
+bounded encrypted visible history.
+
+This is a partial Gate D meal-draft implementation, not native weight writes
+or a completed Gate D. Existing explicit-write routing remains transitional;
+natural meal descriptions can use the native draft tool. Physical bilingual
+intent selection, review/cancellation/restart, and false-intent checks remain
+open. Meal Save still uses the existing reviewed, atomic vault operation.
+
 | Tool | Arguments | Result boundary |
 | --- | --- | --- |
 | `read_progress_overview` | `period` (`today` or `week`) | bounded meal/nutrition/goal summary and in-period weight trend |
 | `read_nutrition_summary` | `period` (`today` or `week`) | totals, member goals, coverage, as-of date |
 | `read_weight` | `from_days_ago`, `to_days_ago` (0–90) | bounded dated readings and summary |
 | `read_meals` | `days_ago` (0–90), optional `meal_slot` | bounded meal names/dates/slots |
+| `read_latest_meal` | none | one most recent recorded meal and saved calorie/protein estimates within offsets 0–90; missing, partial, empty, or ambiguous state |
 | `search_saved_dishes` | short `query` | at most the local matcher candidates |
 
 The later exact-day extension adds `read_day_nutrition(days_ago)` for one day
@@ -109,8 +138,9 @@ generic trailing offer or question. Coach may suggest one relevant optional
 next step only when it adds value and does not imply new evidence.
 
 Explicit write requests temporarily retain the already-tested router during Gate A.
-Gate D moves weight recording and meal drafting into native tool calls only after durable
-idempotency and physical acceptance exist. Delete, bulk edit, goal, privacy, archive, and
+Gate D completes weight recording and meal drafting in native tool calls only after durable
+idempotency and physical acceptance exist; the proposal-only meal extension above
+has no vault-write permission. Delete, bulk edit, goal, privacy, archive, and
 network operations are not assistant tools in the initial release.
 
 ## Action policy
@@ -157,11 +187,72 @@ the bounded nutrition follow-up exception below can show a host-composed answer.
 and logs neither the answer nor the tool payload; its evidence object is immutable and scoped to
 the active continuation only.
 
+Without current tool evidence, that corrective retry includes the bounded original member
+question as quoted, untrusted content and explicitly asks for its answer rather than an
+acknowledgment of the correction. General food education may use a short qualitative explanation
+in the member's language without reading records. It must not infer personal intake from chat
+history, introduce precise nutrition estimates, or create a meal draft. Personal-record claims
+still require fresh validated local evidence and the same factual audit.
+
+Explicit latest-meal nutrition questions in English and Spanish require
+`read_latest_meal()`, not a daily nutrition summary. The host selects by recorded
+meal date/time within offsets 0–90, excluding future dates. Multiple records on
+the latest day with unknown times, or tied latest timestamps, produce a
+clarification rather than an arbitrary choice. Only title/date and saved,
+display-rounded calorie/protein estimates are returned; notes, photos, item
+details, and goals are excluded. The host validates the result and composes a
+short bilingual answer, which must pass the existing factual audit. Missing
+values remain missing and partial coverage is explicit. It never estimates
+nutrition from chat, writes a meal, or treats a meal value as a day total.
+
+Host replies require a concrete `Spanish` or `English` language value. Shared
+selection recognizes accented and unaccented member wording; the current
+question takes precedence over older conversation language. Neutral follow-ups
+may inherit the most recent recognized member language, with English as the
+supported fallback. Do not send an instruction such as “the member's language”
+as the language field of a validated host result.
+
+Explicit recorded-meal list questions such as “¿Qué comidas tengo registradas
+hoy?” and “Which meals have I logged today?” require `read_meals` for that
+exact day, including yesterday and supported named dates. The existing
+corrective turn rejects a nutrition-summary tool or draft action in their
+place. A meal list is not answered with nutrition totals. General food advice
+and hypothetical meal questions do not acquire this required-record contract;
+the existing historical ambiguity and 90-day boundaries still apply.
+For that explicit exact-day contract, the host now composes the member answer
+directly from the fresh `read_meals` result instead of asking the model to
+rewrite it. Validate source, as-of/requested dates, optional calendar binding,
+collection counts, row dates/titles, result bounds, and coverage first; then
+pass the full answer through the unchanged factual audit. Empty days are
+explicit, omitted older records produce a visibly partial list, and separate
+same-titled records remain separate. Invalid results fail closed. Retire native
+KV after this answer, retain the current request ID/worker lease, and never
+reuse chat history as record evidence. Other tool answers keep their existing
+continuation path.
+
 For a short calorie or protein follow-up with an inherited period, the host may instead display a
 brief deterministic answer from that turn's validated `read_nutrition_summary` result after model
 wording fails the audit. It must match the requested metric and period, pass the same factual audit,
 state when no recorded estimate is available, and discard the unsafe native conversation. This
 fallback never uses visible history as factual evidence.
+
+For a fresh `read_progress_overview` result, the host may also recover from
+rejected model wording with a short deterministic record-only summary. It
+includes the selected today/rolling-seven-day period, recorded meal and weight
+counts, available calorie/protein estimates, and partial/missing-coverage
+qualifiers. It never treats recorded meals as total intake or invents a weight
+trend. The selected tool, required period when present, source, date range,
+count consistency, numeric values, and reply language must validate, and the
+composed answer must pass the unchanged factual audit. Invalid/missing evidence
+still fails closed. The rejected native conversation is discarded; chat history
+never supplies fallback facts.
+
+Progress-overview nutrition values and goals are quantized for display before
+being passed to the model and factual auditor: whole kcal and at most one
+decimal place for protein grams, using half-up rounding. The expandable
+overview evidence uses the same policy. Stored nutrition and the host's
+deterministic calculations remain unchanged; rounding only model prose would
+break factual binding and is not permitted.
 
 ### Development-only trace
 

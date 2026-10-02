@@ -6,6 +6,16 @@ import java.math.BigDecimal
 import java.math.RoundingMode
 import kotlin.math.roundToInt
 
+/** Display-only estimates; keep vault values and deterministic arithmetic at full precision. */
+private fun Double.nutritionDisplayValue(scale: Int): Double = BigDecimal.valueOf(this)
+    .setScale(scale, RoundingMode.HALF_UP)
+    .toDouble()
+
+private fun Double.nutritionDisplayText(scale: Int): String = BigDecimal.valueOf(this)
+    .setScale(scale, RoundingMode.HALF_UP)
+    .stripTrailingZeros()
+    .toPlainString()
+
 /** Member-visible weight keeps the recorded precision up to two decimal places. */
 internal fun formatRecordedKilograms(value: Double): String = BigDecimal.valueOf(value)
     .setScale(2, RoundingMode.HALF_UP)
@@ -149,10 +159,10 @@ data class MemberProgressOverview(
         val label = if (period == "week") "Last 7 days" else "Today"
         val nutrition = buildList {
             caloriesKcal?.let { calories ->
-                add("${calories.toInt()}${calorieGoalKcal?.let { " / ${it.toInt()}" }.orEmpty()} kcal")
+                add("${calories.nutritionDisplayText(0)}${calorieGoalKcal?.let { " / ${it.nutritionDisplayText(0)}" }.orEmpty()} kcal")
             }
             proteinGrams?.let { protein ->
-                add("${protein.toInt()}${proteinGoalGrams?.let { " / ${it.toInt()}" }.orEmpty()} g protein")
+                add("${protein.nutritionDisplayText(1)}${proteinGoalGrams?.let { " / ${it.nutritionDisplayText(1)}" }.orEmpty()} g protein")
             }
         }.joinToString(" · ").ifBlank { "no complete nutrition values" }
         val weight = when {
@@ -185,10 +195,10 @@ data class MemberProgressOverview(
             "missing_nutrition_count" to mealsWithoutNutrition,
         ),
         "nutrition" to mapOf(
-            "calories_kcal" to caloriesKcal,
-            "protein_g" to proteinGrams,
-            "calorie_goal_kcal" to calorieGoalKcal,
-            "protein_goal_g" to proteinGoalGrams,
+            "calories_kcal" to caloriesKcal?.nutritionDisplayValue(0),
+            "protein_g" to proteinGrams?.nutritionDisplayValue(1),
+            "calorie_goal_kcal" to calorieGoalKcal?.nutritionDisplayValue(0),
+            "protein_goal_g" to proteinGoalGrams?.nutritionDisplayValue(1),
         ),
         "progress" to mapOf(
             "calorie_goal_percent" to goalProgressPercent(caloriesKcal, calorieGoalKcal),

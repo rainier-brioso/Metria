@@ -139,6 +139,7 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
     var debugImageCaptureStatus by remember { mutableStateOf(activity.debugImageCaptureStatus()) }
     val assistantConversationSession = rememberPrivateAssistantConversationSession()
     var mealProposalForConfirmation by remember { mutableStateOf<MealProposal?>(null) }
+    var mealReviewFromAssistant by remember { mutableStateOf(false) }
     var manualMealReview by rememberSaveable { mutableStateOf(false) }
     var labelDraftForConfirmation by remember { mutableStateOf<LabelNutritionDraft?>(null) }
     var browseFoodCatalog by remember { mutableStateOf(false) }
@@ -235,6 +236,7 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
     }
     LaunchedEffect(destination) {
         if (destination != "Assistant") {
+            modelStatus = activity.modelStatus()
             assistantTraceStatus = activity.assistantTraceStatus()
             debugImageCaptureStatus = activity.debugImageCaptureStatus()
         }
@@ -333,9 +335,10 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                                 editSavedWeight = { editEntry = it },
                                 undoSavedWeight = { entry -> status = vault.deleteWeight(entry.id) },
                                 openFoodCatalog = { browseFoodCatalog = true },
-                                review = { manualMealReview = false; mealProposalForConfirmation = it },
+                                review = { manualMealReview = false; mealReviewFromAssistant = false; mealProposalForConfirmation = it },
                                 onManualMealReview = {
                                     manualMealReview = true
+                                    mealReviewFromAssistant = false
                                     mealProposalForConfirmation = null
                                 },
                                 prepareImage = { uri -> modelStatus = activity.prepareLocalMealImage(uri) },
@@ -482,7 +485,8 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                         },
                         editSavedWeight = { editEntry = it; quickAssistantOpen = false },
                         undoSavedWeight = { entry -> status = vault.deleteWeight(entry.id) },
-                        reviewMeal = { proposal -> mealProposalForConfirmation = proposal; quickAssistantOpen = false },
+                        reviewMeal = { proposal -> mealReviewFromAssistant = true; mealProposalForConfirmation = proposal; quickAssistantOpen = false },
+                        openSavedMeal = { id -> vaultStatus.meals.firstOrNull { it.id == id }?.let { editMeal = it } },
                         discardMealDraft = { modelStatus = activity.discardAssistantMealDraft() },
                     )
                 }
@@ -561,12 +565,21 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                     onDismiss = {
                         modelStatus = activity.clearMealFoodNameCorrection()
                         mealProposalForConfirmation = null
+                        if (mealReviewFromAssistant) quickAssistantOpen = true
+                        mealReviewFromAssistant = false
                         manualMealReview = false
                     },
                     onSave = { meal, corrections, personalDishes, correctionMemory ->
-                        status = vault.saveReviewedMeal(meal, corrections, personalDishes, correctionMemory)
+                        status = vault.saveReviewedMeal(meal, corrections, personalDishes, correctionMemory,
+                            recordInConversation = mealReviewFromAssistant)
                         if (status is EncryptedVault.Status.Unlocked) {
+                            if (mealReviewFromAssistant) {
+                                val saved = status as EncryptedVault.Status.Unlocked
+                                assistantConversationSession.synchronize(saved.activeConversation, saved.conversationExpired)
+                                quickAssistantOpen = true
+                            }
                             mealProposalForConfirmation = null
+                            mealReviewFromAssistant = false
                             manualMealReview = false
                             modelStatus = activity.clearLocalMealDraft()
                             null
@@ -1056,7 +1069,7 @@ private fun AssistantScreen(
 }
 
 /** UX decision: facts returned by a local tool remain visible, but secondary to Metria's answer. */
-private data class PrivateChatMessage(val text: String, val fromMember: Boolean, val localEvidence: Boolean = false)
+private data class PrivateChatMessage(val text: String, val fromMember: Boolean, val localEvidence: Boolean = false, val savedMealId: String? = null)
 
 private fun initialPrivateChatMessages() = listOf(
     PrivateChatMessage("Ask about a meal, add a weight, or ask what you logged today. Any saved action stays visible and reversible.", false),
@@ -1378,7 +1391,7 @@ private class PrivateAssistantConversationSession(
         }
         if (hydrated && loadedConversationUpdatedAt == record?.updatedAt) return
         val restored = record?.messages?.map { message ->
-            PrivateChatMessage(message.text, message.fromMember, message.localEvidence)
+            PrivateChatMessage(message.text, message.fromMember, message.localEvidence, message.savedMealId)
         }
         if (!hydrated || (restored != null && restored != messages.value)) {
             input.value = ""
@@ -1437,6 +1450,7 @@ private fun PrivateAssistantChat(
     editSavedWeight: (WeightEntry) -> Unit,
     undoSavedWeight: (WeightEntry) -> Unit,
     reviewMeal: (MealProposal) -> Unit,
+    openSavedMeal: (String) -> Unit,
     discardMealDraft: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -1457,7 +1471,7 @@ private fun PrivateAssistantChat(
             // off-main and must not replace the whole unlocked shell state after each message.
             delay(300)
             onConversationChanged(messages.map { message ->
-                PrivateConversationMessage(message.text, message.fromMember, message.localEvidence)
+                PrivateConversationMessage(message.text, message.fromMember, message.localEvidence, message.savedMealId)
             })
         }
     }
@@ -1587,6 +1601,15 @@ private fun PrivateAssistantChat(
             return@LaunchedEffect
         }
         when (action) {
+            AssistantAction.QueryLatestMeal -> {
+                if (nativeAgentTool) {
+                    val result = LatestMealNutritionResult.from(meals, today,
+                        coachReplyLanguage(submittedQuestion, submittedConversationContext))
+                    trackNativeRequest { continueAgentTool(call.intent, result) }
+                } else {
+                    messages = messages + PrivateChatMessage("Ask about your latest meal in Chat.", false)
+                }
+            }
             is AssistantAction.QueryProgressOverview -> {
                 val replyLanguage = coachReplyLanguage(submittedQuestion, submittedConversationContext)
                 val overview = MemberProgressOverview.from(
@@ -1894,7 +1917,7 @@ private fun PrivateAssistantChat(
                     Triple(
                         privateConversationContext(messageSnapshot),
                         messageSnapshot.map { message ->
-                            PrivateConversationMessage(message.text, message.fromMember, message.localEvidence)
+                            PrivateConversationMessage(message.text, message.fromMember, message.localEvidence, message.savedMealId)
                         },
                         MetriaAgentMigrationPolicy.useLegacyWriteRoute(text),
                     )
@@ -1929,7 +1952,8 @@ private fun PrivateAssistantChat(
         modelStatus.assistantRequestId == activeAssistantRequestId
 
     MetriaAssistantConversationScreen(
-        messages = messages.map { MetriaChatMessage(it.text, it.fromMember, it.localEvidence) },
+        messages = messages.map { MetriaChatMessage(it.text, it.fromMember, it.localEvidence,
+            it.savedMealId, meals.any { meal -> meal.id == it.savedMealId }) },
         input = input,
         onInputChange = { input = it },
         assistantThinking = shouldPresentAssistantThinking(
@@ -1970,6 +1994,7 @@ private fun PrivateAssistantChat(
             messages = messages + PrivateChatMessage("${"%.1f".format(entry.kilograms)} kg entry removed.", false)
         },
         onReviewMeal = reviewMeal,
+        onOpenSavedMeal = openSavedMeal,
         onDiscardMealDraft = discardMealDraft,
         onToggleVoice = ::toggleVoice,
         onSend = ::submitText,
@@ -2011,11 +2036,6 @@ internal fun shouldPresentAssistantThinking(
         (modelState == "thinking" &&
             operation?.let { it.startsWith("coach") || it.startsWith("agent") } == true)
     ))
-
-private fun coachReplyLanguage(text: String, conversationContext: String = ""): String {
-    val normalized = "$text $conversationContext".lowercase()
-    return if (listOf("qué", "como", "cómo", "comí", "peso", "semana", "meta", "progreso").any { it in normalized }) "Spanish" else "the member's language"
-}
 
 private fun isWeightTrendQuestion(text: String): Boolean = listOf("pérdida de peso", "perdida de peso", "mi peso", "weight loss", "weight trend").any { it in text.lowercase() }
 

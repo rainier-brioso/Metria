@@ -136,6 +136,7 @@ and Spanish. Use questions that can be verified against visible local records.
 | Period change | Change from today to week or another bounded date range | A new bounded query runs and the answer labels the correct period |
 | Unsupported topic | Ask something outside Metria’s approved scope | Metria responds safely without inventing records or invoking an unrelated write |
 | Cancellation | Cancel during thinking | Inference stops, UI returns to an actionable state, and no late answer or action is applied |
+| After cancellation | Stop, then ask for calories in the latest recorded meal | Stop notice clears on submission; new bounded latest-meal read answers that meal, with partial/missing coverage; no late cancelled result |
 | Lock/restart | Lock, background, force-stop, relaunch, and unlock | Vault policy is respected; completed tools do not execute again |
 | Offline | Enable airplane mode and use local chat | Supported local features continue; no data leaves the device |
 | Action safety | Ask to add weight or draft a meal | Weight remains reversible; meals require review; duplicate/replayed writes do not occur |
@@ -170,6 +171,13 @@ Verify:
 - after leaving review, the original unsaved proposal remains available;
   Discard draft asks for confirmation, Keep draft preserves it, and confirmed
   discard removes only that proposal, not a saved meal or conversation;
+- saving a reviewed Chat meal adds one confirmation using the final reviewed
+  name/foods when Chat is reopened. Verify it survives relock/restart under
+  normal retention; failed saves and discarded drafts add no success message;
+- successful Chat meal save returns directly to Chat with **View meal**.
+  Verify it opens the exact saved entry, as a Today meal tap does, and closing
+  the editor returns to Chat. Check link persistence after relock/restart,
+  deleted-target handling, keyboard, rotation, font scaling, and TalkBack;
 - the member can correct names, components, portions, catalog matches, and
   nutrition before saving;
 - from the expanded dish editor, ask the local text model to correct one
@@ -208,6 +216,20 @@ When relevant to the change, verify:
 - offline use does not silently require or transmit over a network;
 - debug diagnostics never become part of the encrypted member record or a
   release UI.
+
+### Temporary debug model response
+
+After a member-authorized failed text meal draft, stay in the foreground and
+open Privacy/Settings → Developer diagnostics → Latest in-memory response.
+The debug build displays the bounded model text and a fixed meal-draft
+validation category. Navigating out of Chat refreshes this status; the category
+distinguishes malformed JSON, invalid schema/ranges, extra tool calls, and
+empty or oversized output without weakening the parser. Inspect the response
+only for the authorized run. Do not copy private response text into repository
+evidence. It is held only in memory and clears on the next operation, vault
+lock, backgrounding, or restart. Reproduce after installing a new APK because
+installation restarts the process. Record only the fixed category and sanitized
+findings in checkpoints. Release UI does not offer this inspection.
 
 ### Opt-in debug assistant trace
 

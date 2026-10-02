@@ -127,6 +127,15 @@ The similar-meal suggestion button is **Use meal name**. Supporting text must sa
 
 ## Assistant overlay and conversation
 
+**Proposed online extension, 2026-10-02:** use a separate, clearly labelled
+online composer, a focused sharing preview with **Send online** as its primary
+action, and read-only answers labelled **Online · Nebius**. The exact selected
+summary, dates, coverage, question, processor, and verified retention terms
+must be reviewable before sending. Privacy/settings controls enablement,
+revocation, and bounded access metadata. See `../optional-cloud-assistant-spec.md`
+for full states and bounds. This extension is not implemented or physically
+accepted and must not silently change the existing local conversation.
+
 **Purpose:** let Metria help without making the rest of the app disappear.
 
 - Compact action menu: Speak, Chat, Analyse meal, Scan label, Manual entry.
@@ -139,7 +148,31 @@ The similar-meal suggestion button is **Use meal name**. Supporting text must sa
   date, recorded-meal coverage, and an estimate with sensible display precision;
   it must not expose internal field names, `null`, or floating-point artifacts.
 - Reopening the conversation never resubmits the previous message.
+- Saving a reviewed chat meal adds a concise host-authored confirmation to the
+  active encrypted timeline, using the final reviewed name and foods. The meal
+  and confirmation persist together; leaving/discarding or a failed save adds
+  no success message. The confirmation follows chat retention and does not
+  replace a fresh record read for later factual questions.
+  A successful Chat meal save returns directly to Chat. The confirmation's
+  **View meal** action opens the same saved-meal editor used by Today; closing
+  it returns to Chat. The target is the exact saved meal, not a name search.
+  Deleted targets show **Meal no longer available** without an active button.
+- If a freshly read progress overview cannot be worded safely by the local
+  model, show a concise host-composed summary only after it passes the same
+  factual checks. Retain the expandable records card and qualify partial or
+  missing nutrition; do not invent intake or trends from missing records.
+  Overview nutrition uses whole kcal and at most one decimal for protein,
+  consistently across the answer and evidence, without changing saved values.
 - Header exposes a labelled **New conversation** action with destructive confirmation.
+- A latest-meal nutrition question identifies the recorded meal and date, shows
+  its saved calorie/protein estimates with readable precision, and discloses
+  partial or missing values. An empty bounded history or ambiguous meal time
+  receives a clear explanation. It must not show a day total as that meal's value.
+- An explicit saved-meal question for one day receives a concise list of the
+  saved meal names for that date in the member's language. No meals is an
+  explicit empty result; bounded omissions are labelled as a partial list.
+  Do not replace this answer with nutrition totals or an explanation of model
+  tools/policy. The expandable record card remains available.
 
 **Approved first slice:** conversation opens as a full-screen, keyboard-safe destination from the central Metria action. The header communicates on-device privacy once; member messages, assistant prose, and facts from encrypted records have distinct visual roles. Thinking and listening are live, cancellable states. Weight saves and meal drafts appear as structured, reversible action cards. The timeline scrolls to new content, survives configuration recreation while the vault session remains active, and a restored completed tool call must never execute twice. Runtime and raw-response inspection live only under the debug-build diagnostics entry in Privacy.
 
@@ -157,6 +190,10 @@ The similar-meal suggestion button is **Use meal name**. Supporting text must sa
   checks, and safety rules. The selected option is identified by text and
   accessibility state, not color alone; closing the selector leaves it unchanged.
 - Development diagnostics are absent from release UI and live behind one explicit development-only entry.
+- The debug-only latest in-memory model response refreshes after leaving Chat.
+  For text meal drafts it includes a fixed validation category. It is not
+  persisted and clears on the next operation, vault lock, backgrounding, or
+  restart; inspecting private response text requires authorization for that run.
 - In debug builds, Developer diagnostics may offer an off-by-default, bounded
   metadata-only assistant trace with clear status and a delete action. It must
   not display or persist member records, prompts, or model prose in that trace.
