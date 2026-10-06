@@ -14,3 +14,5 @@ native-android/.kotlin/
 /data/usda/raw/
 /data/usda/generated/
 __pycache__/
+.local-state/
+!broker/.env.example

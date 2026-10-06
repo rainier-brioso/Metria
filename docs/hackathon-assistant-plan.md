@@ -39,7 +39,10 @@ submitting the entry are separate actions requiring member authorization.
 ## Local assistant slice
 
 Use the approved assistant screen and central capture action. Avoid a navigation
-redesign while proving the interaction. Prioritize these English/Spanish journeys:
+redesign while proving the interaction. The member chose English-only testing
+and video for the demo on 2026-10-04. Spanish support remains implemented; its
+broader acceptance is outside the immediate demo scope. Prioritize these journeys
+in English:
 
 | Journey | Expected behavior | Required evidence |
 | --- | --- | --- |
@@ -141,6 +144,19 @@ checks. Do not clear app data or automate biometrics. Public examples must use
 fictional records and permitted imagery.
 
 ## Current checkpoint and next bounded task
+
+**2026-10-03 continuation:** the local assistant slice is committed as
+`c00b9d0` after the 283-test gate and targeted latest-meal phone pass. The
+Nebius request/consent/response foundation and a localhost synthetic Python
+broker now pass fictional-data gates. SQLite preserves credentials/replay/quotas
+across process restart; see [Nebius checkpoints](nebius-assistant-checkpoints.md)
+and [broker runbook](../broker/README.md). The fake-provider adapter now passes;
+account/region/model, processor terms and spending controls are the next setup
+prerequisites. See [account/secrets setup](nebius-account-and-secrets.md). No live
+provider or phone cloud connection is enabled; local physical,
+hosted and real-data gates remain open.
+
+### Initial planning checkpoint (historical)
 
 Repository inspection found HEAD `778f457` and no tracked modifications; only
 `.codex-remote-attachments/` was untracked. The prior 248-test build and in-place

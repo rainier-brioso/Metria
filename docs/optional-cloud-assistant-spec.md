@@ -1,8 +1,25 @@
 # Optional Nebius assistance: data and consent design
 
-**Status:** member-selected design direction, 2026-10-02. Implementation and
-actual sharing are not enabled. Provider retention, service identity, and
+**Status:** member-selected design direction, 2026-10-02. Live sharing is not
+enabled. Provider retention, service identity, and
 physical acceptance remain open. WhatsApp remains deferred.
+
+**Implementation checkpoint, 2026-10-03:** the disconnected Kotlin request,
+preview/one-time consent, strict incoming request validator, bounded response
+selection contract, and Nebius request formatter exist with synthetic tests.
+The Android app has no cloud entry point, transport, credential or vault-to-cloud
+connection. A separate localhost Python broker now runs with synthetic requests
+only, durable SQLite accounting and local operator provisioning. Its provider
+adapter is tested against fake loopback endpoints; CLI live mode is not enabled.
+No external inference occurred. See `nebius-assistant-checkpoints.md`,
+`nebius-account-and-secrets.md` and `broker/README.md`.
+
+The local broker covers revocable random credentials, short-lived one-time
+dispatch, bounded replay IDs and per-credential/global rate/token reservations.
+Accounting persists across process restart. Remote provisioning, HTTPS,
+distributed coordination, phone credential storage, billing and actual provider
+token limits remain open. This is not deployed authentication or a verified
+cost cap. See `nebius-broker-security-design.md`.
 
 ## Product decision and scope
 
@@ -141,6 +158,33 @@ before deployment and document actual deletion behavior; provider deletion is
 not equivalent to deleting the phone's log. Do not add analytics SDKs.
 
 ## Implementation and acceptance gates
+
+The first code slice covers outgoing typed bounds and in-memory exact-preview
+authorization only. A preview expires after five minutes; edits (including
+invalid edits), clear/cancel, disable, or lock invalidate its permit. One permit
+releases one payload and retires after response completion. These are local
+lifecycle controls, not broker authentication, remote cancellation, replay
+protection, or factual validation of model output. Broker strict incoming schema
+validation and output binding remain required before a live feature is enabled.
+The disconnected incoming validator now rejects unknown/duplicate fields,
+permissive JSON syntax, coercible types, unsupported configured models and
+inconsistent summaries. It is not yet wired to an authenticated broker server.
+
+The initial response contract permits only a matching request ID/language,
+unique supplied summary sections (`weight`, `nutrition`) and a guidance enum
+(`recorded_context_only`, `balanced_meal_information`, `professional_support`).
+It rejects model-authored prose, numbers, actions and additional fields. The
+host now renders values from a typed reparse of the exact approved preview,
+using fixed bilingual guidance. Conservative routing supports weight/nutrition
+summaries and balanced-meal information; recognized medical topics override
+model selection with the safety boundary. Unsupported questions receive scope
+text; missing relevant supplied sections fail closed. This vocabulary is not a
+comprehensive medical classifier, and broader relevance/safety acceptance is
+open. No model prose reaches the renderer. Response completion checks current
+consent, validates, renders and retires the attempt atomically. Invalid terminal
+output also retires consent; retry needs new preview/approval. UI must clear
+returned transient answers on lock/exit. Live model behavior, integrated UI and
+broker authentication remain untested.
 
 - [ ] Confirm named service operator, Nebius region/model availability, privacy
   terms, content retention, deletion controls, cost and authentication design.
