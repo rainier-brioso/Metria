@@ -13,9 +13,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Restaurant
-import androidx.compose.material.icons.rounded.Scale
+import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -36,6 +35,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.metria.CycleContext
+import app.metria.GoalPhase
+import app.metria.ui.components.TodayGoalCard
+import app.metria.ui.components.TodayNutritionCard
 import app.metria.ui.components.MetriaMealThumbnail
 import app.metria.MealEntry
 import app.metria.MealIdentity
@@ -45,7 +47,6 @@ import app.metria.NutritionTargets
 import app.metria.WeightEntry
 import app.metria.WeightUnits
 import app.metria.ui.components.MetriaEstimateBadge
-import app.metria.ui.components.MetriaMetricCard
 import app.metria.ui.theme.MetriaColors
 import java.time.LocalDate
 import java.time.ZoneId
@@ -62,6 +63,9 @@ fun MetriaTodayScreen(
     onEditMeal: (MealEntry) -> Unit,
     onEditNutritionTargets: () -> Unit,
     onOpenProgress: () -> Unit,
+    onAddMeal: (String) -> Unit,
+    goalPhase: GoalPhase?,
+    onAddWeight: () -> Unit,
 ) {
     val today = LocalDate.now()
     val latestWeight = entries.maxByOrNull(WeightEntry::recordedAt)
@@ -70,47 +74,38 @@ fun MetriaTodayScreen(
     val todayNutrition = MealNutritionSummaries.between(meals, today, today)
     val days = (6 downTo 0).map { today.minusDays(it.toLong()) }
     val loggedDays = days.count { day -> meals.any { it.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate() == day } }
-    val calories = (todayNutrition.caloriesKcal ?: 0.0) + (todayNutrition.partialCaloriesKcal ?: 0.0)
-    val hasNutrition = todayNutrition.completeNutritionMeals + todayNutrition.partialNutritionMeals > 0
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         TodayHeader(today)
         WeeklyHero(loggedDays)
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            MetriaMetricCard(
-                label = "Latest weight",
-                value = latestWeight?.let { formatWeightValue(it.kilograms, unit).first } ?: "—",
-                unit = latestWeight?.let { formatWeightValue(it.kilograms, unit).second },
-                icon = Icons.Rounded.Scale,
-                supporting = latestWeight?.recordedAt?.atZone(ZoneId.systemDefault())?.toLocalDate()?.let(::friendlyDate)
-                    ?: "Add your first entry",
-                accessibilityLabel = latestWeight?.let { "Latest weight ${formatWeightValue(it.kilograms, unit).first} ${formatWeightValue(it.kilograms, unit).second}" }
-                    ?: "No weight entry yet",
-                onClick = onOpenProgress,
-                modifier = Modifier.weight(1f),
-            )
-            MetriaMetricCard(
-                label = "Nutrition",
-                value = if (hasNutrition) "%.0f".format(calories) else "—",
-                unit = if (hasNutrition) "kcal" else null,
-                icon = Icons.Rounded.Restaurant,
-                supporting = nutritionTargets?.caloriesKcal?.let { "of ${"%.0f".format(it)} kcal goal" }
-                    ?: "Tap to set a goal",
-                accessibilityLabel = if (hasNutrition) "Nutrition estimate ${"%.0f".format(calories)} kilocalories" else "No nutrition estimate today",
-                onClick = onEditNutritionTargets,
-                modifier = Modifier.weight(1f),
-            )
-        }
+        TodayGoalCard(goalPhase, latestWeight, unit, onEditNutritionTargets, onAddWeight)
+        TodayNutritionCard(todayNutrition, nutritionTargets, onEditNutritionTargets)
         WeekStrip(days, today)
         CycleContextCard(entries, cycleContext)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text("Today’s meals", style = MaterialTheme.typography.titleLarge)
             TextButton(onClick = onOpenProgress) { Text("See all") }
         }
-        if (todayMeals.isEmpty()) {
-            EmptyMealsCard()
-        } else {
-            todayMeals.forEach { meal -> TodayMealRow(meal, onEditMeal) }
+        listOf("breakfast", "lunch", "dinner", "snack").forEach { slot ->
+            Card(colors = CardDefaults.cardColors(containerColor = MetriaColors.Surface)) {
+                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Text(MealSlots.label(slot), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { onAddMeal(slot) }, modifier = Modifier.semantics {
+                            contentDescription = "Add ${MealSlots.label(slot).lowercase()}"
+                        }) { Text("＋ Add") }
+                    }
+                    val slotMeals = todayMeals.filter { it.mealSlot == slot }
+                    if (slotMeals.isEmpty()) Text("Add a meal when you’re ready.", color = MetriaColors.InkMuted)
+                    slotMeals.forEach { meal -> TodayMealRow(meal, onEditMeal) }
+                }
+            }
+        }
+        // Legacy records without a member-chosen type stay unclassified.
+        todayMeals.filter { it.mealSlot == null }.takeIf { it.isNotEmpty() }?.let { unclassified ->
+            Text("Other meals", style = MaterialTheme.typography.titleMedium)
+            unclassified.forEach { TodayMealRow(it, onEditMeal) }
         }
     }
 }
@@ -244,7 +239,7 @@ private fun TodayMealRow(meal: MealEntry, onEdit: (MealEntry) -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            MetriaMealThumbnail(meal.referenceThumbnailBase64)
+            MetriaMealThumbnail(meal.referenceThumbnailBase64, drink = app.metria.MealAppearance.isDrink(meal))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text(MealIdentity.displayTitle(meal), style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text("${MealSlots.label(meal.mealSlot)} · $summary", color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall)

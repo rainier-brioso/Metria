@@ -12,6 +12,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
@@ -27,6 +30,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -38,6 +42,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -59,9 +64,11 @@ import app.metria.MealSlots
 import app.metria.OfflineFoodCatalog
 import app.metria.SavedMealEditPolicy
 import app.metria.ui.theme.MetriaColors
+import app.metria.ui.components.rememberGuardedEditorSheetState
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
+import kotlinx.coroutines.launch
 
 private data class EditableSavedFood(
     val name: String,
@@ -87,6 +94,7 @@ fun SavedMealEditorScreen(
     onCancelFoodNameCorrection: (Long) -> Unit,
     onClearFoodNameCorrection: () -> Unit,
     onDismiss: () -> Unit,
+    onAskAboutMeal: () -> Boolean,
     onSave: (MealEntry) -> String?,
     onDelete: () -> String?,
 ) {
@@ -100,9 +108,17 @@ fun SavedMealEditorScreen(
     var carbs by rememberSaveable(meal.id) { mutableStateOf(meal.nutrition?.carbohydrateGrams?.toString().orEmpty()) }
     var fat by rememberSaveable(meal.id) { mutableStateOf(meal.nutrition?.fatGrams?.toString().orEmpty()) }
     var error by rememberSaveable(meal.id) { mutableStateOf<String?>(null) }
+    var editingFoodIndex by rememberSaveable(meal.id) { mutableStateOf<Int?>(null) }
+    var foodEditBaseline by rememberSaveable(meal.id, stateSaver = EditableSavedFoodsSaver) { mutableStateOf(emptyList()) }
+    var foodMatchBaseline by rememberSaveable(meal.id) { mutableStateOf("") }
+    var confirmLeave by rememberSaveable(meal.id) { mutableStateOf(false) }
+    var detailsExpanded by rememberSaveable(meal.id) { mutableStateOf(false) }
+    var nutritionEditorExpanded by rememberSaveable(meal.id) { mutableStateOf(false) }
     var confirmReferenceRemoval by rememberSaveable(meal.id) { mutableStateOf(false) }
     var confirmMealDeletion by rememberSaveable(meal.id) { mutableStateOf(false) }
     var confirmNutritionCoverageLoss by rememberSaveable(meal.id) { mutableStateOf(false) }
+    var confirmAskAboutMeal by rememberSaveable(meal.id) { mutableStateOf(false) }
+    var askAfterCoverageConfirmation by remember { mutableStateOf(false) }
     var removeReferenceThumbnail by rememberSaveable(meal.id) { mutableStateOf(false) }
     val referenceThumbnail = meal.referenceThumbnailBase64.takeUnless { removeReferenceThumbnail }
     var calculateWithCatalog by rememberSaveable(meal.id) { mutableStateOf(meal.nutrition?.source == "member_confirmed_catalog") }
@@ -162,6 +178,37 @@ fun SavedMealEditorScreen(
         )
     }
 
+    fun editSnapshot() = listOf(title, date, mealSlot.orEmpty(), calories, protein, carbs, fat,
+        removeReferenceThumbnail.toString(), calculateWithCatalog.toString()) +
+        items.flatMap { listOf(it.name, it.description, it.grams, it.preparation, it.groupLabel.orEmpty(), it.role) } + catalogMatchIds
+    val initialEditSnapshot by rememberSaveable(meal.id) { mutableStateOf(editSnapshot()) }
+    val sheetState = rememberGuardedEditorSheetState(
+        hasChanges = editSnapshot() != initialEditSnapshot,
+        saving = false,
+    ) { confirmLeave = true }
+    val sheetScope = rememberCoroutineScope()
+    fun closeFoodEditor(cancel: Boolean) {
+        val index = editingFoodIndex
+        if (cancel && index != null && foodEditBaseline.size == 1) {
+            items = items.toMutableList().also { it[index] = foodEditBaseline.first() }
+            catalogMatchIds = catalogMatchIds.toMutableList().also { it[index] = foodMatchBaseline }
+        }
+        correctionRequestId?.let(onCancelFoodNameCorrection)
+        onClearFoodNameCorrection()
+        correctionRequestId = null
+        correctionTargetIndex = null
+        catalogSearchIndex = null
+        editingFoodIndex = null
+        error = null
+    }
+    fun requestDismiss() {
+        if (catalogSearchIndex != null) catalogSearchIndex = null
+        else if (editingFoodIndex != null) closeFoodEditor(cancel = true)
+        else if (editSnapshot() != initialEditSnapshot) confirmLeave = true
+        else onDismiss()
+    }
+    BackHandler { requestDismiss() }
+
     DisposableEffect(meal.id) {
         onDispose {
             val requestId = latestCorrectionRequestId
@@ -173,7 +220,7 @@ fun SavedMealEditorScreen(
         }
     }
 
-    fun saveMealDraft(coverageLossConfirmed: Boolean = false) {
+    fun saveMealDraft(coverageLossConfirmed: Boolean = false, askAfterSaving: Boolean = false) {
         error = null
         val isCatalogBacked = isCatalogMeal || meal.nutrition?.source == "member_confirmed_catalog" || savedCatalogFoodIds.isNotEmpty()
         if (!SavedMealEditPolicy.canSaveCatalogBackedEdit(isCatalogBacked, catalog != null, unresolvedKeptMatch)) {
@@ -229,17 +276,22 @@ fun SavedMealEditorScreen(
             return
         }
         if (!coverageLossConfirmed && SavedMealEditPolicy.requiresNutritionCoverageConfirmation(meal.nutrition, updated.nutrition)) {
+            askAfterCoverageConfirmation = askAfterSaving
             confirmNutritionCoverageLoss = true
             return
         }
         error = onSave(updated)
+        if (error == null && askAfterSaving) {
+            onAskAboutMeal()
+        }
     }
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(Modifier.imePadding().padding(24.dp).padding(bottom = 72.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Edit meal", style = MaterialTheme.typography.headlineMedium)
+    ModalBottomSheet(onDismissRequest = ::requestDismiss, sheetState = sheetState) {
+        Column(Modifier.fillMaxHeight().imePadding()) {
+        Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(if (editingFoodIndex == null) "Your meal" else "Edit ingredient", style = MaterialTheme.typography.headlineMedium)
+            if (editingFoodIndex == null) {
             OutlinedTextField(title, { title = it }, label = { Text("Meal name (optional)") }, modifier = Modifier.fillMaxWidth())
-            SavedMealSlotSelector(mealSlot, MealSlots.suggestedFor(recordedTime).takeIf { meal.recordedTimeKnown }) { mealSlot = it }
             referenceThumbnail?.let { reference ->
                 Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                     Box(Modifier.size(152.dp)) {
@@ -256,7 +308,36 @@ fun SavedMealEditorScreen(
                     }
                 }
             }
+            val displayed = if (isCatalogMeal) catalogTotals?.let {
+                MealNutrition(it.caloriesKcal, it.proteinGrams, it.carbohydrateGrams, it.fatGrams, "member_confirmed_catalog")
+            } else MealNutrition(calories.replace(',', '.').toDoubleOrNull(), protein.replace(',', '.').toDoubleOrNull(), carbs.replace(',', '.').toDoubleOrNull(), fat.replace(',', '.').toDoubleOrNull(), meal.nutrition?.source ?: "manual_entry")
+            Text(if (isCatalogMeal) "Nutrition estimate · ${if (isPartialCatalogEstimate) "Partial" else "Member-confirmed match"}" else if (meal.nutrition?.source == "verified_label") "Recorded nutrition · Verified label" else "Recorded nutrition · Manual entry", style = MaterialTheme.typography.titleMedium)
+            app.metria.ui.components.MealNutritionMetrics(displayed?.caloriesKcal, displayed?.proteinGrams, displayed?.carbohydrateGrams, displayed?.fatGrams)
+            if (isCatalogMeal) app.metria.ui.components.MealPortionControl { factor ->
+                val scaled = app.metria.MealPortionScale.apply(items.map { it.grams }, factor)
+                if (scaled == null) false else {
+                    items = items.mapIndexed { index, item -> item.copy(grams = scaled[index]) }
+                    true
+                }
+            }
+            Text("Ingredients", style = MaterialTheme.typography.titleLarge)
+            }
             items.forEachIndexed { index, item ->
+                if (editingFoodIndex == null) {
+                    OutlinedButton(onClick = {
+                        foodEditBaseline = listOf(item)
+                        foodMatchBaseline = catalogMatchIds.getOrNull(index).orEmpty()
+                        editingFoodIndex = index
+                    }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                        Column(Modifier.fillMaxWidth()) {
+                            Text(item.name.ifBlank { "Unnamed food" }, style = MaterialTheme.typography.titleMedium)
+                            Text(listOfNotNull(item.grams.takeIf(String::isNotBlank)?.let { "$it g" }, item.preparation.takeIf(String::isNotBlank)).joinToString(" · ").ifBlank { "Portion needs review" })
+                            if (isCatalogMeal) catalogValues.getOrNull(index)?.caloriesKcal?.let { kcal ->
+                                Text("${java.text.NumberFormat.getNumberInstance().apply { maximumFractionDigits = 1 }.format(kcal)} kcal · estimate", style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                } else if (editingFoodIndex == index) {
                 OutlinedTextField(item.name, { value ->
                     items = items.toMutableList().also { it[index] = item.copy(name = value) }
                     catalogMatchIds = catalogMatchIds.toMutableList().also {
@@ -315,7 +396,10 @@ fun SavedMealEditorScreen(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 OutlinedTextField(item.grams, { value -> items = items.toMutableList().also { it[index] = item.copy(grams = value) } }, label = { Text("Portion in grams") }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(item.preparation, { value -> items = items.toMutableList().also { it[index] = item.copy(preparation = value) } }, label = { Text("Preparation (optional)") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(item.preparation, { value ->
+                    items = items.toMutableList().also { it[index] = item.copy(preparation = value) }
+                    if (item.preparation.trim() != value.trim()) catalogMatchIds = catalogMatchIds.toMutableList().also { it[index] = "" }
+                }, label = { Text("Preparation (optional)") }, modifier = Modifier.fillMaxWidth())
                 if (isCatalogMeal) {
                     val match = catalogMatches.getOrNull(index)
                     Text(
@@ -328,8 +412,17 @@ fun SavedMealEditorScreen(
                         Text(if (match == null) "Find this food" else "Change food")
                     }
                 }
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                }
             }
+            if (editingFoodIndex == null) {
             if (isCatalogMeal) {
+                app.metria.ui.components.CatalogNutrientDetailsCard(
+                    app.metria.CatalogNutrientDetails.calculate(items.indices.map { index ->
+                        catalogMatches.getOrNull(index) to parsedCatalogGrams[index]
+                    }),
+                    catalog?.sourceRelease,
+                )
                 Text(if (isPartialCatalogEstimate) "Partial local estimate" else "Member-confirmed catalog estimate", style = MaterialTheme.typography.titleMedium)
                 if (catalogTotals == null) {
                     Text("Choose at least one food and its portion to calculate an estimate.", color = MetriaColors.Danger)
@@ -346,9 +439,8 @@ fun SavedMealEditorScreen(
                     if (catalogTotals.caloriesDerivedFromMacros) Text("Calories are calculated from available macros for one selected food.", color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall)
                 }
             } else {
-                Text("No nutrition estimate", style = MaterialTheme.typography.titleMedium)
                 Text(
-                    "This meal was saved without complete nutrition values. It is not included in nutrition summaries.",
+                    "Recorded values are shown above. Missing values stay unknown.",
                     color = MetriaColors.InkMuted,
                     style = MaterialTheme.typography.bodySmall,
                 )
@@ -356,17 +448,76 @@ fun SavedMealEditorScreen(
                     Text("Calculate from offline catalog")
                 }
                 Text("Metria will suggest local matches for the foods and portions above. Review them before saving.", color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall)
+                TextButton(onClick = { nutritionEditorExpanded = !nutritionEditorExpanded }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(if (nutritionEditorExpanded) "Hide nutrition editor" else "Edit nutrition values") }
+                if (nutritionEditorExpanded) {
                 OutlinedTextField(calories, { calories = it }, label = { Text("Calories (kcal)") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(protein, { protein = it }, label = { Text("Protein (g)") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(carbs, { carbs = it }, label = { Text("Carbohydrates (g)") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(fat, { fat = it }, label = { Text("Fat (g)") }, modifier = Modifier.fillMaxWidth())
+                }
             }
+            TextButton(onClick = { detailsExpanded = !detailsExpanded }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(if (detailsExpanded) "Hide meal details" else "Meal details · ${MealSlots.label(mealSlot)} · $date") }
+            if (detailsExpanded) {
+            SavedMealSlotSelector(mealSlot, MealSlots.suggestedFor(recordedTime).takeIf { meal.recordedTimeKnown }) { mealSlot = it }
             OutlinedTextField(date, { date = it }, label = { Text("Date - YYYY-MM-DD") }, modifier = Modifier.fillMaxWidth())
+            }
             error?.let { Text(it, color = MetriaColors.Danger) }
-            Button(onClick = { saveMealDraft() }, modifier = Modifier.fillMaxWidth()) { Text("Save meal changes") }
-            Button(onClick = { error = null; confirmMealDeletion = true }, modifier = Modifier.fillMaxWidth()) { Text("Delete meal") }
+            TextButton(onClick = { error = null; confirmMealDeletion = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Delete meal") }
+            TextButton(
+                onClick = {
+                    if (editSnapshot() == initialEditSnapshot) {
+                        if (!onAskAboutMeal()) error = "This saved meal is no longer available. Close and reopen it before asking."
+                    } else confirmAskAboutMeal = true
+                },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            ) { Text("Ask Metria about this meal") }
+            }
+        }
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (editingFoodIndex == null) {
+                Button(onClick = { saveMealDraft() }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Save meal changes") }
+                TextButton(onClick = ::requestDismiss, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Leave without saving") }
+            } else {
+                Button(onClick = {
+                    val item = items.getOrNull(editingFoodIndex ?: -1)
+                    if (item == null || item.name.isBlank() || (item.grams.isNotBlank() && item.grams.toIntOrNull()?.let { it in 1..2_000 } != true)) error = "Check the food name and portion in grams."
+                    else closeFoodEditor(cancel = false)
+                }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Apply ingredient") }
+                TextButton(onClick = { closeFoodEditor(cancel = true) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Cancel ingredient changes") }
+            }
+        }
         }
     }
+    if (confirmLeave) AlertDialog(
+        onDismissRequest = { confirmLeave = false },
+        title = { Text("Leave without saving?") },
+        text = { Text("Your changes to this meal will be lost.") },
+        confirmButton = { Button(onClick = { confirmLeave = false; sheetScope.launch { sheetState.show() } }) { Text("Keep editing") } },
+        dismissButton = { TextButton(onClick = { confirmLeave = false; onDismiss() }) { Text("Leave without saving") } },
+    )
+    if (confirmAskAboutMeal) AlertDialog(
+        onDismissRequest = { confirmAskAboutMeal = false },
+        title = { Text("Finish editing first") },
+        text = { Text("Save your meal changes or discard them before asking. Metria will read the saved meal again when you send your question.") },
+        confirmButton = {
+            Button(onClick = {
+                confirmAskAboutMeal = false
+                saveMealDraft(askAfterSaving = true)
+            }) { Text("Save and ask") }
+        },
+        dismissButton = {
+            Column {
+                TextButton(onClick = {
+                    if (onAskAboutMeal()) confirmAskAboutMeal = false
+                    else {
+                        confirmAskAboutMeal = false
+                        error = "This saved meal is no longer available. Close and reopen it before asking."
+                    }
+                }) { Text("Discard edits and ask") }
+                TextButton(onClick = { confirmAskAboutMeal = false }) { Text("Keep editing") }
+            }
+        },
+    )
     catalogSearchIndex?.let { index -> SavedOfflineCatalogSearchSheet(
         catalog = catalog,
         initialQuery = items.getOrNull(index)?.name.orEmpty(),
@@ -388,7 +539,7 @@ fun SavedMealEditorScreen(
     if (confirmNutritionCoverageLoss) {
         val hasRemainingEstimate = catalogTotals != null
         AlertDialog(
-            onDismissRequest = { confirmNutritionCoverageLoss = false },
+            onDismissRequest = { confirmNutritionCoverageLoss = false; askAfterCoverageConfirmation = false },
             title = { Text(if (hasRemainingEstimate) "Save a partial estimate?" else "Save without this estimate?") },
             text = {
                 Text(
@@ -402,10 +553,12 @@ fun SavedMealEditorScreen(
             confirmButton = {
                 Button(onClick = {
                     confirmNutritionCoverageLoss = false
-                    saveMealDraft(coverageLossConfirmed = true)
+                    val askAfterSaving = askAfterCoverageConfirmation
+                    askAfterCoverageConfirmation = false
+                    saveMealDraft(coverageLossConfirmed = true, askAfterSaving = askAfterSaving)
                 }) { Text(if (hasRemainingEstimate) "Save partial estimate" else "Save without estimate") }
             },
-            dismissButton = { TextButton(onClick = { confirmNutritionCoverageLoss = false }) { Text("Keep editing") } },
+            dismissButton = { TextButton(onClick = { confirmNutritionCoverageLoss = false; askAfterCoverageConfirmation = false }) { Text("Keep editing") } },
         )
     }
     if (confirmMealDeletion) {
@@ -483,7 +636,7 @@ private fun SavedFoodNameCorrectionEditor(
 private fun SavedMealSlotSelector(selected: String?, suggested: String?, choose: (String?) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(suggested?.let { "Meal type (optional) - suggested: ${MealSlots.label(it)}" } ?: "Meal type (optional)", style = MaterialTheme.typography.labelLarge)
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf("breakfast", "lunch", "dinner", "snack").forEach { slot ->
                 FilterChip(selected = selected == slot, onClick = { choose(if (selected == slot) null else slot) }, label = { Text(MealSlots.label(slot)) })
             }
@@ -508,16 +661,25 @@ private fun SavedMealReferenceThumbnail(encoded: String, size: androidx.compose.
 private fun SavedOfflineCatalogSearchSheet(catalog: OfflineFoodCatalog?, initialQuery: String, onDismiss: () -> Unit, onSelect: (CatalogFood) -> Unit) {
     var query by remember(initialQuery) { mutableStateOf(initialQuery) }
     val results = remember(catalog, query) { catalog?.let { FoodCatalog.search(it, query) }.orEmpty() }
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(Modifier.padding(24.dp).padding(bottom = 72.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Offline food catalog", style = MaterialTheme.typography.headlineMedium)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+    ) {
+        Column(Modifier.imePadding().padding(24.dp).padding(bottom = 72.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Find a food", style = MaterialTheme.typography.headlineMedium)
+            TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                Text("Back to ingredient")
+            }
             if (catalog == null) {
                 Text("The local catalog could not be opened. You can still describe a meal or enter a label manually.", color = MetriaColors.Danger)
                 return@Column
             }
-            Text("Search ${catalog.foods.size} foods stored in this app. This never contacts a server.", color = MetriaColors.InkMuted)
-            OutlinedTextField(query, { query = it }, label = { Text("Food, for example rice or chicken") }, modifier = Modifier.fillMaxWidth())
-            if (query.isNotBlank() && results.isEmpty()) Text("No local match. You can still describe the meal manually.", color = MetriaColors.InkMuted)
+            Text("${catalog.foods.size} foods available · USDA Foundation Foods", color = MetriaColors.InkMuted)
+            OutlinedTextField(query, { query = it }, label = { Text("Food name") }, placeholder = { Text("For example: rice or chicken") }, modifier = Modifier.fillMaxWidth())
+            if (query.isNotBlank() && results.isEmpty()) {
+                Text("No matching food in this catalog.", style = MaterialTheme.typography.titleSmall)
+                Text("Try a simpler name. Some foods aren't included; you can leave nutrition unknown or enter values manually.", color = MetriaColors.InkMuted)
+            }
             results.forEach { food ->
                 Card(
                     colors = CardDefaults.cardColors(containerColor = MetriaColors.Surface),

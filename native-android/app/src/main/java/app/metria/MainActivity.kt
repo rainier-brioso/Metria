@@ -55,6 +55,7 @@ class MainActivity : FragmentActivity() {
     private lateinit var biometricPrompt: BiometricPrompt
     private var vaultCallback: ((EncryptedVault.Status) -> Unit)? = null
     private var pendingVaultOperation: VaultOperation? = null
+    private val firstGoalOffer = FirstGoalOffer()
     private var voiceDraftCallback: ((VoiceWeightDraft) -> Unit)? = null
     private var pendingVoiceDraft: VoiceWeightDraft? = null
     private var pendingCameraCapture: File? = null
@@ -83,13 +84,15 @@ class MainActivity : FragmentActivity() {
                     val cipher = result.cryptoObject?.cipher
                     val operation = pendingVaultOperation
                     pendingVaultOperation = null
-                    vaultCallback?.invoke(if (cipher == null || operation == null) {
+                    val vaultResult = if (cipher == null || operation == null) {
                         EncryptedVault.Status.Failed("Vault authentication did not return a usable key operation.")
                     } else if (operation == VaultOperation.Create) {
                         vault.createAfterAuthentication(cipher)
                     } else {
                         vault.unlockAfterAuthentication(cipher)
-                    })
+                    }
+                    if (operation == VaultOperation.Create) firstGoalOffer.recordCreation(vaultResult is EncryptedVault.Status.Unlocked)
+                    vaultCallback?.invoke(vaultResult)
                 }
 
                 override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
@@ -101,6 +104,7 @@ class MainActivity : FragmentActivity() {
     }
 
     override fun onDestroy() {
+        firstGoalOffer.clear()
         vault.lock()
         modelLifecycle.close()
         assistantTraceStore.close()
@@ -109,7 +113,12 @@ class MainActivity : FragmentActivity() {
     }
 
     override fun onStop() {
+        firstGoalOffer.clear()
         if (!externalImageFlowInProgress && !externalArchiveFlowInProgress) {
+            modelLifecycle.cancelImageAnalysis()
+            if (modelLifecycle.status().imageState in setOf("ready", "preparing", "reading_label")) {
+                modelLifecycle.discardPreparedImage()
+            }
             vault.lock()
             modelLifecycle.lockPrivateAgentConversation()
             modelLifecycle.clearDeveloperResponse()
@@ -155,6 +164,8 @@ class MainActivity : FragmentActivity() {
     fun setVaultCallback(callback: ((EncryptedVault.Status) -> Unit)?) {
         vaultCallback = callback
     }
+
+    fun consumeFirstGoalOffer(): Boolean = firstGoalOffer.take(vault.status() is EncryptedVault.Status.Unlocked)
 
     /** This stores no health data; it only prevents repeating the first-run explanation. */
     fun hasCompletedOnboarding(): Boolean = onboardingPreferences.getBoolean("completed", false)
@@ -205,7 +216,8 @@ class MainActivity : FragmentActivity() {
     fun startPrivateAgentTurn(
         question: String,
         history: List<PrivateConversationMessage>,
-    ): ModelStatus = modelLifecycle.startPrivateAgentTurn(question, history)
+        selectedMealId: String? = null,
+    ): ModelStatus = modelLifecycle.startPrivateAgentTurn(question, history, selectedMealId)
 
     fun setAssistantStyle(style: EncryptedVault.AssistantStyle): ModelStatus = modelLifecycle.setAssistantStyle(style)
 
@@ -256,7 +268,8 @@ class MainActivity : FragmentActivity() {
         pendingCameraCapture = null
     }
 
-    fun analyzeLocalMealImage(): ModelStatus = modelLifecycle.analyzePreparedImage()
+    fun analyzeLocalMealImage(description: String): ModelStatus = modelLifecycle.analyzePreparedImage(description)
+    fun cancelLocalMealImageAnalysis(): ModelStatus = modelLifecycle.cancelImageAnalysis()
 
     fun readLocalNutritionLabel(): ModelStatus = modelLifecycle.readNutritionLabel()
 
@@ -295,6 +308,7 @@ class MainActivity : FragmentActivity() {
     fun confirmRecoveryRestore(): Result<EncryptedVault.ArchiveSummary> = vault.confirmRecoveryRestore()
 
     fun lockVault() {
+        firstGoalOffer.clear()
         vault.lock()
         modelLifecycle.lockPrivateAgentConversation()
         modelLifecycle.clearDeveloperResponse()

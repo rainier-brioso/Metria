@@ -38,6 +38,12 @@ submitting the entry are separate actions requiring member authorization.
 
 ## Local assistant slice
 
+**2026-10-11 experiment:** the member requested an English-only test of a local
+Jev-like decision model to avoid Gemma on simple record questions. See
+[decision-model test plan](decision-model-test-plan.md) for Von feasibility,
+rules/Gemma comparisons, proposed phone thresholds and go/no-go gates.
+This is planned work, not measured speed or completed Android acceptance.
+
 Use the approved assistant screen and central capture action. Avoid a navigation
 redesign while proving the interaction. The member chose English-only testing
 and video for the demo on 2026-10-04. Spanish support remains implemented; its

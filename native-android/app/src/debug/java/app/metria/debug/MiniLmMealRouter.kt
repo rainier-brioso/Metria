@@ -1,0 +1,238 @@
+package app.metria.debug
+
+import android.content.Context
+import app.metria.MiniLmTodayMealPolicy
+import ai.onnxruntime.OnnxTensor
+import ai.onnxruntime.OrtEnvironment
+import ai.onnxruntime.OrtSession
+import ai.onnxruntime.TensorInfo
+import java.io.File
+import java.io.InputStream
+import java.nio.LongBuffer
+import java.security.MessageDigest
+import kotlin.math.sqrt
+
+/**
+ * Debug-only, local MiniLM prototype router for the single today's-meal-list read.
+ * Create/use this away from the UI thread. Input text is never logged or persisted.
+ */
+class MiniLmMealRouter(context: Context) : AutoCloseable {
+    private val appContext = context.applicationContext
+    private val session: OrtSession
+    private val tokenizer: MiniLmWordPieceTokenizer
+    private val positivePrototypes: List<FloatArray>
+    private val fallbackPrototypes: List<FloatArray>
+    private var closed = false
+
+    init {
+        val vocabBytes = appContext.assets.open(VOCAB_ASSET).use { it.readBytesBounded() }
+        require(sha256(vocabBytes) == VOCAB_SHA256) { "MiniLM vocabulary checksum mismatch" }
+        tokenizer = MiniLmWordPieceTokenizer.fromVocabulary(vocabBytes.inputStream())
+        val modelFile = privateModelFile(appContext)
+        val environment = OrtEnvironment.getEnvironment()
+        val options = OrtSession.SessionOptions().apply {
+            setIntraOpNumThreads(2)
+            setInterOpNumThreads(1)
+            setOptimizationLevel(OrtSession.SessionOptions.OptLevel.BASIC_OPT)
+        }
+        val created = try {
+            environment.createSession(modelFile.absolutePath, options)
+        } finally {
+            options.close()
+        }
+        try {
+            validateSession(created)
+            session = created
+            val examples = POSITIVE_EXAMPLES + FALLBACK_EXAMPLES
+            val vectors = embed(examples)
+            positivePrototypes = vectors.take(POSITIVE_EXAMPLES.size)
+            fallbackPrototypes = vectors.drop(POSITIVE_EXAMPLES.size)
+        } catch (error: Throwable) {
+            created.close()
+            throw error
+        }
+    }
+
+    /** Returns true only when both the conservative English scope guard and MiniLM agree. */
+    @Synchronized
+    fun acceptsTodayMealList(text: String): Boolean {
+        if (closed || Thread.currentThread().isInterrupted || !MiniLmTodayMealPolicy.isInScope(text)) return false
+        return try {
+            val query = embed(listOf(text)).single()
+            if (Thread.currentThread().isInterrupted) return false
+            val positive = positivePrototypes.maxOfOrNull { cosine(query, it) } ?: return false
+            val fallback = fallbackPrototypes.maxOfOrNull { cosine(query, it) } ?: return false
+            positive >= MIN_POSITIVE_SIMILARITY && positive - fallback >= MINIMUM_MARGIN
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    @Synchronized
+    override fun close() {
+        if (!closed) {
+            closed = true
+            session.close()
+        }
+    }
+
+    private fun embed(texts: List<String>): List<FloatArray> {
+        require(texts.isNotEmpty())
+        val rows = texts.map { text -> tokenizer.encode(text) ?: error("Text cannot be tokenized safely") }
+        val width = rows.maxOf { it.inputIds.size }
+        val inputIds = LongArray(rows.size * width) { tokenizer.padTokenId }
+        val attentionMask = LongArray(rows.size * width)
+        val tokenTypeIds = LongArray(rows.size * width)
+        rows.forEachIndexed { row, encoded ->
+            val offset = row * width
+            encoded.inputIds.copyInto(inputIds, offset)
+            encoded.attentionMask.copyInto(attentionMask, offset)
+            encoded.tokenTypeIds.copyInto(tokenTypeIds, offset)
+        }
+        val shape = longArrayOf(rows.size.toLong(), width.toLong())
+        val values = linkedMapOf<String, OnnxTensor>()
+        try {
+            for (name in session.inputNames) {
+                val data = when (name) {
+                    "input_ids" -> inputIds
+                    "attention_mask" -> attentionMask
+                    "token_type_ids" -> tokenTypeIds
+                    else -> error("Unexpected MiniLM input")
+                }
+                values[name] = OnnxTensor.createTensor(environment, LongBuffer.wrap(data), shape)
+            }
+            require("input_ids" in values && "attention_mask" in values) { "MiniLM input contract mismatch" }
+            session.run(values).use { result ->
+                val outputName = session.outputNames.single()
+                val output = result[outputName].orElseThrow { IllegalStateException("MiniLM output missing") }
+                val tensor = output as? OnnxTensor ?: error("MiniLM output is not a tensor")
+                val info = tensor.info as? TensorInfo ?: error("MiniLM tensor metadata missing")
+                require(info.shape.size == 3 && info.shape[0] == rows.size.toLong() &&
+                    info.shape[1] == width.toLong() && info.shape[2] == EMBEDDING_DIMENSION.toLong()) {
+                    "MiniLM output shape mismatch"
+                }
+                val batch = tensor.value as? Array<*> ?: error("MiniLM batch output invalid")
+                require(batch.size == rows.size) { "MiniLM batch output size mismatch" }
+                return batch.mapIndexed { rowIndex, rawSequence ->
+                    val sequence = rawSequence as? Array<*> ?: error("MiniLM sequence output invalid")
+                    require(sequence.size == width) { "MiniLM sequence output size mismatch" }
+                    val pooled = DoubleArray(EMBEDDING_DIMENSION)
+                    var tokenCount = 0
+                    for (tokenIndex in rows[rowIndex].attentionMask.indices) {
+                        if (rows[rowIndex].attentionMask[tokenIndex] == 0L) continue
+                        val token = sequence[tokenIndex] as? FloatArray ?: error("MiniLM hidden state invalid")
+                        require(token.size == EMBEDDING_DIMENSION && token.all(Float::isFinite)) {
+                            "MiniLM hidden state invalid"
+                        }
+                        for (dimension in pooled.indices) pooled[dimension] += token[dimension].toDouble()
+                        tokenCount++
+                    }
+                    require(tokenCount > 0) { "MiniLM received an empty sentence" }
+                    val mean = FloatArray(EMBEDDING_DIMENSION) { (pooled[it] / tokenCount).toFloat() }
+                    normalize(mean)
+                }
+            }
+        } finally {
+            values.values.forEach(OnnxTensor::close)
+        }
+    }
+
+    private fun validateSession(candidate: OrtSession) {
+        require(candidate.inputNames.containsAll(setOf("input_ids", "attention_mask"))) {
+            "MiniLM input names mismatch"
+        }
+        require(candidate.inputNames.all { it in setOf("input_ids", "attention_mask", "token_type_ids") }) {
+            "Unsupported MiniLM input"
+        }
+        require(candidate.outputNames.size == 1) { "MiniLM output names mismatch" }
+    }
+
+    private fun privateModelFile(context: Context): File {
+        val directory = File(context.filesDir, MODEL_DIRECTORY)
+        check(directory.isDirectory || directory.mkdirs()) { "Cannot create private MiniLM directory" }
+        val target = File(directory, MODEL_FILENAME)
+        if (target.isFile && target.length() == MODEL_BYTES && sha256(target) == MODEL_SHA256) return target
+
+        val temporary = File(directory, "$MODEL_FILENAME.pending")
+        try {
+            appContext.assets.open(MODEL_ASSET).use { input ->
+                temporary.outputStream().buffered().use { output -> input.copyTo(output) }
+            }
+            require(temporary.length() == MODEL_BYTES && sha256(temporary) == MODEL_SHA256) {
+                "MiniLM model checksum mismatch"
+            }
+            if (!temporary.renameTo(target)) {
+                temporary.copyTo(target, overwrite = true)
+                require(target.length() == MODEL_BYTES && sha256(target) == MODEL_SHA256) {
+                    "MiniLM model copy verification failed"
+                }
+                temporary.delete()
+            }
+            return target
+        } catch (error: Throwable) {
+            temporary.delete()
+            throw error
+        }
+    }
+
+    private fun normalize(vector: FloatArray): FloatArray {
+        val norm = sqrt(vector.sumOf { it.toDouble() * it.toDouble() })
+        require(norm.isFinite() && norm > 0.0) { "MiniLM embedding is invalid" }
+        return FloatArray(vector.size) {
+            (vector[it] / norm).toFloat().also { value -> require(value.isFinite()) }
+        }
+    }
+
+    private fun cosine(left: FloatArray, right: FloatArray): Float {
+        require(left.size == right.size)
+        return left.indices.sumOf { left[it].toDouble() * right[it].toDouble() }.toFloat()
+    }
+
+    private val environment: OrtEnvironment get() = OrtEnvironment.getEnvironment()
+
+    private fun sha256(file: File): String =
+        file.inputStream().buffered().use { input -> sha256(input.readBytesBounded()) }
+
+    private fun sha256(bytes: ByteArray): String =
+        MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+
+    private fun InputStream.readBytesBounded(): ByteArray {
+        val bytes = readBytes()
+        require(bytes.size <= MAX_ASSET_BYTES) { "MiniLM asset is too large" }
+        return bytes
+    }
+
+    private companion object {
+        const val MODEL_DIRECTORY = "decision-model/minilm"
+        const val MODEL_FILENAME = "model_qint8_arm64.onnx"
+        const val MODEL_ASSET = "decision-model/minilm/model_qint8_arm64.onnx"
+        const val VOCAB_ASSET = "decision-model/minilm/vocab.txt"
+        const val MODEL_BYTES = 23_026_053L
+        const val MODEL_SHA256 = "4278337fd0ff3c68bfb6291042cad8ab363e1d9fbc43dcb499fe91c871902474"
+        const val VOCAB_SHA256 = "07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3"
+        const val MAX_ASSET_BYTES = 24 * 1024 * 1024
+        const val EMBEDDING_DIMENSION = 384
+        const val MIN_POSITIVE_SIMILARITY = 0.58f
+        const val MINIMUM_MARGIN = 0.06f
+        val POSITIVE_EXAMPLES = listOf(
+            "Show the meals I recorded today",
+            "List my saved meals for today",
+            "What meals have I logged today",
+            "What did I eat today",
+            "Which meals are in my record for today",
+            "Show me all the food I saved today"
+        )
+        val FALLBACK_EXAMPLES = listOf(
+            "I just ate eggs and toast",
+            "Log a chicken meal for today",
+            "What should I eat tomorrow",
+            "Show my meals from yesterday",
+            "Show today's meals and suggest dinner",
+            "How many calories did I eat today",
+            "What did I eat this week",
+            "Help me make a meal plan",
+            "Add the lunch I just had",
+            "Show today's meals and my weight"
+        )
+    }
+}

@@ -50,6 +50,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.metria.MealEntry
+import app.metria.GoalPhase
 import app.metria.MealIdentity
 import app.metria.MealNutritionSummaries
 import app.metria.MealSlots
@@ -58,6 +59,7 @@ import app.metria.WeightEntry
 import app.metria.WeightUnits
 import app.metria.ui.components.MetriaEstimateBadge
 import app.metria.ui.components.MetriaMealThumbnail
+import app.metria.ui.components.ProgressGoalCard
 import app.metria.ui.theme.MetriaColors
 import java.time.LocalDate
 import java.time.ZoneId
@@ -137,6 +139,7 @@ fun MetriaProgressScreen(
     onEditWeight: (WeightEntry) -> Unit,
     onEditMeal: (MealEntry) -> Unit,
     onEditNutritionTargets: () -> Unit,
+    goalPhase: GoalPhase?,
 ) {
     val days = ProgressTimeline.sevenDays(entries, meals)
     var metricName by rememberSaveable { mutableStateOf(ProgressMetric.Weight.name) }
@@ -171,8 +174,9 @@ fun MetriaProgressScreen(
                 metricName = next.name
                 selectedDateText = lastDateWithValue(days, next).toString()
             }
-            ProgressHero(metric, selectedDay, days, unit, nutritionTargets, onEditNutritionTargets)
+            ProgressHero(metric, selectedDay, days, unit, nutritionTargets)
             SevenDayChart(metric, days, selectedDay.date, unit) { selectedDateText = it.toString() }
+            ProgressGoalCard(goalPhase, nutritionTargets, unit, onEditNutritionTargets)
             DayDetails(metric, selectedDay, unit, onEditWeight, onEditMeal)
         }
     }
@@ -308,7 +312,6 @@ private fun ProgressHero(
     days: List<ProgressDay>,
     unit: String,
     targets: NutritionTargets?,
-    onEditTargets: () -> Unit,
 ) {
     val rawValue = valueFor(metric, day)
     val shownValue = rawValue?.let { formatMetricValue(metric, it, unit) }
@@ -324,9 +327,6 @@ private fun ProgressHero(
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(dayLabel(day.date), style = MaterialTheme.typography.labelLarge)
                     Text(metric.label, color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodyMedium)
-                }
-                if (metric != ProgressMetric.Weight) {
-                    TextButton(onClick = onEditTargets) { Text(if (target == null) "Set goal" else "Edit goal") }
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Bottom) {
@@ -522,7 +522,7 @@ private fun MealMetricRow(meal: MealEntry, metric: ProgressMetric, onEdit: (Meal
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            MetriaMealThumbnail(meal.referenceThumbnailBase64, size = 56.dp)
+            MetriaMealThumbnail(meal.referenceThumbnailBase64, size = 56.dp, drink = app.metria.MealAppearance.isDrink(meal))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(MealIdentity.displayTitle(meal), style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(
@@ -554,7 +554,7 @@ private fun MealHistoryRow(meal: MealEntry, onEdit: (MealEntry) -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            MetriaMealThumbnail(meal.referenceThumbnailBase64, size = 56.dp)
+            MetriaMealThumbnail(meal.referenceThumbnailBase64, size = 56.dp, drink = app.metria.MealAppearance.isDrink(meal))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(MealIdentity.displayTitle(meal), style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text("${MealSlots.label(meal.mealSlot)} · $nutritionText", color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall)
@@ -587,7 +587,7 @@ private fun lastDateWithValue(days: List<ProgressDay>, metric: ProgressMetric): 
 private fun heroContext(metric: ProgressMetric, day: ProgressDay, days: List<ProgressDay>, unit: String, target: Double?): String {
     val value = valueFor(metric, day)
     if (value == null) return if (metric == ProgressMetric.Weight) "No weight entry on this day." else "No calculated nutrition on this day."
-    if (target != null) return "${"%.0f".format(value / target * 100.0)}% of your daily goal."
+    if (target != null) return "Recorded estimate · ${"%.0f".format(value / target * 100.0)}% of your current daily reference."
     if (metric != ProgressMetric.Weight) return "Add a goal if you want a daily reference."
     val weights = days.mapNotNull(ProgressDay::latestWeightKilograms)
     if (weights.size < 2) return "Add another reading to see a seven-day change."

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Restaurant
+import androidx.compose.material.icons.rounded.LocalCafe
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -28,6 +29,8 @@ fun MetriaMealThumbnail(
     encoded: String?,
     modifier: Modifier = Modifier,
     size: Dp = 64.dp,
+    contentScale: ContentScale = ContentScale.Crop,
+    drink: Boolean = false,
 ) {
     val shape = RoundedCornerShape(16.dp)
     val bitmap = remember(encoded) {
@@ -48,12 +51,13 @@ fun MetriaMealThumbnail(
             Image(
                 bitmap = bitmap.asImageBitmap(),
                 contentDescription = "Private meal thumbnail",
-                contentScale = ContentScale.Crop,
+                contentScale = contentScale,
                 modifier = Modifier.fillMaxSize().clip(shape),
             )
         } else {
             Box(contentAlignment = Alignment.Center) {
-                Icon(Icons.Rounded.Restaurant, contentDescription = null, tint = MetriaColors.Primary)
+                Icon(if (drink) Icons.Rounded.LocalCafe else Icons.Rounded.Restaurant,
+                    contentDescription = if (drink) "Drink" else null, tint = MetriaColors.Primary)
             }
         }
     }

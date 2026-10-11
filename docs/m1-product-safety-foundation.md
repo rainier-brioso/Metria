@@ -14,6 +14,86 @@ revised first.
 
 ## Data boundary
 
+**Local photo performance metadata decision - 2026-10-11:** member approved
+persisting first-output and stage timing plus start/end Android thermal severity
+in the existing bounded encrypted image-analysis audit. These technical fields
+exclude content, remain on-device, require the unlocked vault for writes, and
+are excluded from recovery archives. Legacy or unavailable values stay unknown.
+First-output timing is the first nonblank streamed text callback, not a guaranteed
+single-token boundary. No cloud telemetry or new raw diagnostic capture is added.
+
+**Optional phase calorie decision — 2026-10-08:** Member approved the concrete
+`design/phase-energy-contract-proposal.md`, explicitly preferring 10% below
+reviewed maintenance for Lose and confirming 5% above it for strength-training
+Gain. This deliberately extends the earlier maintenance-only energy boundary.
+The fixed defaults and bounded offer rules are product starting choices, not
+clinical prescriptions or forecasts. Canonical reviewed maintenance inputs and
+explicit endpoint selection are required, with fresh transient suitability and
+used training context. Unsupported cases retain manual/skip paths; no clamping,
+extra exercise energy, inferred target weight or deadline. Preview and Use stage
+the draft; only final phase confirmation saves. Independent encrypted phase-energy
+source retains reproducible maintenance evidence, adjustment and rounding, is
+inspectable/deletable and excluded from assistant/cloud/diagnostics. Changed
+direction or calculation inputs invalidate derived references for review; explicit
+manual overrides survive. Pregnancy/breastfeeding applicability is asked
+separately from general clinical/eating-disorder suitability and never inferred
+from an equation coefficient. An applicable answer routes to care-team-entered
+references and clears generated values/source snapshots, preserving explicit
+manual values; Back cannot restore cleared sources. Answers are transient.
+Implementation and physical acceptance are separate gates.
+
+**Optional macro suggestion decision — 2026-10-08:** The member approved
+`design/phase-nutrition-contract-proposal.md` with “go ahead!”. This deliberately
+extends the earlier maintenance-only decision: eligible adults may request local,
+deterministic, editable macro proposals against a reviewed calorie budget and
+reviewed weight. Balanced mode proposes 20% protein / 30% fat / 50% carbohydrate,
+subject to the stated protein reference check. Regular strength/other exercise
+uses respectively 1.6/1.4 g protein per reviewed kg, 30% fat and carbohydrate
+remainder, only within the documented offer envelope. These are starting options,
+not measured requirements or clinical prescriptions. Unsupported/missing contexts
+retain manual entry. Suitability remains transient; no unused training frequency,
+diet type or lean mass is inferred or collected. Training never adds exercise
+calories to whole-day activity. The separate phase calorie decision above permits
+bounded Gain/Lose starting proposals; forecasts and deadlines remain excluded.
+Only proposal acceptance followed by final phase confirmation
+saves values. Per-field overrides and used-input changes cannot retain false
+provenance. Macro input/method metadata stays encrypted, independently versioned,
+inspectable/deletable, included only in validated recovery archives, and excluded
+from assistant/cloud payloads, analytics, diagnostics and logs. New weight records
+never recalculate references. Build/install evidence does not close physical gates.
+
+**Optional goal setup decision — 2026-10-06:** The member approved an optional
+maintenance-energy starting estimate and encrypted goal history under
+`design/goal-calculation-contract-proposal.md`. This deliberately revises the
+manual-only daily-reference contract: an energy reference may come from the
+specified deterministic local method only after explicit member selection and
+confirmation. The activity range is an approximation, not a validated individual
+requirement or confidence interval. No assistant sets goals. No automatic deficit,
+surplus, target weight, deadline or ideal weight band is selected. The later
+2026-10-08 decision above separately permits reviewed macro proposals.
+Unsupported or declined inputs retain manual tracking. General suitability and
+pregnancy/breastfeeding applicability are separate transient checks; the latter is
+never inferred from equation coefficients. If applicable, care-team entry clears
+generated values and source snapshots while preserving explicit manual values, and
+Back cannot restore cleared sources. Eligibility answers are
+transient; accepted calculation inputs, current intent and at most 12 previous
+phases stay encrypted and are excluded from assistant prompts, current cloud
+requests, analytics, diagnostics and traces. Daily references can still be used
+in existing bounded summaries. Editing a calorie reference removes stale derived
+provenance. New recorded weights do not recalculate it. Members can inspect and
+delete phases/profile without deleting meals or weights; deletion explicitly
+retains daily references as member-entered. Recovery archives include this data
+only through the validated versioned representation and explicit replacement.
+
+**Recorded phase period and recap decision — 2026-10-10:** The member approved
+`design/phase-recap-contract.md` (“ok lets go”). Phase ends are written only as
+part of an explicit successful replacement; edits do not end phases. Legacy ends
+remain unknown and are never inferred. Recaps use retained local records, exact
+known periods and explicit coverage boundaries; boundary-day ambiguities are
+excluded and disclosed. Summaries are read-only and derived, not persisted. They
+describe recorded data only and do not score adherence or infer daily intake.
+Rollback, deletion, archive validation, and physical acceptance remain gates.
+
 **Optional-cloud design direction — 2026-10-02:** The member selected designing
 default-off Nebius assistance for real data with explicit consent and revised
 privacy disclosure. `optional-cloud-assistant-spec.md` defines a previewed,

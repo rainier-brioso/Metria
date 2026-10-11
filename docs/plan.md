@@ -1,6 +1,15 @@
 # Metria product plan
 
+Current development state and preserved physical acceptance are summarized in
+[the October 11 checkpoint](checkpoint-2026-10-11.md). This does not close the
+milestone acceptance gates below.
+
 ## Goal
+
+Goal UI continuation is tracked in the
+[view-by-view goal roadmap](design/goal-view-roadmap.md): eleven PDF reference
+views, implementation gaps, ordered slices and acceptance checks. Its planning
+status does not mark milestone, calculation or physical-device gates passed.
 
 Validate that a private, low-friction wellness tracker helps people record
 weight and meals more consistently than conventional forms, without presenting
@@ -298,6 +307,23 @@ delete the shared copy. No external assistant can mutate the vault directly.
 ## Delivery order
 
 ### Hackathon delivery proposal
+
+The member-approved companion UI mockup is now moving into staged Android
+implementation. See [UI implementation checkpoints](design/implementation-checkpoints.md)
+for the first meal-entry/available-nutrients slice and its still-pending physical
+gates. The member subsequently approved the maintenance-only method and encrypted
+goal history in [goal-calculation-contract-proposal.md](design/goal-calculation-contract-proposal.md).
+Its deterministic estimate needs explicit selection/confirmation; weight-change
+adjustments and weight targets stay member-entered. On 2026-10-08 the member
+approved [optional training-based macro suggestions](design/phase-nutrition-contract-proposal.md)
+against a reviewed calorie budget, with explicit review and per-field source metadata.
+The separately approved [phase calorie contract](design/phase-energy-contract-proposal.md)
+adds reviewed 10% Lose / 5% strength-Gain starting proposals under a bounded local
+offer policy. Implementation and acceptance are tracked separately; forecasts and
+live cloud work are excluded from these slices. Current
+implementation and open physical/recovery gates are in the design checkpoint;
+the optional first-run goal introduction is implemented, with its creation-only
+phone routing check and release readiness still open.
 
 The member intends to present Metria at the Nebius x NVIDIA Global AI Hackathon.
 See [hackathon-assistant-plan.md](hackathon-assistant-plan.md) for the proposed

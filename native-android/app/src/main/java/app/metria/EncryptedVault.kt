@@ -34,7 +34,7 @@ class EncryptedVault(context: Context) {
         }
     }
 
-    data class ArchiveSummary(val weights: Int, val meals: Int)
+    data class ArchiveSummary(val weights: Int, val meals: Int, val goalPhases: Int = 0, val hasGoalProfile: Boolean = false)
 
     sealed interface Status {
         data object Missing : Status
@@ -52,6 +52,7 @@ class EncryptedVault(context: Context) {
             val assistantStyle: AssistantStyle = AssistantStyle.BALANCED,
             val activeConversation: PrivateConversationRecord? = null,
             val conversationExpired: Boolean = false,
+            val goalSetup: GoalSetup? = null,
         ) : Status
         data class RecoveryRequired(val message: String) : Status
         data class Failed(val message: String) : Status
@@ -68,6 +69,7 @@ class EncryptedVault(context: Context) {
     private var personalDishes: MutableList<PersonalDish> = mutableListOf()
     private var analysisAudits: MutableList<LocalAnalysisAudit> = mutableListOf()
     private var nutritionTargets: NutritionTargets? = null
+    private var goalSetup: GoalSetup? = null
     private var cycleContext = CycleContext()
     private var assistantStyle = AssistantStyle.BALANCED
     private var activeConversation: PrivateConversationRecord? = null
@@ -110,6 +112,7 @@ class EncryptedVault(context: Context) {
             personalDishes = mutableListOf()
             analysisAudits = mutableListOf()
             nutritionTargets = null
+            goalSetup = null
             cycleContext = CycleContext()
             activeConversation = null
             conversationExpired = false
@@ -148,6 +151,7 @@ class EncryptedVault(context: Context) {
             personalDishes = loaded.personalDishes.toMutableList()
             analysisAudits = loaded.analysisAudits.toMutableList()
             nutritionTargets = loaded.nutritionTargets
+            goalSetup = loaded.goalSetup
             cycleContext = loaded.cycleContext
             assistantStyle = loaded.assistantStyle
             activeConversation = PrivateConversationPolicy.active(loaded.activeConversation)
@@ -288,6 +292,7 @@ class EncryptedVault(context: Context) {
         personalDishes = mutableListOf()
         analysisAudits = mutableListOf()
         nutritionTargets = null
+        goalSetup = null
         cycleContext = CycleContext()
         assistantStyle = AssistantStyle.BALANCED
         activeConversation = null
@@ -315,7 +320,7 @@ class EncryptedVault(context: Context) {
         return runCatching {
             val restored = parsePayload(EncryptedArchive.open(archive, passphrase))
             pendingArchiveRestore = restored.copy(activeConversation = null)
-            ArchiveSummary(restored.entries.size, restored.meals.size)
+            archiveSummary(restored.entries.size, restored.meals.size, restored.goalSetup)
         }
     }
 
@@ -325,7 +330,7 @@ class EncryptedVault(context: Context) {
         if (sessionKey == null) return Result.failure(IllegalStateException("Unlock or create a vault before restoring."))
         return runCatching {
             val restored = requireNotNull(pendingArchiveRestore) { "Review an encrypted archive before restoring." }
-            val previous = LoadedPayload(displayUnit, entries, meals, foodCorrections, mealCorrectionMemories, personalDishes, analysisAudits, nutritionTargets, cycleContext, assistantStyle, activeConversation)
+            val previous = LoadedPayload(displayUnit, entries, meals, foodCorrections, mealCorrectionMemories, personalDishes, analysisAudits, nutritionTargets, cycleContext, assistantStyle, activeConversation, goalSetup)
             val previousConversationExpired = conversationExpired
             try {
                 displayUnit = restored.displayUnit
@@ -336,13 +341,14 @@ class EncryptedVault(context: Context) {
                 personalDishes = restored.personalDishes.toMutableList()
                 analysisAudits = mutableListOf()
                 nutritionTargets = restored.nutritionTargets
+                goalSetup = restored.goalSetup
                 cycleContext = restored.cycleContext
                 assistantStyle = restored.assistantStyle
                 activeConversation = null
                 conversationExpired = false
                 persist()
                 pendingArchiveRestore = null
-                ArchiveSummary(entries.size, meals.size)
+                archiveSummary(entries.size, meals.size, goalSetup)
             } catch (error: Exception) {
                 displayUnit = previous.displayUnit
                 entries = previous.entries.toMutableList()
@@ -352,6 +358,7 @@ class EncryptedVault(context: Context) {
                 personalDishes = previous.personalDishes.toMutableList()
                 analysisAudits = previous.analysisAudits.toMutableList()
                 nutritionTargets = previous.nutritionTargets
+                goalSetup = previous.goalSetup
                 cycleContext = previous.cycleContext
                 assistantStyle = previous.assistantStyle
                 activeConversation = previous.activeConversation
@@ -378,6 +385,7 @@ class EncryptedVault(context: Context) {
         personalDishes = personalDishes.toList(),
         analysisAudits = analysisAudits.toList(),
         nutritionTargets = nutritionTargets,
+        goalSetup = goalSetup,
         cycleContext = cycleContext,
         assistantStyle = assistantStyle,
         activeConversation = activeConversation,
@@ -386,7 +394,7 @@ class EncryptedVault(context: Context) {
 
     private fun persist() {
         val key = requireNotNull(sessionKey) { "Vault is locked." }
-        val payload = JSONObject().put("version", 1).put("displayUnit", displayUnit).put("assistantStyle", assistantStyle.storageValue).put("entries", JSONArray().apply {
+        val payload = JSONObject().put("version", if (goalSetup == null) 1 else 2).put("displayUnit", displayUnit).put("assistantStyle", assistantStyle.storageValue).put("entries", JSONArray().apply {
             entries.forEach { entry ->
                 put(JSONObject()
                     .put("id", entry.id)
@@ -462,13 +470,9 @@ class EncryptedVault(context: Context) {
                 .put("modelId", audit.modelId)
                 .put("operation", audit.operation)
                 .put("outcome", audit.outcome)
-                .put("failureCategory", audit.failureCategory)) }
-        }).put("nutritionTargets", nutritionTargets?.let { targets -> JSONObject()
-            .put("caloriesKcal", targets.caloriesKcal)
-            .put("proteinGrams", targets.proteinGrams)
-            .put("carbohydrateGrams", targets.carbohydrateGrams)
-            .put("fatGrams", targets.fatGrams)
-        }).put("cycleContext", JSONObject()
+                .put("failureCategory", audit.failureCategory)
+                .put("metrics", audit.metrics?.let(LocalAnalysisMetricsCodec::encode))) }
+        }).put("nutritionTargets", GoalSetupCodec.encodeTargets(nutritionTargets)).put("goalSetup", goalSetup?.let(GoalSetupCodec::encode)).put("cycleContext", JSONObject()
             .put("enabled", cycleContext.enabled)
             .put("periodStarts", JSONArray(cycleContext.periodStarts.map(LocalDate::toString)))
         ).put("activeConversation", activeConversation?.let { conversation -> JSONObject()
@@ -498,6 +502,7 @@ class EncryptedVault(context: Context) {
         val cycleContext: CycleContext,
         val assistantStyle: AssistantStyle,
         val activeConversation: PrivateConversationRecord?,
+        val goalSetup: GoalSetup? = null,
     )
 
     private fun decryptPayload(key: ByteArray): LoadedPayload {
@@ -510,7 +515,7 @@ class EncryptedVault(context: Context) {
 
     /** Parses and fully validates data before an archive can replace this vault. */
     private fun parsePayload(root: JSONObject): LoadedPayload {
-        require(root.getInt("version") == 1) { "Unsupported archive data version." }
+        require(root.opt("version") is Number && (root.getDouble("version") == 1.0 || root.getDouble("version") == 2.0)) { "Unsupported archive data version." }
         val loadedDisplayUnit = root.optString("displayUnit", "kg").takeIf { it == "kg" || it == "lb" } ?: "kg"
         val loadedAssistantStyle = AssistantStyle.fromStorage(root.optString("assistantStyle").takeIf(String::isNotEmpty))
         val items = root.getJSONArray("entries")
@@ -626,9 +631,11 @@ class EncryptedVault(context: Context) {
                 operation = item.getString("operation"),
                 outcome = item.getString("outcome"),
                 failureCategory = item.optString("failureCategory").takeIf(String::isNotEmpty),
+                metrics = LocalAnalysisMetricsCodec.decode(item),
             ).also { require(LocalAnalysisAuditValidation.valid(it)) { "Invalid analysis audit." } }
         } } } ?: emptyList()
-        val loadedTargets = root.optJSONObject("nutritionTargets")?.let { values -> NutritionTargets(
+        if (root.getDouble("version") == 2.0 && root.has("nutritionTargets") && !root.isNull("nutritionTargets")) require(root.get("nutritionTargets") is JSONObject) { "Invalid daily references." }
+        val loadedTargets = root.optJSONObject("nutritionTargets")?.let { values -> if (root.getDouble("version") == 2.0) GoalSetupCodec.decodeTargets(values) else NutritionTargets(
             caloriesKcal = values.optNullableDouble("caloriesKcal"),
             proteinGrams = values.optNullableDouble("proteinGrams"),
             carbohydrateGrams = values.optNullableDouble("carbohydrateGrams"),
@@ -658,7 +665,8 @@ class EncryptedVault(context: Context) {
             }
             record
         }
-        return LoadedPayload(loadedDisplayUnit, loadedEntries, loadedMeals, normalizedCorrections, loadedCorrectionMemories, loadedPersonalDishes, loadedAudits, loadedTargets, loadedCycleContext, loadedAssistantStyle, loadedConversation)
+        val loadedGoals = GoalSetupCodec.fromPayload(root, loadedTargets)
+        return LoadedPayload(loadedDisplayUnit, loadedEntries, loadedMeals, normalizedCorrections, loadedCorrectionMemories, loadedPersonalDishes, loadedAudits, loadedTargets, loadedCycleContext, loadedAssistantStyle, loadedConversation, loadedGoals)
     }
 
     @Synchronized
@@ -912,21 +920,39 @@ class EncryptedVault(context: Context) {
     }
 
     @Synchronized
-    fun setNutritionTargets(targets: NutritionTargets?): Status {
+    fun setNutritionTargets(targets: NutritionTargets?, calorieWasEdited: Boolean = false, manuallyEditedMacros: Set<GoalMacroField> = emptySet()): Status {
         if (sessionKey == null) return Status.Locked
         val normalized = targets?.takeUnless(NutritionTargetValidation::empty)
         if (normalized != null && !NutritionTargetValidation.valid(normalized)) {
             return Status.Failed("Enter positive daily targets within the supported range.")
         }
-        val previous = nutritionTargets
-        nutritionTargets = normalized
+        return writeGoals { previous -> GoalPolicy.manualTargets(previous, normalized, calorieWasEdited, manuallyEditedMacros) }
+    }
+
+    private fun archiveSummary(weights: Int, meals: Int, goals: GoalSetup?) = ArchiveSummary(
+        weights, meals, goals?.let { it.history.size + 1 } ?: 0,
+        GoalPolicy.hasProfile(goals),
+    )
+
+    private fun writeGoals(change: (GoalSnapshot) -> GoalSnapshot): Status {
+        if (sessionKey == null) return Status.Locked
+        val previous = GoalSnapshot(nutritionTargets, goalSetup)
         return try {
-            persist()
+            GoalPolicy.commit(previous, change(previous), { next -> nutritionTargets = next.targets; goalSetup = next.setup }, ::persist)
             unlockedStatus()
-        } catch (_: Exception) {
-            nutritionTargets = previous
-            Status.Failed("Daily nutrition targets could not be saved locally.")
-        }
+        } catch (_: Exception) { Status.Failed("Your goal could not be saved locally. Check your values and try again.") }
+    }
+
+    @Synchronized
+    fun confirmGoal(phase: GoalPhase, newPhase: Boolean): Status = writeGoals { GoalPolicy.confirm(it, phase, newPhase) }
+
+    /** Targets remain, with their source changed to member-entered; no meal or weight is removed. */
+    @Synchronized
+    fun deleteGoalSetup(): Status = writeGoals { GoalSnapshot(it.targets, null) }
+
+    @Synchronized
+    fun deleteGoalHistory(id: String): Status = writeGoals { previous ->
+        previous.copy(setup = previous.setup?.let { it.copy(history = it.history.filterNot { phase -> phase.id == id }) })
     }
 
     @Synchronized

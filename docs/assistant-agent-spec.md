@@ -4,6 +4,14 @@
 
 ## Purpose and boundary
 
+The member approved a debug-only MiniLM fast path for explicit English requests
+to list today's recorded meals (2026-10-11). The host read policy independently
+constrains the selection; fresh bounded records and `MetriaMealRecordReply`
+retain the existing validation and encrypted timeline. Accepted turns omit
+native Gemma generation. Unsupported/uncertain requests and router errors keep
+the native protocol below. Release behavior and Gemma preparation are unchanged.
+See `minilm-chat-integration.md` for implementation and pending phone acceptance.
+
 Metria uses LiteRT-LM's native `Conversation` and tool-call protocol to provide a
 continuous, private assistant. The model receives no vault object, database handle,
 filesystem access, network tool, or arbitrary Android action. It may request only a
@@ -74,6 +82,19 @@ member message
   context is rebuilt before the 4,096-token engine limit is approached.
 
 ## Gate A tools
+
+**Saved-meal entry extension — 2026-10-07:** Ask Metria in a clean saved-meal
+editor creates transient, removable, host-held selection. Chat retains unsent
+text and requires explicit Send. `read_selected_meal()` has no arguments; the
+model cannot choose an arbitrary record ID. For a supported selected-meal
+question the host resolves that exact current record, validates identity/source/
+food quantities/nutrition coverage, and composes a deterministic saved-record
+answer. Missing/deleted/mismatched records fail closed. This is a factual summary,
+not broad meal analysis or a new nutrition estimate. An explicit latest-meal,
+dated/history, weight/progress or goal question still follows its existing route.
+The selection is one-turn only and clears on lock/background/new conversation or
+deletion; IDs are excluded from model prompts and trace metadata. There is no
+write, network or new persistence schema. Physical acceptance remains open.
 
 **Native meal-draft extension — 2026-10-02:** `draft_meal()` is a bounded
 proposal capability alongside the read tools. The agent infers the meal-entry

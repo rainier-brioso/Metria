@@ -1,5 +1,39 @@
 # Metria screen contracts
 
+**Approved phase calories — 2026-10-08:**
+[phase calorie contract](phase-energy-contract-proposal.md). A focused review shows
+the explicitly selected maintenance reference and approximate range, signed
+percentage/kcal adjustment, and dominant daily calorie proposal. One primary action:
+Use calorie proposal. Manual entry, method disclosure and Back/Skip are secondary.
+Calculate/Use never save; final phase confirmation shows source-aware changes.
+Current/saved/history calorie values distinguish maintenance, phase-adjusted and
+manual sources. No personal forecast or measured-need claim. Missing/unsupported
+states retain manual tracking, cancellation preserves prior draft, and changed
+dependencies remove derived values while preserving explicit manual overrides.
+Keep editing restores a visible sheet; keyboard/insets/font/TalkBack gates apply.
+Code/build verification and physical acceptance are tracked separately.
+
+**Approved optional macro suggestions — 2026-10-08:** see
+[calculation contract](phase-nutrition-contract-proposal.md). Focused goal review has
+an optional training/macro route. Inputs lead to a proposal showing the current
+budget and three gram values, with Use suggestions dominant and Edit/Back secondary.
+No artificial loading or write during calculation. Missing/unsupported inputs offer
+manual entry, with no inferred sport classification or unused frequency/diet fields.
+Input changes invalidate stale sources; explicit macro overrides remain per-field.
+Final confirmation, exact saved summary, current and historical details distinguish
+suggested from manual references and disclose original method/inputs on demand.
+Calories retain independent maintenance/manual provenance. Keyboard/insets, scrolling,
+48dp actions, selection text/icons, TalkBack and font scaling remain phone gates.
+
+All proposal routes show two independent checks: whether the general option is
+suitable without individual clinical or eating-disorder support, and whether
+pregnancy or breastfeeding applies. Do not derive the latter from an equation
+coefficient. An applicable answer leads directly to care-team reference entry;
+generated values and hidden source snapshots are cleared, explicit member-entered
+values remain, and Back cannot restore the cleared source. The applicability answer
+is transient and is not saved. Manual entry offers the applicability choice without
+requiring an answer to save manual references; macro proposals require both checks.
+
 These are prototype contracts for the first redesign pass. Visual mockups must be approved before implementation changes navigation or replaces a complete screen.
 
 ## App shell
@@ -20,7 +54,7 @@ These are prototype contracts for the first redesign pass. Visual mockups must b
 
 1. Contextual greeting/date and quiet profile/privacy access.
 2. One daily/weekly hero with the most relevant progress summary.
-3. Weight and nutrition summary cards.
+3. Full-width goal/weight summary and a separate nutrition summary card.
 4. Day strip for recent dates.
 5. Today’s meals as visual rows grouped by meal time.
 
@@ -29,6 +63,50 @@ These are prototype contracts for the first redesign pass. Visual mockups must b
 
 **Empty state:** explain one useful first action, not the entire product.  
 **Partial state:** show the available totals with the estimate marker and an accessible explanation on tap.
+
+**Today goal-card refinement — 2026-10-06:** replace the latest-weight KPI with
+the shared current-goal card. Show latest recorded weight (or labelled starting
+reference), member-entered target and optional chosen range, in the selected kg/lb
+unit. No range or goal is inferred. Update weight opens the existing weight-entry
+sheet; Goal and daily references opens Goals. With no goal, show a calm weight
+summary and optional Set up a goal action; tracking remains available. Keep these
+actions outlined/text so the central capture action retains visual priority.
+Nutrition remains a separate full-width card, with no duplicate goal-entry row.
+
+**Approved meal-entry direction — 2026-10-06:** group member-classified meals
+under Breakfast, Lunch, Dinner and Snacks with a quiet labelled Add action.
+Existing records without an explicit meal type remain under Other meals; do not
+reclassify them from inferred times. Add opens a focused method chooser and
+passes the chosen type into the visible meal review. Photo/manual saves return
+to Today; chat-origin saves retain the existing Chat confirmation/View meal.
+Type/Speak from a meal card also stay in a dedicated contextual meal flow;
+they do not open Chat. The explicit section survives draft creation and review.
+
+**Today nutrition refinement — 2026-10-07:** Today's nutrition card presents
+calories, protein, carbohydrates and fat from the existing recorded-meal summary.
+Known complete and partial contributions are included with explicit coverage;
+missing values remain unknown, and reported zero remains a value. Expand details
+for complete/partial/unavailable meal counts and a quiet daily-reference route.
+This is recorded nutrition, never a claim of total intake or a nutrition score.
+Current daily references remain optional. Narrow/enlarged-text layouts stack
+content instead of forcing metrics and references into a fixed-width row.
+
+**Compact Today summaries - 2026-10-07:** Today uses a dedicated compact goal
+card instead of the full goal-detail component. A short intent/weight summary,
+quiet goal-detail affordance and Update weight action remain. A small visual
+marker uses only the member's chosen range, or a distinct starting reference and
+target. Bounds and current value have textual equivalents; outside-range values
+are disclosed rather than hidden by visual clamping. No range, weight target or
+judgment is inferred. Empty/track-only goals remain useful without a graph.
+
+Nutrition uses a compact expandable header, kcal summary and small macro rows.
+Bars compare known recorded estimates with existing positive daily references;
+they do not imply complete intake, a score or a health recommendation. Drawing
+may cap at the reference but actual values and over-reference text remain visible.
+Unknown data has no filled bar. Estimate/partial and meal coverage stay visible;
+expanded details retain the counts and reference-editing route. Large text or a
+narrow viewport expands vertically rather than clipping. Detailed goal screens
+retain their existing full cards. The central capture action remains dominant.
 
 ## Progress
 
@@ -48,7 +126,74 @@ These are prototype contracts for the first redesign pass. Visual mockups must b
 
 **Approved first slice:** use a fixed seven-day range including today with Weight, Calories, and Protein selectors. Selecting a metric surfaces its day value and applicable member-entered goal; selecting a chart day reveals only that day’s editable weight or meal entries in place. Partial nutrition remains included only as a visibly marked partial estimate. “All history” opens date-grouped Weight and Meals tabs containing every saved record; Android Back restores the unchanged seven-day view.
 
+**Progress goal context — 2026-10-07:** below the weekly chart, a compact supporting
+card shows the current direction and optional member-entered weight target/range
+in the selected kg/lb unit. It identifies daily references when present and opens
+the existing goal hub. Missing goals offer optional setup without interrupting
+tracking. The card explicitly separates current references from the selected
+past day; it does not repeat Today's weight hero, display a nutrition score or
+invent a goal. The nutrition hero labels its comparison as a recorded estimate
+against the current daily reference, rather than historical goal adherence.
+Chart/day inspection stays the primary purpose; goal editing is a quiet action.
+
+## Photo preview — approved companion slice, 2026-10-06
+
+Purpose: check the selected photo before requesting a local draft. A full-height
+scrollable sheet shows a reduced preview without cropping, explicit Meal photo /
+Nutrition label selection, on-demand framing tips and replace/cancel controls.
+Create meal draft is the dominant action; Read label replaces it in label mode.
+Preparation shows a labelled progress indicator and disables analysis. Failure
+offers replacement or cancel. Meal details are optional, at most 600 characters,
+local and transient; changing mode/image clears them. Label mode omits them.
+The existing validator and reviewed-save policy remain unchanged.
+
+**Member decision — 2026-10-07:** retain Meal photo / Nutrition label as the two
+photo modes. Barcode is deferred until product lookup can remove steps rather
+than leading to a second label scan. No barcode control, decoder dependency or
+product lookup is part of this UI cycle.
+
+Cancel deletes the prepared image and invalidates background preparation. Lock
+or leaving the assistant discards an unanalysed preview; backgrounding cancels
+meal analysis. Rotation retains the active unlocked preview via the existing
+orientation configuration policy; process restart never replays analysis or
+persists the description. Keyboard-safe scrolling keeps the action reachable.
+No custom camera, barcode lookup, new dependency or cloud processing is added.
+
+Physical checks and before/after evidence remain required before acceptance.
+
+**Capture presentation refinement — 2026-10-07:** camera and library actions
+include recognizable icons and text labels. Photo tips open a focused dismissible
+dialog with short framing/light guidance and Done, rather than expanding prose
+inside the preview. Photo analysis uses one short Preparing your meal status,
+a progress indicator and Stop analysis. The existing system camera and photo
+picker remain the capture mechanisms; a custom live camera is outside this slice.
+From a Today meal card, photo entry has its own section-specific destination and
+minimal loading state, without Assistant home or the main navigation tabs.
+The chosen section/date reaches both meal and label review. Back returns to Today
+and discards temporary capture; label Stop invalidates any pending OCR output.
+
 ## Meal review
+
+**Automatic photo review - 2026-10-11:** after the member explicitly starts
+Create meal draft, a validated matching photo result opens review automatically
+once, including partial drafts. No additional result-screen tap is required.
+Loading remains minimal; rejection/runtime failure stays in entry with new-photo
+and manual options. Stop, leaving or a newer attempt prevents stale navigation.
+Returning from review does not automatically reopen it. Contextual date/section,
+thumbnail choice, uncertainty, deterministic nutrition and explicit Save remain.
+Nutrition-label review is unchanged. Physical transition/cancellation checks remain
+required; code/build evidence alone does not close them.
+
+**Saved-meal assistant entry — 2026-10-07:** the saved-meal editor offers a quiet
+Ask Metria action for the saved record. Changed edits must be saved or cancelled
+first; the action neither saves nor discards them. Chat opens with a removable
+selected-meal indicator and preserves existing composer text. It never submits
+automatically. Send may request a fresh read of that exact host-held meal ID for
+its saved foods/nutrition; broader/latest/date/progress questions retain their
+existing bounded routes. The selection is transient and one-turn only, and clears
+on lock/background/new conversation/deletion. No ID is model-authored or sent in
+prompts. Answers describe saved values and coverage, not inferred health quality.
+Manual tracking and cancellation remain available if the local model is absent.
 
 **Purpose:** turn an assistant draft into a member-confirmed meal.
 
@@ -65,6 +210,15 @@ These are prototype contracts for the first redesign pass. Visual mockups must b
 **Secondary actions:** edit dish, add dish, review estimate details, Leave without saving.
 
 **Rule:** never render every ingredient’s name, description, grams, preparation, role, match, and delete action in one continuous form.
+
+**Available nutrient display — 2026-10-06:** expandable details show all available
+nutrient values for selected offline matches and validated portions, with USDA
+source/release, source units and per-nutrient food coverage. Reported zero is a
+value; absent data is unknown. Never sum unlike units or invent missing values,
+daily reference percentages or micronutrient targets. These live draft values
+do not add fields to saved meals or rewrite existing nutrition. Manual/label
+values keep their own provenance. Further persisted nutrients need a separate
+schema/archive decision.
 
 The persistent action area shows **Leave without saving** as a clearly
 secondary action. Leaving an unchanged review exits immediately. If the member
@@ -115,6 +269,71 @@ The similar-meal suggestion button is **Use meal name**. Supporting text must sa
 
 ## Saved meal editor
 
+**Dismissal and catalog refinement - 2026-10-07:** a changed editor vetoes
+sheet hiding before showing Keep editing / Leave. Keep editing retains a visible
+sheet and its draft; Leave removes the sheet and its blocking layer. Back closes
+catalog search or the focused ingredient before leaving the meal. Catalog search
+shows its available food count and source, has a keyboard-aware Back to ingredient
+action, and explains that no match may mean the food is absent. Missing nutrition
+stays unknown; search does not manufacture a replacement value. Saved entries
+without photos use a drink icon for reviewed drink items or exact standalone
+coffee names; mixed meals and coffee desserts retain the meal fallback.
+
+**Companion detail slice — 2026-10-06:** show four summary metrics, compact food
+rows and a focused ingredient editor. Apply stages food edits; Cancel restores
+the food and prior match. Name/preparation edits clear stale matches. Save/Leave
+remain in a keyboard-aware footer; changed whole-meal drafts confirm leaving.
+Date/type and manual nutrition edit fields expand on demand. Catalog-backed
+whole-portion changes scale all valid grams together (0.25–4 multiplier, nearest
+integer, each 1–2,000 g). Invalid input rejects the entire change. Manual and
+label macro values are not automatically scaled. Source/coverage stays visible.
+
+## Voice entry
+
+**Purpose:** recognize and check a short spoken request before submission.
+Speak opens a dedicated sheet without starting the mic. Start recording requests
+permission; Listening and Stop recording stay explicit. The existing recorder
+stops after speech pause or 12 seconds. Local recognition returns editable words,
+bounded to 600 characters; audio-returned actions are withheld from dispatch.
+Today meal entry automatically submits a successful validated transcript to draft
+generation, with no intermediate correction screen. Generic Speak uses
+Continue in Chat. No draft is saved by recognition alone. Retry, Type instead,
+Stop processing and Cancel remain available; errors/empty speech keep typing.
+Cancellation/disposal invalidates late capture callbacks and deletes temporary
+audio. Lock clears entry presentation; rotation retains editable unlocked text
+under the current orientation handling. No new transcription dependency or cloud
+speech service is introduced. Recognition accuracy and physical gates are open.
+
+**Today meal-entry refinement — 2026-10-07:** a dedicated full-height focused
+destination handles typed descriptions and spoken meals from a selected card.
+Its purpose is creating one reviewable meal, with the section visible in the
+title. Idle voice offers a large labelled microphone action; Listening exposes
+Stop and elapsed time. Recognizing speech and Preparing your meal use a compact
+progress indicator with one short line, accessible status and cancellation.
+If Stop overlaps automatic recording completion, Finishing recording is shown
+with an accessible state label until its queued clip arrives. The recording
+action is disabled during that handoff; navigation and Type instead cancel it.
+Successful recognition transitions directly to Preparing meal draft and then
+review; the words remain editable only on generation failure or cancellation.
+Typed text retains Create meal draft as its dominant action.
+Failure/empty speech retains a typed fallback; draft failure
+retains the description for retry or explicit manual review. No subscription
+banner, conversational transcript or inferred action is part of this view.
+The existing strict local proposal validator and review/save gates remain.
+Controls use theme tokens, 48 dp targets, scrolling and keyboard/system insets.
+Physical voice, cancellation, save-to-section, rotation and accessibility checks
+remain required; model or speech accuracy is not claimed from the UI redesign.
+
+**Failure inspection — 2026-10-07:** in debug builds only, a failed contextual
+meal draft may expose a quiet Draft details action. It opens the current
+attempt's existing in-memory validation category and model output for deliberate
+inspection without leaving the entry screen. It is absent from release builds
+and cannot show another operation's response. No prompt/output logging, file
+capture, vault write or new persistence is introduced. Retry, cancellation,
+lock/background and the existing response lifecycle invalidate the details.
+
+## Saved meal editor (existing behavior)
+
 **Purpose:** correct an existing entry while keeping all changes reviewable until one final save.
 
 - Keep direct food-name editing visible. Offer **Ask Metria about this food** beside each food and reveal one correction panel only for the selected food.
@@ -126,6 +345,13 @@ The similar-meal suggestion button is **Use meal name**. Supporting text must sa
 **States:** direct edit, assistant unavailable/busy, loading, result, stale result, apply/discard, manually selected replacement match, partial/no catalog estimate, manual nutrition unchanged, pending reference removal, keyboard visible, rotation, cancel, validation/save failure, save/reopen.
 
 ## Assistant overlay and conversation
+
+**Selected-function debug optimization — 2026-10-11:** an explicit English
+question listing today's recorded meals may use the local MiniLM route to the
+existing validated meal-list answer. Keep the same Send, thinking/Stop, evidence,
+empty-record and encrypted timeline behavior. There is no additional member
+screen or router terminology. Unsupported requests keep the existing assistant
+flow; physical acceptance is tracked in `../minilm-chat-integration.md`.
 
 **Proposed online extension, 2026-10-02:** use a separate, clearly labelled
 online composer, a focused sharing preview with **Send online** as its primary
@@ -208,6 +434,150 @@ accepted and must not silently change the existing local conversation.
 
 **Approved first slice:** use one calm, scrollable settings hub. Lead with the encrypted-on-device promise, then group personal settings (units, member-entered goals, cycle context), private features (local assistant status and saved dishes), encrypted archive actions, and About. Routine rows reveal their current state before opening a focused editor or detail. Archive creation and restoration remain separate actions. Locking Metria is visually separate at the end, and development diagnostics appear only as one explicit debug-build row.
 
+## Daily nutrition goals
+
+**Saved summaries S5 - 2026-10-08:** G07 leads to optional G08/G09 read-only
+summaries after a successful commit. Daily references lead with calories/source;
+only an accepted saved estimate has an approximate activity-range marker. Macros
+show their saved member-entered values or Unset, without invented percentages or
+recommended targets. Method details disclose on demand. Weight context shows the
+saved intent, labelled starting reference, optional chosen target/range, and a
+static endpoint marker where sufficient distinct values exist. Equal/absent bounds
+use text. A starting reference outside a chosen range is explicitly described.
+Use the member's kg/lb display choice; never call the starting reference a fresh
+measurement. Each page has scrollable content and a pinned primary Next/Continue;
+Back and Return to Goals are secondary. No swipe-only navigation, timed animation,
+second save or restored success event. Graphs include complete textual descriptions.
+
+**Staged replacement S3 - 2026-10-08:** final confirmation has one purpose: review
+the exact phase to save. Show separate Current and Proposed summaries with direction,
+optional weight references, daily references and calorie provenance. Show the actual
+archive effect and oldest-removal warning when history is full. One dominant Start
+new phase (or Save changes/Set up goal) action; Back and Cancel are secondary. Saving
+shows labelled progress, blocks duplicates and dismissal; failure retains the same
+reviewed proposal with Retry. Only successful callback completion opens a static
+Saved acknowledgement, with one Continue to Goals action. Success is transient,
+has no additional save action and is not restored after recreation or lock. Existing
+atomic validation/rollback and history limit remain unchanged. Physical interaction,
+font, keyboard, restoration and accessibility gates remain open until verified.
+
+**Approved focused setup S2 - 2026-10-07:** G04-G06 use one task within an
+extracted setup sheet: direction cards with selected text/icon, optional
+starting/target/range summary rows and focused editors, then daily references
+and used-calculation-input summaries before final review. First setup,
+recalculation/edit and New phase modes are labelled distinctly. Manual entry
+does not request unused profile fields. A requested maintenance estimate uses
+the approved suitability/profile/equation/activity steps, with explicit choice
+of a displayed endpoint; entering calories makes that reference manual. Final
+review shows existing and proposed reference values/source, optional chosen
+weight context and the existing replacement effect. Empty values remain unset.
+Accepted starting weight is the reviewed calculation weight; target/range changes
+do not recalculate. Only used inputs are collected, and estimate input changes
+must not leave stale accepted source/value. Fields and suitability answers stay
+transient; one stable draft ID survives recomposition/retry within the task.
+Keep editing restores the same visible sheet. Keyboard-aware scrolling/footer,
+enlarged text, state semantics and 48dp actions remain required physical gates.
+No automatic target/speed/macros, new method, cloud call, persistent draft or
+vault/archive extension is authorized by this presentation slice.
+
+The final review lists Calories, Protein, Carbohydrates and Fat individually,
+showing `Not set` for each missing value and its source for each supplied value.
+Set/Partly set/Not set plus an icon communicates only how many references were
+supplied, never whether they are safe or adequate. Optional weight references say
+Not set without a dangling unit. For Lose/Gain, show whether maintenance was
+selected and whether a phase adjustment was actually applied; a selected
+maintenance endpoint alone must read `Phase adjustment not chosen`. Explain that
+the member may choose maintenance, calculate and Use phase calories/macros, or
+enter references manually. All references remain optional and the primary action
+may continue with unset values.
+
+**Approved compact hub/detail S1 - 2026-10-07:** follow the member-approved
+original [goal journey](prototypes/goal-journey.html), tracked by G10/G11 and
+the unknown-period fallback for G02. One compact current-phase summary precedes
+daily references and previous-phase rows. Use actual latest weight or a labelled
+starting reference; show chosen weight context only when saved. Edit weight goal
+is the dominant action; New phase is distinct. Reference/method inspection,
+recalculation and data controls use progressive disclosure rather than a feed
+of full editors and archived cards. Empty goals/history and unset macros stay
+useful. The focused selected-phase detail uses its own saved target/range,
+starting reference and nutrition source, never today's latest weight or targets.
+Show a known local start/end period only when explicitly saved. Unknown historical
+ends say Period unavailable and withhold period totals. For known periods, show a
+read-only recap from retained weight/meal records: actual weight readings, known
+full-coverage recorded nutrition with per-metric meal counts, unique logging days,
+and disclosed date/time exclusions. Current phase is labelled In progress and
+uses an as-of preview. No inferred boundaries, averages, adherence, streaks,
+forecasts, or synthetic weight points. Deletion sits inside data controls with
+the existing confirmation.
+Navigation remembers only the selected ID/page within the unlocked session,
+resolves the current snapshot on every render and safely handles removed phases.
+Back, saving/error, empty/restoration, scrolling/system insets, enlarged text,
+48dp actions and TalkBack remain acceptance requirements. This approved recap
+uses only explicitly saved period boundaries and retained local records.
+
+**Compact detail override:** Use an inline intent/start/end/current header without
+a separate phase-date card. Show starting and target values compactly, omitting
+an unset range. Daily calories and macros each appear once with one truthful
+collapsed source summary; exact mixed per-field provenance stays in Method and
+inputs. Recap defaults to actual weights and meal/day counts. Empty records,
+unknown periods and meals without nutrition each use one concise state. Partial
+or missing coverage details, per-metric counts and timezone exclusions remain
+available through an accessible 48dp disclosure. Keep only the current Edit
+weight goal or previous Back to Goals action in the bottom bar.
+
+Purpose: inspect or edit the member's optional daily nutrition references.
+Current goals show intent, member-entered weight target/range when present, daily
+references and their calorie source. Unset values read No target. Estimate inputs
+and approximation are available on demand; macro values remain member-entered.
+The primary action is optional setup or Edit weight goal; quiet actions open
+manual editing, New phase, Previous phases and disclosed profile/history deletion.
+Existing members are not forced through setup. Without goal data, daily references
+remain readable unchanged. Editing the current phase preserves its ID/start date;
+New phase explicitly replaces references and adds the old phase to bounded history.
+
+**Goal presentation refinement — 2026-10-06:** the member supplied further goal
+references and reported dirty-sheet dismissal → Keep editing freezing the UI.
+The goal view now leads with a tonal current-goal card: direction, local start
+date, latest recorded weight labelled separately from reviewed starting reference,
+member-entered target and chosen range when present. No range is invented. A
+separate daily-reference card leads with calories/source and compact macro rows;
+method/inputs remain on demand. Previous phases and data management are secondary.
+Existing goals use Edit weight goal as the dominant action; calorie recalculation
+is a separate quiet route. Today adds an explicit Your goal and daily references
+entry. Styling follows Metria's theme, not the reference app's palette/assets.
+
+Focused weight editing changes direction, optional target/range only; current
+phase ID/start time, reviewed baseline, calorie provenance and daily references
+remain intact. Changing a starting reference still uses setup/recalculation.
+Setup uses visible step progress, icon/label choices and an estimate hero. The
+reference app's digestion/exercise breakdown is not adopted; Metria keeps its
+approved whole-day method. Dismissal of changed editors must be vetoed before
+the sheet becomes Hidden. Keep editing restores the visible editor and inputs;
+explicit Leave removes it. Saving also blocks dismissal. The shared guard uses
+current flags/callbacks, not captured initial values. Physical reproduction and
+visual acceptance of this fix/refinement remain open.
+
+Setup has four focused steps: direction, optional profile/equation/suitability,
+whole-day activity and review. Declining an equation/suitability or unsupported
+inputs leaves manual targets available. Units are explicit; changing units clears
+the numeric entry to prevent reinterpretation. Eligibility answers are transient.
+No midpoint is automatically accepted. Choosing a range endpoint explicitly marks
+calories as estimated; typing calories marks them as manual. No deficit, surplus,
+protein recommendation or weight band is invented. Review shows the old reference
+and replacement effect, then requires Confirm goal and references. Additional
+macros and member-entered kg weight target/range are disclosed on demand.
+
+Manual editing leads with calories/protein and additional macros on demand.
+Targets may be partial or absent. Removing all existing targets is confirmed;
+delete profile/all phases retains references as manual. Historical deletion is
+confirmed and does not change the current goal. Changed drafts confirm leaving;
+Skip writes nothing. Saving disables duplicates, shows progress and retains a
+recoverable error. Scroll bodies are bounded and footers keyboard-aware. Lock
+clears presentation; orientation retains the unlocked draft; process restart does
+not replay a calculation or write. Versioned encrypted archive replacement includes
+goal/profile disclosure. Physical rotation, keyboard, scaling and accessibility
+acceptance remain open.
+
 ## First run and model setup
 
 **Purpose:** establish trust and complete required offline-assistant setup.
@@ -216,3 +586,21 @@ accepted and must not silently change the existing local conversation.
 - Model download shows size, network requirement, progress, cancellation, and what data is—and is not—sent.
 - Completion moves directly into biometric vault setup/unlock.
 - Returning after interruption resumes or clearly restarts the download; it must not strand the member in an indefinite loader.
+
+**Optional goal offer slice — 2026-10-06:** after successful biometric creation
+of a new vault, offer an introduction with Set up my goal as the sole dominant
+action and Continue tracking as the skip choice. Targets are optional, answers
+stay on this phone, and saving requires the later explicit confirmation. Setup
+opens the existing four-step flow; skip/dismiss returns to Today and writes
+nothing. Existing vault unlocks do not trigger this offer, even when targets or
+profile are absent. About goal setup in Goals lets members inspect it voluntarily.
+
+The offer event is consumed once in the current new-vault session. A pending voice
+handoff or meal-entry sheet takes priority and suppresses the introduction; Goals
+remains available afterward. Lock,
+background and activity/process recreation clear it rather than persisting a
+health-related flag or replaying onboarding. Interrupted members can return from
+Today → Your goal and daily references. No profile answers precede vault creation;
+showing/dismissing the offer causes no model/network call, target calculation,
+schema change or write. Physical first-run routing needs a separate empty test
+vault/device; never clear the member's phone to exercise it.

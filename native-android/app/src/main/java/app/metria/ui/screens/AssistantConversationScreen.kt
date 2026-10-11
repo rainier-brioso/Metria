@@ -200,6 +200,8 @@ fun MetriaAssistantConversationScreen(
     preparingVoice: Boolean,
     voiceMessage: String?,
     modelReady: Boolean,
+    selectedMealContextTitle: String? = null,
+    onClearSelectedMealContext: () -> Unit = {},
     onBack: () -> Unit,
     onNewConversation: () -> Unit,
     onCancelAssistant: () -> Unit,
@@ -280,6 +282,23 @@ fun MetriaAssistantConversationScreen(
                 }
                 assistantDiagnostic?.let { message -> item { ErrorMessage(message) } }
                 coachDiagnostic?.let { message -> item { ErrorMessage(message) } }
+            }
+            selectedMealContextTitle?.let { title ->
+                Surface(color = MetriaColors.PrimarySoft, shape = MaterialTheme.shapes.medium) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
+                            Text("One question about this saved meal", style = MaterialTheme.typography.labelLarge)
+                            Text(title, color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall)
+                        }
+                        IconButton(onClick = onClearSelectedMealContext, modifier = Modifier.size(48.dp)) {
+                            Icon(Icons.Rounded.Close, contentDescription = "Remove selected meal context", tint = MetriaColors.InkMuted)
+                        }
+                    }
+                }
             }
             AssistantComposer(
                 input = input,

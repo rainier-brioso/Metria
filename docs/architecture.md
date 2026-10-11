@@ -1,6 +1,109 @@
 # Metria architecture
 
+## Optional phase calorie extension
+
+Member-approved policy (2026-10-08), specified in
+`design/phase-energy-contract-proposal.md`: reviewed maintenance and explicit
+endpoint selection may support a bounded 10% Lose / 5% strength-Gain proposal.
+Pure calculation and validation stay outside composables. An independent optional
+phase-energy source contains canonical maintenance inputs, selected endpoint,
+intent/training, fixed method/version and unrounded/displayed calories. It is
+mutually exclusive with acceptedEstimate for current calorie provenance; the
+maintenance evidence remains inspectable inside the adjustment source. Macros
+use the reviewed displayed calorie budget, without extra exercise calories.
+All automatic methods require separate fresh general-suitability and
+pregnancy/breastfeeding-applicability answers. Applicability is never inferred
+from equation coefficients and is not persisted. An applicable answer routes to
+manual care-team references, clears generated values/source snapshots while
+preserving explicit manual values, and cannot be undone by Back.
+Strict goal representation 3 reads legacy 1/2, rejects inconsistent sources
+and future/malformed versions before replacement, and preserve atomic rollback.
+Payload/crypto envelope versions remain unchanged. Profile-presence, deletion,
+history and manual override paths must account for this source. Goal direction
+and used-input changes require explicit reference review; new weight records
+never recompute. No source metadata enters assistant/cloud payloads or diagnostics.
+Implementation exists; build/install and phone acceptance remain separate.
+
+## Optional macro suggestions extension
+
+Member-approved scope (2026-10-08): optional local macro proposals use explicit
+training context, reviewed age/weight and a reviewed calorie budget. The pure
+calculator and policy live outside composables; no model or network request is
+involved. Whole-day activity remains the energy basis with no second exercise
+addition. The separate approved phase calorie extension above adds bounded
+reviewed Gain/Lose proposals. Macro sources are independent of accepted
+maintenance estimates so manual calories can support a reviewed macro proposal.
+Final phase confirmation atomically saves exact displayed values with reproducible
+input/method/rounding metadata and per-field source flags. Manual overrides and
+changed used inputs invalidate appropriate provenance. Phase history always uses
+its own snapshot. Metadata remains excluded from assistant/cloud payloads.
+Goal representation version 2 adds macro provenance, reads legacy 1 without
+fabrication, rejects malformed/unsupported versions, and preserves rollback and
+deletion semantics. Data payload/envelope versions are unchanged. Older apps cannot
+open a goal representation they do not understand; downgrades remain unsupported.
+
+## Recorded goal periods and recaps
+
+Approved S4 contract: `design/phase-recap-contract.md`. `GoalPhase.endedAt` is
+written only when an explicit new phase replaces the current one, using the new
+phase's frozen confirmation instant; edits preserve the current phase and its
+start. Codec representation 4 is emitted only when at least one end is known,
+while representations 1–3 decode ends as unknown. Replacement, end boundary,
+references, and retained history commit atomically. Never infer an end from
+`updatedAt`, adjacency, or records.
+
+Recaps are recalculated locally from retained encrypted weight and meal records.
+Known historical periods use `[confirmedAt, endedAt)`; current preview uses an
+explicit as-of instant, while unknown historical periods have no totals. Date-only
+meals count only when their whole local day lies within the interval; boundary-day
+meals are excluded and reported. Legacy weights saved at local midnight on a
+boundary day are conservatively excluded and disclosed because their time is not
+known. Nutrition totals use only per-metric full-coverage values, with contributing
+meal counts and retained-record limits. Recaps are derived, never persisted or
+sent to assistant/cloud/diagnostics. No averages, adherence, streaks, projections,
+or inferred milestones are added.
+
+## Optional local goal setup and recovery compatibility
+
+Member-approved scope (2026-10-06): `GoalSetup` holds one current stable-ID phase
+and at most 12 previous phases, each added only by explicit New phase. Optional
+accepted maintenance energy includes the reproducible `maintenance-msj-pal-v1`
+profile, activity range and source. Intent alone creates no numeric references.
+`GoalPolicy` validates the complete snapshot and stages targets plus goal data
+atomically with rollback; manual calorie changes remove derived provenance.
+Weight entry writes do not mutate goal references. Composables emit confirmed
+intent and never operate on encrypted files or compute business rules themselves.
+
+The encrypted payload is version 2 when goal data is present, otherwise version 1.
+The AES-GCM data envelope and key envelope remain version 1. `GoalSetupCodec`
+validates goal representation version 1, explicit nulls, numeric types, sources,
+IDs, bounded history and consistency with current daily targets. Legacy version 1
+archives restore no goal data without guessing from weights. Unsupported future
+payload/goal versions reject before replacement. Export includes goal data;
+restore preview discloses phase/profile presence and replacement of current
+references, profile and history. The restore rollback includes the whole goal
+snapshot. Older app versions cannot open a version 2 data payload; downgrades
+are unsupported. Deleting all goal data keeps daily targets as manual references.
+
+Profile, intent, history and method inputs are not added to local assistant or
+cloud serializers. Only already-supported daily reference numbers can appear in
+existing summaries. No model, network dependency or cloud calculation is added.
+
 ## Privacy boundary
+
+Member-approved photo performance metadata extension (2026-10-11): the existing
+50-record encrypted image-analysis audit optionally retains image preparation,
+conversation setup, model-request, first nonblank streamed-text callback and
+validation durations, plus Android thermal status at analysis start/end. Image
+preparation occurs before analysis and is not part of the existing total duration.
+Model-request duration includes vision/prefill/generation; a failed or cancelled
+request records elapsed time to termination when available. Stage durations are
+not an exhaustive sum of the total. Thermal status is the OS severity (0-6), not
+a temperature or peak measurement. Missing/legacy measurements stay null; an
+additive optional metrics object preserves legacy decoding without a payload or
+crypto-envelope change. Metrics contain no prompt, food, photo or model text.
+Existing unlocked-only writes, bounded retention, archive exclusion and deletion
+semantics remain. Voice/text/chat and label OCR are outside this extension.
 
 Metria is a standalone, member-owned application. Weight, food, goals, notes,
 chat history, and local model data are personal data. They are not visible to a
@@ -11,6 +114,43 @@ must be encrypted end-to-end and must not include device private keys or unlock
 material.
 
 ## Bounded local assistant agent
+
+Member-selected debug optimization (2026-10-11): MiniLM may select only an
+explicit English request for today's meal list, additionally constrained by
+the host's independent read policy. The existing dispatcher reads fresh local
+records and the existing validated deterministic meal reply answers the turn
+without Gemma generation. Unknown/unsupported requests and router failure keep
+the existing assistant path. Inputs and embeddings remain transient on-device;
+no router reports, raw logs, new vault schema or writes are added. Debug-only
+model provisioning and pending acceptance are tracked in
+`minilm-chat-integration.md`. Release routing and the initial Gemma-readiness
+requirement remain unchanged; this does not prove reduced resident memory.
+
+Member-approved photo navigation (2026-10-11): an explicitly accepted meal-image
+analysis receives a transient UUID at start, reused as its eventual local audit
+ID. The active capture destination attaches only to that newly accepted request.
+A one-shot gate consumes its complete/partial validated result before opening
+review. Rejection, failure, Stop, destination disposal and newer attempts prevent
+stale/replayed navigation. The UUID adds no content or persisted draft and does
+not change audit retention. Selected date/type and explicit reviewed Save remain
+host-controlled. Label OCR and conversational drafts retain their existing routes.
+
+Today-origin typed and spoken meal entry uses the local tool-free meal-proposal
+path directly. Typed entry submits an edited description; Today spoken entry
+automatically chains its successful validated transcript into an unsaved draft
+(member-approved 2026-10-10). Failed/cancelled generation retains the description
+for editing and explicit retry. It does not create a chat
+turn or require conversational intent selection. Speech understanding is used
+only for a bounded transcript; its returned actions are never dispatched here.
+The chosen meal section and entry date stay on the host until explicit review
+and save. Typed/spoken review must not inherit a previous image thumbnail or
+image audit. Request identity/operation and capture cancellation scope isolate
+late results from subsequent entry attempts. No new vault format or cloud route
+is introduced by this contextual entry flow.
+Direct contextual proposals and native Chat meal proposals share the dedicated
+tool-free meal-generation system contract. General conversational/coach system
+instructions are not used for this structured task. Both paths retain the same
+strict proposal parser and explicit member review.
 
 The assistant uses LiteRT-LM's native persistent conversation and declared tool protocol.
 It cannot write arbitrary data or access the vault directly. The app validates every tool
@@ -33,7 +173,18 @@ Initial read-only tools:
 - `read_weight`
 - `read_meals`
 - `read_latest_meal` (later bounded single-meal extension)
+- `read_selected_meal` (one-turn, host-held saved-meal selection)
 - `search_saved_dishes`
+
+The selected-meal UI handoff retains a transient exact saved-meal ID on the host,
+never in model arguments, prompts, trace metadata or recovery archives. The
+argument-free selected read is valid only for that deliberate context. At tool
+execution the host re-resolves the ID from the current unlocked vault; a deleted,
+missing or mismatched result rejects safely. A validated deterministic response
+describes saved foods/nutrition and coverage. It does not infer new nutrients or
+health judgments. Selection is consumed for one submitted turn, clears on
+lock/background/new conversation/deletion, and cannot override an explicit
+latest-meal, dated-history or progress request. Existing composer text is retained.
 
 Explicit exact-day meal-list questions use a host-composed answer after the
 model selects `read_meals` and the host executes it. Validate dates, source,
@@ -84,6 +235,14 @@ request biometric unlock, and discard it on cancellation or app termination.
 The member sees and confirms the resulting entry exactly as with manual input.
 
 ## Nutrition calculations
+
+The offline Foundation catalog is supplemented by two member-approved SR Legacy
+prepared-food references (2026-10-10), documented in food-catalog-development.md.
+Loading merges distinct IDs without replacing Foundation values and identifies
+the source bundle as `2026-04-30+sr-2018-v1`. No runtime lookup or key is added.
+Cooked pasta and Italian-style frozen meatballs remain visible, reviewable
+approximations; raw/dry or specific unsupported recipe names cannot silently
+reuse them. Existing saved meals/releases are not rewritten.
 
 The model extracts foods, quantities, preparation methods, and uncertainty from
 natural language. A curated nutrition data source and deterministic arithmetic

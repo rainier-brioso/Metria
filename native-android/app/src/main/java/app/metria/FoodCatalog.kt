@@ -24,7 +24,10 @@ data class CatalogFood(
     val category: String?,
     val nutrients: Map<String, Double>,
     val portions: List<CatalogPortion>,
+    val nutrientDefinitions: Map<String, CatalogNutrientDefinition> = emptyMap(),
 )
+
+data class CatalogNutrientDefinition(val name: String, val unit: String)
 
 data class CatalogPortion(val grams: Double, val label: String?)
 
@@ -41,6 +44,16 @@ object FoodCatalog {
     private var cached: OfflineFoodCatalog? = null
     /** Curated search aliases only; the displayed/saved USDA description stays authoritative. */
     private val spanishAliases = listOf(
+        "espaguetis" to "pasta",
+        "espagueti" to "pasta",
+        "espaguetti" to "pasta",
+        "spaghetti" to "pasta",
+        "albondigas de carne" to "meatballs",
+        "albondiga de carne" to "meatballs",
+        "albondigas" to "meatballs",
+        "albondiga" to "meatballs",
+        "meatball" to "meatballs",
+        "salsa de tomate" to "tomato sauce",
         "pechuga de pollo" to "chicken breast",
         "arroz" to "rice",
         "pollo" to "chicken",
@@ -123,6 +136,7 @@ object FoodCatalog {
     private val preparationTerms = setOf(
         "baked", "boiled", "steamed", "grilled", "fried", "roasted", "braised",
         "raw", "cooked", "piece", "pieces", "trozo", "trozos", "with", "without",
+        "cocido", "cocida", "cocidos", "cocidas",
         "and", "or", "con", "sin", "y", "o",
     )
     private val chickenCutTerms = setOf("breast", "wing", "thigh", "drumstick")
@@ -131,6 +145,8 @@ object FoodCatalog {
     )
     private val ambiguousModelTerms = setOf("food item", "breaded item", "quiche filling", "yellow liquid")
     private val spanishDisplayNames = mapOf(
+        169737L to "Pasta cocida enriquecida, sin sal añadida",
+        171638L to "Albóndigas congeladas, estilo italiano",
         321358L to "Hummus comercial",
         323604L to "Huevo entero crudo pasteurizado",
         323697L to "Clara de huevo cruda pasteurizada",
@@ -184,8 +200,22 @@ object FoodCatalog {
 
     fun load(context: Context): OfflineFoodCatalog = synchronized(this) {
         cached ?: context.assets.open(assetName).bufferedReader(Charsets.UTF_8).use { reader ->
-            fromJson(reader.readText()).also { cached = it }
+            val foundation = fromJson(reader.readText())
+            val prepared = context.assets.open("usda-prepared-sr-2018-v1.json").bufferedReader(Charsets.UTF_8).use {
+                fromJson(it.readText())
+            }
+            merge(foundation, prepared).also { cached = it }
         }
+    }
+
+    internal fun merge(base: OfflineFoodCatalog, supplement: OfflineFoodCatalog): OfflineFoodCatalog {
+        val foods = base.foods + supplement.foods
+        require(foods.map { it.fdcId }.distinct().size == foods.size) { "Duplicate offline food identity." }
+        return OfflineFoodCatalog(
+            sourceName = "${base.sourceName} + ${supplement.sourceName}",
+            sourceRelease = "${base.sourceRelease}+${supplement.sourceRelease}",
+            foods = foods,
+        )
     }
 
     internal fun fromJson(raw: String): OfflineFoodCatalog {
@@ -207,7 +237,12 @@ object FoodCatalog {
         return catalog.foods.asSequence()
             .filter { food ->
                 val candidate = searchKey("${food.description} ${food.category.orEmpty()}")
-                termAlternatives.any { terms -> terms.all(candidate::contains) }
+                val label = searchKey(food.description)
+                termAlternatives.any { terms ->
+                    terms.all(candidate::contains) &&
+                        ("pasta" !in terms || (label.contains("pasta") &&
+                            (terms != listOf("pasta") || label.startsWith("pasta "))))
+                }
             }
             .sortedWith(compareBy<CatalogFood> { !termAlternatives.any { terms -> searchKey(it.description).startsWith(terms.first()) } }
                 .thenBy { it.description.length }
@@ -235,10 +270,24 @@ object FoodCatalog {
             assistantFoodName,
             assistantFoodName.substringBefore('(').trim(),
         ).distinct().flatMap(::searchTermAlternatives)
+        val requestsRaw = searchKey("$assistantFoodName $description").split(Regex("[^a-z]+"))
+            .any { it in setOf("raw", "dry", "uncooked", "crudo", "cruda", "seco", "seca") }
         return alternatives.asSequence().flatMap { terms ->
             val foodTerms = terms.filterNot(preparationTerms::contains)
             if (foodTerms.isEmpty()) return@flatMap emptySequence()
             catalog.foods.asSequence()
+                .filterNot { food ->
+                    food.fdcId in setOf(169737L, 171638L) && requestsRaw
+                }
+                .filter { food ->
+                    // "Pasta" in a cereal category must not turn rice/bulgur into spaghetti.
+                    if ("pasta" !in foodTerms) true else {
+                        val label = searchKey(food.description)
+                        label.contains("pasta") &&
+                            (foodTerms != listOf("pasta") || label.startsWith("pasta ")) &&
+                            (!requestsRaw || label.contains("raw") || label.contains("dry"))
+                    }
+                }
                 .filter { food ->
                     val candidate = searchKey("${food.description} ${food.category.orEmpty()}")
                     foodTerms.all(candidate::contains)
@@ -324,8 +373,21 @@ object FoodCatalog {
                 val rows = food.getJSONArray("nutrients")
                 for (nutrientIndex in 0 until rows.length()) {
                     val row = rows.getJSONObject(nutrientIndex)
-                    row.optString("number").takeIf(String::isNotBlank)?.let { number ->
-                        put(number, row.getDouble("amount_per_100g"))
+                    val number = row.optString("number").takeIf { it.isNotBlank() && it != "null" }
+                        ?: "fdc:${row.getLong("id")}" // Some USDA nutrients have no public nutrient number.
+                    put(number, row.getDouble("amount_per_100g"))
+                }
+            }
+            val nutrientDefinitions = buildMap {
+                val rows = food.getJSONArray("nutrients")
+                for (nutrientIndex in 0 until rows.length()) {
+                    val row = rows.getJSONObject(nutrientIndex)
+                    val number = row.optString("number").takeIf { it.isNotBlank() && it != "null" }
+                        ?: "fdc:${row.getLong("id")}" // Retain nutrients without public numbers.
+                    val name = row.optString("name")
+                    val unit = row.optString("unit")
+                    if (number.isNotBlank() && name.isNotBlank() && unit.isNotBlank()) {
+                        put(number, CatalogNutrientDefinition(name, unit))
                     }
                 }
             }
@@ -352,6 +414,7 @@ object FoodCatalog {
                 category = food.optString("category").takeIf(String::isNotBlank),
                 nutrients = nutrients,
                 portions = portions,
+                nutrientDefinitions = nutrientDefinitions,
             ))
         }
     }

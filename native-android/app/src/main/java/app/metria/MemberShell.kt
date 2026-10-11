@@ -74,6 +74,8 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.unit.dp
 import java.time.Instant
@@ -126,6 +128,7 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
     var quickAssistantOpen by rememberSaveable { mutableStateOf(false) }
     var quickAssistantMenuOpen by rememberSaveable { mutableStateOf(false) }
     var quickAssistantStartVoice by rememberSaveable { mutableStateOf(false) }
+    var quickAssistantVoiceEntry by rememberSaveable { mutableStateOf(false) }
     var quickAssistantListening by remember { mutableStateOf(false) }
     // Approved UX: the floating assistant reuses this one camera flow; no image path or storage is duplicated.
     var assistantImagePurpose by rememberSaveable { mutableStateOf<String?>(null) }
@@ -133,6 +136,9 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
     var editEntry by remember { mutableStateOf<WeightEntry?>(null) }
     var deleteEntry by remember { mutableStateOf<WeightEntry?>(null) }
     var editMeal by remember { mutableStateOf<MealEntry?>(null) }
+    var selectedAskMealId by remember { mutableStateOf<String?>(null) }
+    var selectedAskMealTitle by remember { mutableStateOf<String?>(null) }
+    var pendingSelectedMealReadId by remember { mutableStateOf<String?>(null) }
     var voiceDraft by remember { mutableStateOf<VoiceWeightDraft?>(null) }
     var modelStatus by remember { mutableStateOf(activity.modelStatus()) }
     var assistantTraceStatus by remember { mutableStateOf(activity.assistantTraceStatus()) }
@@ -140,11 +146,19 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
     val assistantConversationSession = rememberPrivateAssistantConversationSession()
     var mealProposalForConfirmation by remember { mutableStateOf<MealProposal?>(null) }
     var mealReviewFromAssistant by remember { mutableStateOf(false) }
+    var mealReviewIsTextEntry by remember { mutableStateOf(false) }
+    var mealReviewIsPhotoEntry by remember { mutableStateOf(false) }
     var manualMealReview by rememberSaveable { mutableStateOf(false) }
+    var addMealSlot by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingMealSlot by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingMealDate by rememberSaveable { mutableStateOf<String?>(null) }
+    var mealEntryOpen by remember { mutableStateOf(false) }
+    var mealEntryVoice by remember { mutableStateOf(false) }
     var labelDraftForConfirmation by remember { mutableStateOf<LabelNutritionDraft?>(null) }
     var browseFoodCatalog by remember { mutableStateOf(false) }
     var catalogFoodForConfirmation by remember { mutableStateOf<CatalogFood?>(null) }
     var editNutritionTargets by remember { mutableStateOf(false) }
+    var showGoalWelcomeInitially by remember { mutableStateOf(false) }
     var editCycleContext by remember { mutableStateOf(false) }
     var exportPassphrase by remember { mutableStateOf<CharArray?>(null) }
     var restoreSource by remember { mutableStateOf<android.net.Uri?>(null) }
@@ -174,7 +188,20 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
     DisposableEffect(activity) {
         activity.setVaultCallback { status = it }
         activity.setVoiceDraftCallback { voiceDraft = it }
-        onDispose { activity.setVaultCallback(null); activity.setVoiceDraftCallback(null) }
+        val lifecycleObserver = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) {
+                if (pendingSelectedMealReadId != null) modelStatus = activity.cancelPrivateAssistant()
+                selectedAskMealId = null
+                selectedAskMealTitle = null
+                pendingSelectedMealReadId = null
+            }
+        }
+        activity.lifecycle.addObserver(lifecycleObserver)
+        onDispose {
+            activity.lifecycle.removeObserver(lifecycleObserver)
+            activity.setVaultCallback(null)
+            activity.setVoiceDraftCallback(null)
+        }
     }
     LaunchedEffect(status, voiceDraft) {
         if (status is EncryptedVault.Status.Unlocked && voiceDraft != null) addSheet = true
@@ -187,12 +214,34 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                 // biometric unlock or an activity/process recreation without touching history.
                 activity.setAssistantStyle(current.assistantStyle)
                 assistantConversationSession.synchronize(current.activeConversation, current.conversationExpired)
+                if (activity.consumeFirstGoalOffer() && voiceDraft == null && !addSheet) {
+                    showGoalWelcomeInitially = true
+                    editNutritionTargets = true
+                }
                 if (current.conversationExpired) status = vault.acknowledgeConversationExpiry()
             }
             else -> {
                 assistantConversationSession.clearForLock()
+                selectedAskMealId = null
+                selectedAskMealTitle = null
+                pendingSelectedMealReadId = null
                 mealProposalForConfirmation = null
                 manualMealReview = false
+                mealReviewIsTextEntry = false
+                mealReviewIsPhotoEntry = false
+                addMealSlot = null
+                pendingMealSlot = null
+                pendingMealDate = null
+                labelDraftForConfirmation = null
+                assistantImagePurpose = null
+                mealEntryOpen = false
+                mealEntryVoice = false
+                quickAssistantVoiceEntry = false
+                quickAssistantOpen = false
+                quickAssistantStartVoice = false
+                quickAssistantListening = false
+                editNutritionTargets = false
+                showGoalWelcomeInitially = false
             }
         }
     }
@@ -229,13 +278,16 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
             delay(250)
         }
     }
-    LaunchedEffect(quickAssistantStartVoice, modelStatus.state) {
-        if (quickAssistantStartVoice && modelStatus.state == "ready") {
+    LaunchedEffect(quickAssistantStartVoice, quickAssistantVoiceEntry, modelStatus.state) {
+        if ((quickAssistantStartVoice || quickAssistantVoiceEntry) && modelStatus.state == "ready") {
             modelStatus = activity.prepareLocalAssistant()
         }
     }
     LaunchedEffect(destination) {
         if (destination != "Assistant") {
+            if (activity.modelStatus().imageState in setOf("ready", "preparing")) {
+                activity.discardLocalMealImage()
+            }
             modelStatus = activity.modelStatus()
             assistantTraceStatus = activity.assistantTraceStatus()
             debugImageCaptureStatus = activity.debugImageCaptureStatus()
@@ -269,15 +321,51 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                 Scaffold(
                     containerColor = MetriaColors.Canvas,
                     bottomBar = {
-                        MetriaBottomNavigation(
+                        if (!mealEntryOpen && !(destination == "Assistant" && pendingMealSlot != null)) MetriaBottomNavigation(
                             current = destination,
                             assistantListening = quickAssistantListening,
-                            onNavigate = { destination = it },
-                            onMetriaAction = { quickAssistantMenuOpen = true },
+                            onNavigate = { pendingMealSlot = null; pendingMealDate = null; addMealSlot = null; destination = it },
+                            onMetriaAction = { pendingMealSlot = null; pendingMealDate = null; quickAssistantMenuOpen = true },
                         )
                     },
                 ) { padding ->
-                    Column(Modifier.padding(padding).verticalScroll(rememberScrollState()).padding(20.dp).padding(bottom = 104.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                    if (mealEntryOpen) app.metria.ui.screens.MealEntryScreen(
+                        slotLabel = pendingMealSlot?.let(MealSlots::label) ?: "meal",
+                        lifecycleOwner = activity,
+                        voiceInitially = mealEntryVoice,
+                        modelStatus = modelStatus,
+                        transcribeAudio = { audio -> activity.understandPrivateCoachAudio(audio).also { modelStatus = it } },
+                        createDraft = { description -> activity.askLocalMealAssistant(description).also { modelStatus = it } },
+                        prepareAssistant = { modelStatus = activity.prepareLocalAssistant() },
+                        cancelAssistant = { modelStatus = activity.cancelPrivateAssistant() },
+                        onReview = { proposal ->
+                            mealEntryOpen = false
+                            mealReviewFromAssistant = false
+                            manualMealReview = false
+                            mealReviewIsTextEntry = true
+                            mealProposalForConfirmation = proposal
+                        },
+                        onManualEntry = {
+                            mealEntryOpen = false
+                            mealEntryVoice = false
+                            mealReviewIsTextEntry = false
+                            manualMealReview = true
+                            mealReviewFromAssistant = false
+                            mealProposalForConfirmation = null
+                            modelStatus = activity.cancelPrivateAssistant()
+                            modelStatus = activity.clearLocalMealDraft()
+                        },
+                        onDismiss = {
+                            mealEntryOpen = false
+                            mealEntryVoice = false
+                            mealReviewIsTextEntry = false
+                            pendingMealSlot = null
+                            pendingMealDate = null
+                            modelStatus = activity.cancelPrivateAssistant()
+                            modelStatus = activity.clearLocalMealDraft()
+                        },
+                        modifier = Modifier.padding(padding),
+                    ) else Column(Modifier.padding(padding).verticalScroll(rememberScrollState()).padding(20.dp).padding(bottom = 104.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
                         when (destination) {
                             "Today" -> MetriaTodayScreen(
                                 vaultStatus.entries, vaultStatus.meals, vaultStatus.displayUnit,
@@ -286,9 +374,13 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                                 onEditMeal = { editMeal = it },
                                 onEditNutritionTargets = { editNutritionTargets = true },
                                 onOpenProgress = { destination = "History" },
+                                onAddMeal = { addMealSlot = it },
+                                goalPhase = vaultStatus.goalSetup?.current,
+                                onAddWeight = { voiceDraft = null; editEntry = null; addSheet = true },
                             )
                             "History" -> MetriaProgressScreen(
                                 entries = vaultStatus.entries,
+                                goalPhase = vaultStatus.goalSetup?.current,
                                 meals = vaultStatus.meals,
                                 unit = vaultStatus.displayUnit,
                                 nutritionTargets = vaultStatus.nutritionTargets,
@@ -335,14 +427,23 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                                 editSavedWeight = { editEntry = it },
                                 undoSavedWeight = { entry -> status = vault.deleteWeight(entry.id) },
                                 openFoodCatalog = { browseFoodCatalog = true },
-                                review = { manualMealReview = false; mealReviewFromAssistant = false; mealProposalForConfirmation = it },
+                                review = {
+                                    manualMealReview = false
+                                    mealReviewFromAssistant = false
+                                    mealReviewIsTextEntry = false
+                                    mealReviewIsPhotoEntry = pendingMealSlot != null && destination == "Assistant"
+                                    mealProposalForConfirmation = it
+                                },
                                 onManualMealReview = {
                                     manualMealReview = true
                                     mealReviewFromAssistant = false
+                                    mealReviewIsTextEntry = false
+                                    mealReviewIsPhotoEntry = false
                                     mealProposalForConfirmation = null
                                 },
                                 prepareImage = { uri -> modelStatus = activity.prepareLocalMealImage(uri) },
-                                analyzeImage = { modelStatus = activity.analyzeLocalMealImage() },
+                                analyzeImage = { description -> activity.analyzeLocalMealImage(description).also { modelStatus = it } },
+                                cancelImageAnalysis = { modelStatus = activity.cancelLocalMealImageAnalysis() },
                                 readLabel = { modelStatus = activity.readLocalNutritionLabel() },
                                 discardImage = { modelStatus = activity.discardLocalMealImage() },
                                 discardImageMealDraft = { modelStatus = activity.discardImageMealDraft() },
@@ -354,6 +455,19 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                                 beginExternalImageFlow = { activity.beginExternalImageFlow() },
                                 beginImageFlow = { activity.beginLocalImageFlow() },
                                 finishCooldown = { modelStatus = activity.finishLocalImageCooldown() },
+                                contextualMealSlot = pendingMealSlot?.let(MealSlots::label),
+                                onBackFromContextualMeal = {
+                                    if (modelStatus.imageState == "analyzing") modelStatus = activity.cancelLocalMealImageAnalysis()
+                                    modelStatus = activity.discardLocalMealImage()
+                                    activity.discardPendingCameraCapture()
+                                    assistantImagePurpose = null
+                                    labelDraftForConfirmation = null
+                                    mealProposalForConfirmation = null
+                                    mealReviewIsPhotoEntry = false
+                                    pendingMealSlot = null
+                                    pendingMealDate = null
+                                    destination = "Today"
+                                },
                             )
                             else -> MetriaPrivacySettingsScreen(
                                 unit = vaultStatus.displayUnit,
@@ -419,16 +533,51 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                         }
                     }
                 }
+                addMealSlot?.let { slot -> app.metria.ui.screens.AddMealSheet(
+                    slot = slot,
+                    onDismiss = { addMealSlot = null },
+                    onPhoto = {
+                        pendingMealSlot = slot
+                        pendingMealDate = LocalDate.now().toString()
+                        addMealSlot = null
+                        assistantImagePurpose = "meal"
+                        destination = "Assistant"
+                    },
+                    onSpeak = {
+                        pendingMealSlot = slot
+                        pendingMealDate = LocalDate.now().toString()
+                        addMealSlot = null
+                        mealEntryVoice = true
+                        mealEntryOpen = true
+                    },
+                    onType = {
+                        pendingMealSlot = slot
+                        pendingMealDate = LocalDate.now().toString()
+                        addMealSlot = null
+                        mealEntryVoice = false
+                        mealEntryOpen = true
+                    },
+                    onManual = {
+                        pendingMealSlot = slot
+                        pendingMealDate = LocalDate.now().toString()
+                        addMealSlot = null
+                        manualMealReview = true
+                        mealReviewFromAssistant = false
+                        mealProposalForConfirmation = null
+                    },
+                ) }
                 if (quickAssistantMenuOpen) MetriaActionSheet(
                     onDismiss = { quickAssistantMenuOpen = false },
                     onSpeak = {
                         quickAssistantMenuOpen = false
-                        quickAssistantStartVoice = true
+                        quickAssistantStartVoice = false
+                        quickAssistantVoiceEntry = true
                         quickAssistantOpen = true
                     },
                     onChat = {
                         quickAssistantMenuOpen = false
                         quickAssistantStartVoice = false
+                        quickAssistantVoiceEntry = false
                         quickAssistantOpen = true
                     },
                     onAnalyseMeal = {
@@ -454,6 +603,9 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                             withContext(Dispatchers.IO) { vault.saveActiveConversation(conversation) }
                         },
                         onNewConversation = {
+                            selectedAskMealId = null
+                            selectedAskMealTitle = null
+                            pendingSelectedMealReadId = null
                             assistantConversationSession.reset()
                             status = vault.clearActiveConversation()
                         },
@@ -465,19 +617,33 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                         cycleContext = vaultStatus.cycleContext,
                         onBack = {
                             quickAssistantOpen = false
+                            quickAssistantVoiceEntry = false
                             quickAssistantStartVoice = false
                             quickAssistantListening = false
+                            pendingMealSlot = null
                         },
                         onVoiceListeningChanged = { quickAssistantListening = it },
                         startVoiceImmediately = quickAssistantStartVoice,
+                        openVoiceEntry = quickAssistantVoiceEntry,
+                        voiceMealEntry = pendingMealSlot != null,
+                        onVoiceEntryHandled = { quickAssistantVoiceEntry = false },
                         onVoiceStartHandled = { quickAssistantStartVoice = false },
                         askMeal = { text -> activity.askLocalMealAssistant(text).also { modelStatus = it } },
                         askCoach = { question, snapshot, conversationContext -> activity.askPrivateCoach(question, snapshot, conversationContext).also { modelStatus = it } },
-                        startAgent = activity::startPrivateAgentTurn,
+                        startAgent = { question, history ->
+                            val selectedId = selectedAskMealId
+                            val selectedTool = MetriaAgentGroundingPolicy.requiredTool(
+                                question, history, selectedMealId = selectedId,
+                            )
+                            pendingSelectedMealReadId = selectedId.takeIf { selectedTool?.name == "read_selected_meal" }
+                            selectedAskMealId = null
+                            selectedAskMealTitle = null
+                            activity.startPrivateAgentTurn(question, history, selectedId).also { modelStatus = it }
+                        },
                         continueAgentTool = activity::continuePrivateAgentTool,
                         understandCoach = { question, conversationContext -> activity.understandPrivateCoach(question, conversationContext).also { modelStatus = it } },
                         understandCoachAudio = { audio, conversationContext -> activity.understandPrivateCoachAudio(audio, conversationContext).also { modelStatus = it } },
-                        cancelAssistant = { modelStatus = activity.cancelPrivateAssistant() },
+                        cancelAssistant = { pendingSelectedMealReadId = null; modelStatus = activity.cancelPrivateAssistant() },
                         saveWeightDirect = { kilograms, date ->
                             val entry = WeightEntry(kilograms = kilograms, recordedAt = date)
                             status = vault.addWeightEntry(entry)
@@ -488,6 +654,17 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                         reviewMeal = { proposal -> mealReviewFromAssistant = true; mealProposalForConfirmation = proposal; quickAssistantOpen = false },
                         openSavedMeal = { id -> vaultStatus.meals.firstOrNull { it.id == id }?.let { editMeal = it } },
                         discardMealDraft = { modelStatus = activity.discardAssistantMealDraft() },
+                        selectedMealContextTitle = selectedAskMealTitle,
+                        clearSelectedMealContext = { selectedAskMealId = null; selectedAskMealTitle = null },
+                        readSelectedMeal = { replyLanguage ->
+                            val selectedId = pendingSelectedMealReadId
+                            pendingSelectedMealReadId = null
+                            if (selectedId == null) null else {
+                                val freshMeals = (vault.status() as? EncryptedVault.Status.Unlocked)?.meals.orEmpty()
+                                SelectedSavedMealReply.read(freshMeals, selectedId, replyLanguage)
+                                    ?: mapOf("source" to "metria_local_vault", "record_id" to selectedId, "reply_language" to replyLanguage)
+                            }
+                        },
                     )
                 }
                 if (addSheet || editEntry != null) WeightBottomSheet(
@@ -518,6 +695,19 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                     onCancelFoodNameCorrection = { requestId -> modelStatus = activity.cancelMealFoodNameCorrection(requestId) },
                     onClearFoodNameCorrection = { modelStatus = activity.clearMealFoodNameCorrection() },
                     onDismiss = { modelStatus = activity.clearMealFoodNameCorrection(); editMeal = null },
+                    onAskAboutMeal = {
+                        val fresh = vault.status() as? EncryptedVault.Status.Unlocked
+                        val exact = fresh?.meals?.singleOrNull { it.id == meal.id }
+                        if (exact == null) false else {
+                            modelStatus = activity.clearMealFoodNameCorrection()
+                            selectedAskMealId = exact.id
+                            selectedAskMealTitle = MealIdentity.displayTitle(exact)
+                            editMeal = null
+                            quickAssistantOpen = true
+                            modelStatus = activity.modelStatus()
+                            true
+                        }
+                    },
                     onSave = { updated ->
                         when (val update = vault.updateMeal(updated)) {
                             is EncryptedVault.Status.Unlocked -> {
@@ -533,6 +723,11 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                         when (val deleted = vault.deleteMeal(meal.id)) {
                             is EncryptedVault.Status.Unlocked -> {
                                 status = deleted
+                                if (selectedAskMealId == meal.id || pendingSelectedMealReadId == meal.id) {
+                                    selectedAskMealId = null
+                                    selectedAskMealTitle = null
+                                    pendingSelectedMealReadId = null
+                                }
                                 editMeal = null
                                 null
                             }
@@ -547,10 +742,12 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                 activeMealReview?.let { proposal -> MetriaMealReviewSheet(
                     proposal = proposal,
                     manualEntry = manualMealReview,
+                    initialMealSlot = pendingMealSlot,
+                    initialRecordedDate = pendingMealDate?.let { runCatching { LocalDate.parse(it) }.getOrNull() },
                     catalog = foodCatalog,
                     corrections = vaultStatus.foodCorrections,
-                    referenceThumbnailBase64 = modelStatus.referenceThumbnailBase64,
-                    analysisAuditId = modelStatus.latestImageAudit?.id.takeUnless { manualMealReview },
+                    referenceThumbnailBase64 = modelStatus.referenceThumbnailBase64.takeUnless { mealReviewIsTextEntry },
+                    analysisAuditId = modelStatus.latestImageAudit?.id.takeUnless { manualMealReview || mealReviewIsTextEntry },
                     savedMeals = vaultStatus.meals,
                     savedPersonalDishes = vaultStatus.personalDishes,
                     findPersonalDishMatches = { query -> PersonalDishMatcher.search(query, vaultStatus.personalDishes) },
@@ -567,12 +764,20 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                         mealProposalForConfirmation = null
                         if (mealReviewFromAssistant) quickAssistantOpen = true
                         mealReviewFromAssistant = false
+                        mealReviewIsTextEntry = false
+                        val returnToPhotoEntry = mealReviewIsPhotoEntry
+                        mealReviewIsPhotoEntry = false
                         manualMealReview = false
+                        if (!returnToPhotoEntry) {
+                            pendingMealSlot = null
+                            pendingMealDate = null
+                        }
                     },
                     onSave = { meal, corrections, personalDishes, correctionMemory ->
                         status = vault.saveReviewedMeal(meal, corrections, personalDishes, correctionMemory,
                             recordInConversation = mealReviewFromAssistant)
                         if (status is EncryptedVault.Status.Unlocked) {
+                            if (pendingMealSlot != null && !mealReviewFromAssistant) destination = "Today"
                             if (mealReviewFromAssistant) {
                                 val saved = status as EncryptedVault.Status.Unlocked
                                 assistantConversationSession.synchronize(saved.activeConversation, saved.conversationExpired)
@@ -580,7 +785,11 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                             }
                             mealProposalForConfirmation = null
                             mealReviewFromAssistant = false
+                            mealReviewIsTextEntry = false
+                            mealReviewIsPhotoEntry = false
                             manualMealReview = false
+                            pendingMealSlot = null
+                            pendingMealDate = null
                             modelStatus = activity.clearLocalMealDraft()
                             null
                         } else {
@@ -592,10 +801,17 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                 labelDraftForConfirmation?.let { label -> LabelConfirmationSheet(
                     draft = label,
                     referenceThumbnailBase64 = modelStatus.referenceThumbnailBase64,
+                    initialMealSlot = pendingMealSlot,
+                    initialRecordedDate = pendingMealDate,
                     onDismiss = { labelDraftForConfirmation = null },
                     onSave = { meal ->
                         status = vault.addMeal(meal)
                         labelDraftForConfirmation = null
+                        if (status is EncryptedVault.Status.Unlocked && pendingMealSlot != null) {
+                            destination = "Today"
+                            pendingMealSlot = null
+                            pendingMealDate = null
+                        }
                         modelStatus = activity.clearLocalMealDraft()
                     },
                 ) }
@@ -613,10 +829,43 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                         catalogFoodForConfirmation = null
                     },
                 ) }
-                if (editNutritionTargets) NutritionTargetsSheet(
+                if (editNutritionTargets) app.metria.ui.screens.NutritionGoalsScreen(
                     targets = vaultStatus.nutritionTargets,
-                    onDismiss = { editNutritionTargets = false },
-                    onSave = { targets -> status = vault.setNutritionTargets(targets); editNutritionTargets = false },
+                    setup = vaultStatus.goalSetup,
+                    latestWeightKg = vaultStatus.entries.maxByOrNull(WeightEntry::recordedAt)?.kilograms,
+                    weightEntries = vaultStatus.entries,
+                    meals = vaultStatus.meals,
+                    showWelcomeInitially = showGoalWelcomeInitially,
+                    displayUnit = vaultStatus.displayUnit,
+                    onDismiss = { editNutritionTargets = false; showGoalWelcomeInitially = false },
+                    onSave = { targets, calorieWasEdited, manuallyEditedMacros ->
+                        when (val result = withContext(Dispatchers.IO) { vault.setNutritionTargets(targets, calorieWasEdited, manuallyEditedMacros) }) {
+                            is EncryptedVault.Status.Unlocked -> { status = result; null }
+                            is EncryptedVault.Status.Failed -> "Daily targets could not be saved locally. Try again."
+                            else -> { status = result; "Unlock Metria before saving targets." }
+                        }
+                    },
+                    onConfirmGoal = { phase, newPhase ->
+                        when (val result = withContext(Dispatchers.IO) { vault.confirmGoal(phase, newPhase) }) {
+                            is EncryptedVault.Status.Unlocked -> { status = result; null }
+                            is EncryptedVault.Status.Failed -> "Your goal could not be saved locally. Try again."
+                            else -> { status = result; "Unlock Metria before saving your goal." }
+                        }
+                    },
+                    onDeleteSetup = {
+                        when (val result = withContext(Dispatchers.IO) { vault.deleteGoalSetup() }) {
+                            is EncryptedVault.Status.Unlocked -> { status = result; null }
+                            is EncryptedVault.Status.Failed -> "Goal data could not be deleted. Try again."
+                            else -> { status = result; "Unlock Metria before changing goals." }
+                        }
+                    },
+                    onDeleteHistory = { id ->
+                        when (val result = withContext(Dispatchers.IO) { vault.deleteGoalHistory(id) }) {
+                            is EncryptedVault.Status.Unlocked -> { status = result; null }
+                            is EncryptedVault.Status.Failed -> "This phase could not be deleted. Try again."
+                            else -> { status = result; "Unlock Metria before changing goals." }
+                        }
+                    },
                 )
                 if (editCycleContext) CycleContextSheet(
                     context = vaultStatus.cycleContext,
@@ -641,7 +890,7 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                 archivePreview?.let { preview -> AlertDialog(
                     onDismissRequest = { archivePreview = null },
                     title = { Text("Replace this vault?") },
-                    text = { Text("The archive contains ${preview.weights} weight entries and ${preview.meals} meals. This replaces the current records on this phone. Model files, chat, diagnostics, and device keys are not restored.") },
+                    text = { Text("The archive contains ${preview.weights} weight entries, ${preview.meals} meals and ${preview.goalPhases} goal phases${if (preview.hasGoalProfile) ", including calculation profiles" else ""}. This replaces the current records, daily references, profile and goal history on this phone. An older archive without goal data removes the current profile and history. Model files, chat, diagnostics, and device keys are not restored.") },
                     confirmButton = { Button(onClick = {
                         val result = activity.confirmRecoveryRestore()
                         archivePreview = null
@@ -877,7 +1126,8 @@ private fun AssistantScreen(
     review: (MealProposal) -> Unit,
     onManualMealReview: () -> Unit,
     prepareImage: (android.net.Uri) -> Unit,
-    analyzeImage: () -> Unit,
+    analyzeImage: (String) -> ModelStatus,
+    cancelImageAnalysis: () -> Unit,
     readLabel: () -> Unit,
     discardImage: () -> Unit,
     discardImageMealDraft: () -> Unit,
@@ -889,12 +1139,17 @@ private fun AssistantScreen(
     beginExternalImageFlow: () -> Unit,
     beginImageFlow: () -> ModelStatus,
     finishCooldown: () -> Unit,
+    contextualMealSlot: String? = null,
+    onBackFromContextualMeal: () -> Unit = {},
 ) {
     var sourceChoice by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingImagePurpose by rememberSaveable { mutableStateOf<String?>(null) }
+    var photoDescription by rememberSaveable { mutableStateOf("") }
     var capturedUri by remember { mutableStateOf<android.net.Uri?>(null) }
     var showOcrText by remember { mutableStateOf(false) }
     var coolingSecondsLeft by remember { mutableStateOf(0) }
+    val photoReviewHandoff = app.metria.ui.screens.rememberPhotoMealReviewHandoff(modelStatus, review)
+    val stopPhotoAnalysis = { photoReviewHandoff.cancel(); cancelImageAnalysis() }
     val photoPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
     ) { uri ->
@@ -920,13 +1175,10 @@ private fun AssistantScreen(
             onInitialImagePurposeHandled()
         }
     }
-    LaunchedEffect(modelStatus.imageState, pendingImagePurpose) {
-        if (modelStatus.imageState == "ready") {
-            when (pendingImagePurpose) {
-                "label" -> readLabel()
-                "meal" -> analyzeImage()
-            }
+    LaunchedEffect(modelStatus.imageState) {
+        if (modelStatus.imageState == "none") {
             pendingImagePurpose = null
+            photoDescription = ""
         }
     }
     LaunchedEffect(modelStatus.imageState, modelStatus.imageRetryAtElapsedRealtime) {
@@ -947,8 +1199,6 @@ private fun AssistantScreen(
         showLoadingPreview -> "Metria is getting ready." to "Preparing locally on this phone."
         modelStatus.state in setOf("ready", "initializing") -> "Getting your private assistant ready." to "Preparing locally on this phone."
         modelStatus.state == "thinking" -> "Metria is reading your meal." to "Creating an editable estimate locally."
-        modelStatus.imageState == "preparing" -> "Metria is preparing your image." to "A temporary local copy is being made."
-        modelStatus.imageState == "ready" && pendingImagePurpose != null -> "Metria is getting your result ready." to "Nothing is saved automatically."
         modelStatus.imageState == "analyzing" && modelStatus.imageProgress == "reading_image" -> "Looking for the clearest foods." to "This may take a moment while Metria reads the photo."
         modelStatus.imageState == "analyzing" && modelStatus.imageProgress == "identifying_foods" -> "Identifying the main foods." to "Metria is separating the visible ingredients into your draft."
         modelStatus.imageState == "analyzing" && modelStatus.imageProgress == "estimating_portions" -> "Estimating portions and preparation." to "You will be able to adjust every estimate before saving."
@@ -957,14 +1207,45 @@ private fun AssistantScreen(
         else -> null
     }
     if (loading != null) {
-        AppleByteLoading(loading.first, loading.second)
+        if (contextualMealSlot != null) {
+            app.metria.ui.screens.TodayMealPhotoLoadingScreen(
+                slotLabel = contextualMealSlot,
+                onBack = onBackFromContextualMeal,
+                message = when {
+                    modelStatus.imageState == "analyzing" -> "Preparing your meal…"
+                    modelStatus.imageState == "reading_label" -> "Reading your nutrition label…"
+                    modelStatus.imageState == "preparing" -> "Preparing your photo…"
+                    else -> "Preparing photo tools…"
+                },
+                onStop = when (modelStatus.imageState) {
+                    "analyzing" -> stopPhotoAnalysis
+                    "reading_label" -> discardImage
+                    else -> null
+                },
+            )
+        } else if (modelStatus.imageState == "analyzing") {
+            app.metria.ui.screens.MealPhotoAnalysisProgress(loading.first, loading.second, stopPhotoAnalysis)
+        } else AppleByteLoading(loading.first, loading.second)
         return
     }
     if (modelStatus.imageState == "cooling_down") {
-        CoolingDownLoading(coolingSecondsLeft)
+        if (contextualMealSlot != null) app.metria.ui.screens.TodayMealPhotoLoadingScreen(
+            slotLabel = contextualMealSlot,
+            onBack = onBackFromContextualMeal,
+            message = "Photo tools are cooling down. Wait ${coolingSecondsLeft}s or come back later.",
+        ) else CoolingDownLoading(coolingSecondsLeft)
         return
     }
-    MetriaAssistantHome(
+    if (photoReviewHandoff.ready(modelStatus)) {
+        app.metria.ui.screens.MealPhotoAnalysisProgress("Preparing your meal…", "", stopPhotoAnalysis)
+        return
+    }
+    if (contextualMealSlot != null) app.metria.ui.screens.TodayMealPhotoEntryScreen(
+        slotLabel = contextualMealSlot,
+        onBack = onBackFromContextualMeal,
+        onMealPhoto = { if (beginImageFlow().imageState != "cooling_down") sourceChoice = "meal" },
+        onNutritionLabel = { if (beginImageFlow().imageState != "cooling_down") sourceChoice = "label" },
+    ) else MetriaAssistantHome(
         modelStatus = modelStatus,
         onDownload = downloadAssistant,
         onCancelDownload = cancelAssistantDownload,
@@ -974,25 +1255,51 @@ private fun AssistantScreen(
         onAnalyseMeal = { if (beginImageFlow().imageState != "cooling_down") sourceChoice = "meal" },
     )
     sourceChoice?.let { choice ->
-        ModalBottomSheet(onDismissRequest = { sourceChoice = null }) {
-            Column(Modifier.padding(24.dp).padding(bottom = 56.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(if (choice == "label") "Scan nutrition label" else "Analyze meal photo", style = MaterialTheme.typography.headlineSmall)
-                Text("The image is processed locally and the temporary copy is deleted after analysis.", color = Color(0xFF655D6E))
-                Button(onClick = {
+        app.metria.ui.screens.MealPhotoSourceSheet(
+                purpose = choice,
+                onDismiss = { sourceChoice = null },
+                onTakePhoto = {
                     val uri = newCameraUri()
                     capturedUri = uri
                     pendingImagePurpose = choice
+                    photoDescription = ""
                     sourceChoice = null
                     camera.launch(uri)
-                }, modifier = Modifier.fillMaxWidth()) { Text("Take photo") }
-                Button(onClick = {
+                },
+                onChoosePhoto = {
                     sourceChoice = null
                     pendingImagePurpose = choice
+                    photoDescription = ""
                     beginExternalImageFlow()
                     photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                }, modifier = Modifier.fillMaxWidth()) { Text("Choose from library") }
-            }
-        }
+                },
+        )
+    }
+    if (pendingImagePurpose != null && modelStatus.imageState in setOf("preparing", "ready", "failed")) {
+        app.metria.ui.screens.MealPhotoPreviewSheet(
+            purpose = requireNotNull(pendingImagePurpose),
+            thumbnail = modelStatus.referenceThumbnailBase64.takeIf { modelStatus.imageState == "ready" },
+            imageState = modelStatus.imageState,
+            description = photoDescription,
+            onDescriptionChange = { photoDescription = it },
+            onPurposeChange = { pendingImagePurpose = it; photoDescription = "" },
+            onDismiss = { pendingImagePurpose = null; photoDescription = ""; discardImage() },
+            onReplace = {
+                val purpose = pendingImagePurpose
+                pendingImagePurpose = null
+                photoDescription = ""
+                discardImage()
+                sourceChoice = purpose
+            },
+            onAnalyze = {
+                if (pendingImagePurpose == "label") readLabel() else {
+                    val result = analyzeImage(photoDescription)
+                    photoReviewHandoff.started(modelStatus, result)
+                }
+                pendingImagePurpose = null
+                photoDescription = ""
+            },
+        )
     }
     modelStatus.assistantDiagnostic?.let { Text(it, color = Color(0xFFB3261E)) }
     modelStatus.assistantProposal?.let { proposal ->
@@ -1020,7 +1327,7 @@ private fun AssistantScreen(
             }
         }
     }
-    modelStatus.proposalDiagnostic?.let {
+    if (modelStatus.proposalDiagnostic != null || modelStatus.latestImageAudit?.outcome == "runtime_failure") {
         MealAnalysisFallbackCard(onEnterManually = onManualMealReview)
     }
     modelStatus.ocrText?.takeIf { it.isNotBlank() }?.let {
@@ -1438,6 +1745,9 @@ private fun PrivateAssistantChat(
     onBack: () -> Unit,
     onVoiceListeningChanged: (Boolean) -> Unit,
     startVoiceImmediately: Boolean = false,
+    openVoiceEntry: Boolean = false,
+    voiceMealEntry: Boolean = false,
+    onVoiceEntryHandled: () -> Unit = {},
     onVoiceStartHandled: () -> Unit = {},
     askMeal: (String) -> ModelStatus,
     askCoach: (String, PrivateCoachSnapshot, String) -> ModelStatus,
@@ -1452,6 +1762,9 @@ private fun PrivateAssistantChat(
     reviewMeal: (MealProposal) -> Unit,
     openSavedMeal: (String) -> Unit,
     discardMealDraft: () -> Unit,
+    selectedMealContextTitle: String?,
+    clearSelectedMealContext: () -> Unit,
+    readSelectedMeal: (String) -> Map<String, Any?>?,
 ) {
     val context = LocalContext.current
     var input by conversationSession.input
@@ -1462,6 +1775,9 @@ private fun PrivateAssistantChat(
     var handledReplyRequestId by conversationSession.handledReplyRequestId
     var savedWeightId by conversationSession.savedWeightId
     var recordingVoice by remember { mutableStateOf(false) }
+    var voiceEntryOpen by rememberSaveable { mutableStateOf(openVoiceEntry) }
+    var voiceText by rememberSaveable { mutableStateOf("") }
+    var voiceCaptureGeneration by remember { mutableStateOf(0L) }
     var voiceMessage by conversationSession.voiceMessage
     var messages by conversationSession.messages
     val assistantScope = rememberCoroutineScope()
@@ -1552,24 +1868,29 @@ private fun PrivateAssistantChat(
             return
         }
         submittedConversationContext = privateConversationContext(messages)
-        messages = messages + PrivateChatMessage("Voice request received locally.", true)
+        if (!voiceEntryOpen) messages = messages + PrivateChatMessage("Voice request received locally.", true)
         submittedQuestion = "Voice request"
         trackRequest(understandCoachAudio(clip.file, submittedConversationContext))
     }
     val audioRecorder = remember(context) { GemmaAudioRecorder(context) }
+    fun beginVoiceRecording() {
+        val capture = ++voiceCaptureGeneration
+        audioRecorder.start { clip ->
+            if (capture == voiceCaptureGeneration) submitVoiceClip(clip) else clip.file.delete()
+        }.onSuccess { setVoiceRecording(true) }.onFailure { voiceMessage = "Microphone recording could not start. Try again or type instead." }
+    }
     val microphonePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
-            audioRecorder.start(::submitVoiceClip).onSuccess { setVoiceRecording(true) }.onFailure { voiceMessage = it.message ?: "Microphone recording could not start." }
+            beginVoiceRecording()
         } else voiceMessage = "Microphone permission was not granted. You can type your request instead."
     }
     fun startVoiceCapture() {
         voiceMessage = null
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-            audioRecorder.start(::submitVoiceClip).onSuccess { setVoiceRecording(true) }
-                .onFailure { voiceMessage = it.message ?: "Microphone recording could not start." }
+            beginVoiceRecording()
         } else microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
     }
-    DisposableEffect(audioRecorder) { onDispose { audioRecorder.cancel(); onVoiceListeningChanged(false) } }
+    DisposableEffect(audioRecorder) { onDispose { voiceCaptureGeneration += 1; audioRecorder.cancel(); onVoiceListeningChanged(false) } }
     LaunchedEffect(startVoiceImmediately, modelStatus.state) {
         if (startVoiceImmediately) {
             when (modelStatus.state) {
@@ -1589,6 +1910,13 @@ private fun PrivateAssistantChat(
         val call = modelStatus.coachToolCall ?: return@LaunchedEffect
         if (!shouldConsumeAssistantResult(activeAssistantRequestId, handledToolRequestId, requestId)) return@LaunchedEffect
         handledToolRequestId = requestId
+        if (voiceEntryOpen) {
+            val recognized = VoiceEntryText.validated(call.spokenText)
+            if (recognized == null) voiceMessage = "Metria could not produce readable speech. Try again or type instead."
+            else { voiceText = recognized; voiceMessage = null }
+            // Recognition is a preview: none of the proposed audio actions is dispatched.
+            return@LaunchedEffect
+        }
         call.spokenText?.let { spoken ->
             submittedQuestion = spoken
             messages = messages + PrivateChatMessage("Voice: $spoken", true)
@@ -1608,6 +1936,19 @@ private fun PrivateAssistantChat(
                     trackNativeRequest { continueAgentTool(call.intent, result) }
                 } else {
                     messages = messages + PrivateChatMessage("Ask about your latest meal in Chat.", false)
+                }
+            }
+            AssistantAction.QuerySelectedMeal -> {
+                if (nativeAgentTool) {
+                    val replyLanguage = coachReplyLanguage(submittedQuestion, submittedConversationContext)
+                    val result = readSelectedMeal(replyLanguage)
+                    if (result != null) trackNativeRequest { continueAgentTool(call.intent, result) }
+                    else {
+                        cancelAssistant()
+                        messages = messages + PrivateChatMessage("That selected meal context expired. Open the meal again and try once more.", false)
+                    }
+                } else {
+                    messages = messages + PrivateChatMessage("Open a saved meal and choose Ask Metria to use its current record.", false)
                 }
             }
             is AssistantAction.QueryProgressOverview -> {
@@ -1750,8 +2091,12 @@ private fun PrivateAssistantChat(
             }
             is AssistantAction.QueryMealHistory -> {
                 val replyLanguage = coachReplyLanguage(submittedQuestion, submittedConversationContext)
-                val oldest = today.minusDays(action.fromDaysAgo.toLong())
-                val newest = today.minusDays(action.toDaysAgo.toLong())
+                val frozenMiniLmDate = call.hostReadDate.takeIf {
+                    nativeAgentTool && call.intent == "read_meals"
+                }
+                val queryToday = frozenMiniLmDate ?: today
+                val oldest = queryToday.minusDays(action.fromDaysAgo.toLong())
+                val newest = queryToday.minusDays(action.toDaysAgo.toLong())
                 val saved = meals.filter {
                     it.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate() in oldest..newest &&
                         (action.mealSlot == null || MealSlots.matches(it, action.mealSlot))
@@ -1775,33 +2120,43 @@ private fun PrivateAssistantChat(
                         .orEmpty()
                     "${typeLabel?.replaceFirstChar(Char::uppercase) ?: "Meals"} from $oldest to $newest: $visibleMeals.$omitted"
                 }
-                messages = messages + PrivateChatMessage(facts, false, localEvidence = true)
-                if (nativeAgentTool) {
-                    trackNativeRequest { continueAgentTool(call.intent, mapOf(
-                        "source" to "metria_local_vault",
-                        "reply_language" to replyLanguage,
-                        "as_of" to today.toString(),
-                        "from" to oldest.toString(),
-                        "to" to newest.toString(),
-                        "meal_slot" to action.mealSlot,
-                        "total_count" to boundedMeals.totalCount,
-                        "returned_count" to boundedMeals.records.size,
-                        "omitted_count" to boundedMeals.omittedCount,
-                        "coverage" to boundedMeals.coverage,
-                        "meals" to boundedMeals.records.map { meal -> mapOf(
-                            "date" to meal.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate().toString(),
-                            "title" to MealIdentity.displayTitle(meal),
-                            "slot" to meal.mealSlot,
-                        ) },
-                        "summary" to facts,
-                    )) }
+                val toolResponse = mapOf(
+                    "source" to "metria_local_vault",
+                    "reply_language" to replyLanguage,
+                    "as_of" to queryToday.toString(),
+                    "from" to oldest.toString(),
+                    "to" to newest.toString(),
+                    "meal_slot" to action.mealSlot,
+                    "total_count" to boundedMeals.totalCount,
+                    "returned_count" to boundedMeals.records.size,
+                    "omitted_count" to boundedMeals.omittedCount,
+                    "coverage" to boundedMeals.coverage,
+                    "meals" to boundedMeals.records.map { meal -> mapOf(
+                        "date" to meal.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate().toString(),
+                        "title" to MealIdentity.displayTitle(meal),
+                        "slot" to meal.mealSlot,
+                    ) },
+                    "summary" to facts,
+                )
+                val validFrozenRead = frozenMiniLmDate?.let { frozenDate ->
+                    call.hostReadDate == frozenDate && MiniLmTodayMealPolicy.hasValidFrozenMealRead(call, toolResponse)
+                } ?: true
+                if (!validFrozenRead) {
+                    // Do not add even a local-evidence chat row until the exact frozen-day
+                    // response passes the same host contract used by the lifecycle continuation.
+                    trackNativeRequest { continueAgentTool(call.intent, toolResponse) }
                 } else {
-                    trackRequest(askCoach("""MEMBER_LANGUAGE: ${coachReplyLanguage(submittedQuestion, submittedConversationContext)}
-                        MEMBER_QUESTION: $submittedQuestion
-                        [LOCAL_FACTS]
-                        $facts
-                        [/LOCAL_FACTS]
-                        Answer only from these local facts in no more than three short sentences.""".trimIndent(), snapshot, submittedConversationContext))
+                    messages = messages + PrivateChatMessage(facts, false, localEvidence = true)
+                    if (nativeAgentTool) {
+                        trackNativeRequest { continueAgentTool(call.intent, toolResponse) }
+                    } else {
+                        trackRequest(askCoach("""MEMBER_LANGUAGE: ${coachReplyLanguage(submittedQuestion, submittedConversationContext)}
+                            MEMBER_QUESTION: $submittedQuestion
+                            [LOCAL_FACTS]
+                            $facts
+                            [/LOCAL_FACTS]
+                            Answer only from these local facts in no more than three short sentences.""".trimIndent(), snapshot, submittedConversationContext))
+                    }
                 }
             }
             is AssistantAction.SearchSavedDishes -> {
@@ -1924,6 +2279,7 @@ private fun PrivateAssistantChat(
                 }
                 if (!conversationSession.isPendingSubmission(pending.token)) return@launch
                 submittedConversationContext = context
+                if (useLegacyRoute) clearSelectedMealContext()
                 val result = conversationSession.withAssistantModelOperation {
                     if (!conversationSession.isPendingSubmission(pending.token)) return@withAssistantModelOperation null
                     withContext(Dispatchers.Default) {
@@ -1950,6 +2306,45 @@ private fun PrivateAssistantChat(
     }
     val modelResultIsCurrent = modelStatus.assistantRequestId != null &&
         modelStatus.assistantRequestId == activeAssistantRequestId
+
+    if (voiceEntryOpen) {
+        app.metria.ui.screens.VoiceEntrySheet(
+            mealEntry = voiceMealEntry,
+            recording = recordingVoice,
+            processing = modelResultIsCurrent && modelStatus.state == "thinking",
+            ready = modelStatus.state == "loaded",
+            unavailable = modelStatus.state in setOf("failed", "absent", "removed"),
+            text = voiceText,
+            error = voiceMessage ?: modelStatus.coachDiagnostic.takeIf { modelResultIsCurrent },
+            onTextChange = { voiceText = it },
+            onToggleRecording = { voiceText = ""; toggleVoice() },
+            onCancelProcessing = { stopAssistant(showConfirmation = false) },
+            onDismiss = {
+                voiceCaptureGeneration += 1
+                audioRecorder.cancel()
+                setVoiceRecording(false)
+                stopAssistant(showConfirmation = false)
+                onVoiceEntryHandled()
+                onBack()
+            },
+            onTypeInstead = {
+                voiceCaptureGeneration += 1
+                audioRecorder.cancel()
+                setVoiceRecording(false)
+                stopAssistant(showConfirmation = false)
+                input = voiceText
+                voiceEntryOpen = false
+                onVoiceEntryHandled()
+            },
+            onContinue = {
+                input = if (voiceMealEntry) "Record this meal: $voiceText" else voiceText
+                voiceEntryOpen = false
+                onVoiceEntryHandled()
+                submitText()
+            },
+        )
+        return
+    }
 
     MetriaAssistantConversationScreen(
         messages = messages.map { MetriaChatMessage(it.text, it.fromMember, it.localEvidence,
@@ -1979,6 +2374,8 @@ private fun PrivateAssistantChat(
         preparingVoice = startVoiceImmediately && !recordingVoice,
         voiceMessage = voiceMessage,
         modelReady = modelStatus.state == "loaded",
+        selectedMealContextTitle = selectedMealContextTitle,
+        onClearSelectedMealContext = clearSelectedMealContext,
         onBack = onBack,
         onNewConversation = {
             stopAssistant(showConfirmation = false)
@@ -2292,40 +2689,6 @@ private fun NutritionEstimateLegend(completeMeals: Int, partialMeals: Int) {
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
         Text("● $completeMeals complete", color = Plum, style = MaterialTheme.typography.bodySmall)
         Text("▧ $partialMeals partial", color = Plum.copy(alpha = 0.72f), style = MaterialTheme.typography.bodySmall)
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun NutritionTargetsSheet(targets: NutritionTargets?, onDismiss: () -> Unit, onSave: (NutritionTargets?) -> Unit) {
-    var calories by remember(targets) { mutableStateOf(targets?.caloriesKcal?.toString().orEmpty()) }
-    var protein by remember(targets) { mutableStateOf(targets?.proteinGrams?.toString().orEmpty()) }
-    var carbohydrates by remember(targets) { mutableStateOf(targets?.carbohydrateGrams?.toString().orEmpty()) }
-    var fat by remember(targets) { mutableStateOf(targets?.fatGrams?.toString().orEmpty()) }
-    var error by remember { mutableStateOf<String?>(null) }
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(Modifier.padding(24.dp).padding(bottom = 72.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Daily nutrition targets", style = MaterialTheme.typography.headlineMedium)
-            Text("Optional values you choose for your own progress view. Metria does not recommend targets or give medical advice.", color = Color(0xFF655D6E))
-            OutlinedTextField(calories, { calories = it }, label = { Text("Calories (kcal)") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(protein, { protein = it }, label = { Text("Protein (g)") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(carbohydrates, { carbohydrates = it }, label = { Text("Carbohydrates (g)") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(fat, { fat = it }, label = { Text("Fat (g)") }, modifier = Modifier.fillMaxWidth())
-            Text("Leave every field empty to remove targets.", color = Color(0xFF655D6E), style = MaterialTheme.typography.bodySmall)
-            error?.let { Text(it, color = Color(0xFFB3261E)) }
-            Button(onClick = {
-                fun number(value: String) = value.trim().takeIf(String::isNotEmpty)?.replace(',', '.')?.toDoubleOrNull()
-                val raw = listOf(calories, protein, carbohydrates, fat)
-                val parsed = raw.map(::number)
-                val invalid = raw.zip(parsed).any { (value, parsedValue) -> value.isNotBlank() && parsedValue == null }
-                val newTargets = NutritionTargets(parsed[0], parsed[1], parsed[2], parsed[3])
-                if (invalid || !NutritionTargetValidation.valid(newTargets)) {
-                    error = "Enter positive targets within the supported range, or leave all fields empty."
-                } else {
-                    onSave(newTargets.takeUnless(NutritionTargetValidation::empty))
-                }
-            }, modifier = Modifier.fillMaxWidth()) { Text("Save daily targets") }
-        }
     }
 }
 
@@ -2905,9 +3268,16 @@ private fun ManualMealTextSheet(onDismiss: () -> Unit, onSubmit: (String) -> Uni
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun LabelConfirmationSheet(draft: LabelNutritionDraft, referenceThumbnailBase64: String?, onDismiss: () -> Unit, onSave: (MealEntry) -> Unit) {
+private fun LabelConfirmationSheet(
+    draft: LabelNutritionDraft,
+    referenceThumbnailBase64: String?,
+    initialMealSlot: String? = null,
+    initialRecordedDate: String? = null,
+    onDismiss: () -> Unit,
+    onSave: (MealEntry) -> Unit,
+) {
     var name by remember { mutableStateOf("") }
-    var date by remember { mutableStateOf(LocalDate.now().toString()) }
+    var date by remember(draft, initialRecordedDate) { mutableStateOf(initialRecordedDate ?: LocalDate.now().toString()) }
     val captureTime = remember { LocalTime.now().withSecond(0).withNano(0) }
     var calories by remember { mutableStateOf(draft.caloriesKcal?.toString().orEmpty()) }
     var protein by remember { mutableStateOf(draft.proteinGrams?.toString().orEmpty()) }
@@ -2935,6 +3305,7 @@ private fun LabelConfirmationSheet(draft: LabelNutritionDraft, referenceThumbnai
                 val recordedAt = mealInstantForDate(date, captureTime)
                 val meal = if (recordedAt == null) null else MealEntry(
                     recordedAt = recordedAt,
+                    mealSlot = initialMealSlot?.takeIf { it in MealSlots.allowed },
                     items = listOf(MealEntryItem(name.trim(), null, null)),
                     assumptions = listOf("Nutrition values were reviewed from a package label."),
                     confidence = "high",

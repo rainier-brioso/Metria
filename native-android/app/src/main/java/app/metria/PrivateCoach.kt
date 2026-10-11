@@ -101,6 +101,8 @@ data class PrivateCoachToolCall(
     val mealSlot: String? = null,
     val message: String? = null,
     val query: String? = null,
+    /** Host-only frozen date for the MiniLM today's-meal-list handoff; never model-authored. */
+    val hostReadDate: LocalDate? = null,
 )
 
 fun PrivateCoachSnapshot.goalProgressFacts(period: String?): String {

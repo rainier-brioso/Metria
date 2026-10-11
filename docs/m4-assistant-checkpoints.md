@@ -1,5 +1,162 @@
 # M4 local assistant checkpoints
 
+## MiniLM direct Chat slice — 2026-10-11
+
+- The member explicitly chose MiniLM and requested direct Metria integration
+  rather than another external experiment. Custom agents are implementing the
+  debug runtime/tokenizer and existing native Chat lifecycle seam separately;
+  an independent reviewer is checking cancellation, read boundaries and resources.
+- Selected scope: English today-only meal-list questions, local classification
+  plus an independent conservative host read guard, existing fresh bounded read,
+  deterministic validated reply and encrypted conversation persistence. Unknown
+  requests and router failure fall back to Gemma. No new member screen, write,
+  cloud route, raw router logs or production dependency is authorized here.
+- The initial slice still requires Gemma prepared for Chat; accepted turns skip
+  its generation. Reduced resident memory and unloaded-Gemma routing are not
+  claimed. Implementation, artifact identity and pending acceptance are tracked
+  in [MiniLM Chat integration](minilm-chat-integration.md).
+- Final automated gate passed: 449 tests, zero failures/errors/skips, debug APK
+  assembled and release Kotlin bridge compiled; `git diff --check` passed.
+  The custom implementation/review process corrected cancellation, exception
+  fallback and initial-load/close handling. Final review corrections reject
+  record-type ambiguity, carry the frozen date through the read, and validate
+  before appending evidence; focused re-review found no remaining material
+  defect in those paths. Member-approved `adb install -r` returned `Success`
+  on Samsung SM-S928B / Android 16; MainActivity launched cold successfully.
+  No data clear, uninstall or existing model/vault replacement occurred.
+  The member unlocked and submitted the named ordinary Chat lookup, reporting
+  that its reply matches their recorded meals. They also confirmed the exact
+  MiniLM-route / Gemma-generation-skipped diagnostic. The phone public-model
+  hash matched; one process PSS sample was 1,591,249 KB (not peak or a controlled
+  comparison). The member then confirmed yesterday's reply matched their records
+  with no MiniLM route message. The selected today lookup and other-day fallback
+  are physically confirmed; the broader physical acceptance matrix remains open;
+  artifact/build identity is in the integration checkpoint.
+  The existing opt-in metadata trace was subsequently confirmed enabled. Its
+  timestamps record 611 ms from lifecycle turn start to validated reply for the
+  MiniLM lookup and 15,131 ms for the native yesterday fallback. Different
+  questions/dates and one sample each prohibit a controlled speedup claim;
+  these are lifecycle intervals, not isolated inference or UI-render timing.
+  Existing Von results do not establish MiniLM routing quality or close gates.
+
+## Routing and model-lifetime investigation — 2026-10-11
+
+- Member requested community investigation before improving rejection or
+  connecting Von to real chat. Parent reviewed primary public documentation
+  and Von issues #21/#22; an explorer checked the pinned SDK source. The
+  community reports confident out-of-domain misrouting and documents domain
+  calibration/training. Calibration changes acceptance, not the winning class.
+- Confirmed the pilot loads one model per eight-case run, then closes it;
+  routing selects operations, not weights. SDK caching is Python-side, while
+  Android session reuse must be owned by the app. Keeping Von resident avoids
+  repeated setup but requires an actual Gemma-coexistence memory gate.
+- Recorded confidence-scale differences, local rejection patterns, quantization
+  and memory options, and a recommended selected-function rejection → free-text
+  parity → debug shadow-chat → validated read integration sequence in
+  [research and next slice](decision-model-routing-research.md).
+- Documentation only; no new model training, benchmark, Android change or
+  phone operation occurred in this investigation. `git diff --check` passed.
+  No community benchmark substitutes for the existing Metria quality gate.
+
+## Selected-function Android Von pilot — 2026-10-11
+
+- Member requested moving directly to an in-app selected-function test and
+  explicitly approved in-place installation, public model copy and the eight
+  fictional cases. An explorer mapped today's meal-list host seam; a worker
+  implemented a debug-only activity and a reviewer checked lifecycle/resources.
+- The separate-process pilot tests today's recorded-meal-list routing versus
+  fallback using fixed pretokenized fictional inputs. It does not access the
+  member vault, answer chat or enable production fast routing. ONNX Runtime is
+  debug-only. No general Android tokenizer or dynamic calibration port is claimed.
+- Complete Android gate passed after compilation and lifecycle corrections:
+  440 tests, zero failures/errors, debug APK assembled. Review fixes prevent
+  queued-cancellation deadlock and overlapping sessions after recreation.
+  `git diff --check` passed. APK hash and fixture evidence are in the
+  [Android pilot checkpoint](decision-model-android-pilot.md).
+- On Samsung SM-S928B, Android 16, approved `adb install -r` returned `Success`.
+  No data clear, uninstall, signing-key change or existing model replacement
+  occurred. Member-record inventory was not inspected. Public model copy and
+  phone checksum matched; the temporary transfer file was removed.
+- The member tapped Run. The app's synthetic report confirms all eight cases
+  passed numerical parity, session load 2,961 ms, per-case inference 305–324 ms,
+  PSS 3,136,254 KB sampled with the session open, and end thermal status 0.
+  Four eligible routes were correct; three of four fallback cases were wrongly
+  accepted. This proves fixed-input Android runtime feasibility, not safe routing.
+- The inspectable test-cycle update also passed all 440 tests and assembled;
+  its APK hash and measurement limits are in the pilot checkpoint. The report
+  is saved only in the dedicated synthetic test directory. Member protections,
+  production routing and release dependencies remain unchanged.
+- Next bounded task: selected-function negative rejection and independent
+  evaluation before general tokenizer/calibration and host-answer integration.
+  Phone cancellation/repeat/Gemma-coexistence, privacy and broader M4 gates
+  remain open. Do not tune these eight cases and call them held-out evidence.
+
+## Von desktop inference and export — 2026-10-11
+
+- Continued the member-authorized test with custom worker/reviewer agents.
+  Downloaded eight public model files at pinned revision
+  `498ceba33390b32cfefaab6422ec380318ba9b99`, computed local SHA-256 checksums,
+  and used a clean pinned source checkout at
+  `9319ced779f8232ab1d8d3e9c69cdc52ddce77ec` in an ignored development-only
+  CPU environment. No production Android dependency or source was changed.
+- Ran two profiles on 120 fictional development prompts each. At provisional
+  winning-probability cutoff 0.8, cautious correctly accepted 3/60 eligible
+  routes with zero observed errors; concise correctly accepted 42/60 but also
+  accepted 17 incorrect routes (14 unsupported requests). Warm desktop medians
+  were 554 ms and 306 ms respectively. Neither configuration meets the combined
+  quality/coverage gate. No Gemma or production Kotlin-rules baseline ran.
+- Full encoder/scorer ONNX export passed desktop CPU parity on three cases,
+  with matching choices and maximum calibrated probability error `8.9407e-7`.
+  The unquantized graph is 1,582,047,027 bytes. Eight-option production routing,
+  Android runtime support, tokenizer/calibration port, memory and speed remain
+  unverified. See [results and provenance](decision-model-desktop-results.md).
+- All 22 benchmark/adapter/export unit tests passed using the isolated Python
+  with workspace-local temporary files. Independent read-only review found no
+  actionable issue. `git diff --check` passed for this checkpoint. Commands
+  and artifacts are described in the [runbook](../tools/decision_model/README.md).
+- No locked predictions ran; semantic independence review of the reserved
+  pool remains open. Library offline settings are not an instrumented privacy
+  pass. The phone was not accessed or installed; there is no device/Android
+  performance result or data-preservation result from this task. The Android
+  test/build gate was not rerun because this task changed no Android files.
+- Desktop decision: do not integrate these configurations. Next bounded task
+  is revised development routing with explicit negative rejection before
+  reserved-set review/freeze and Android tests. Broader M4 gates remain open.
+
+## English-only decision-model harness — 2026-10-11
+
+- Member requested starting the hackathon test using the custom agents. An
+  explorer inspected Von, a worker built the standalone harness, and a reviewer
+  checked benchmark validity. No production Android source or dependency was
+  changed for this task; the phone was not accessed or installed.
+- Added 120 fictional development and 120 reserved test prompts under
+  `tools/decision_model/`. Eligible routes cover recorded nutrition, day meal
+  lists and latest-meal estimates. Negatives include ordinary meal descriptions,
+  ambiguity, unsupported dates, mixed intents, medical questions and injection.
+- The scoring harness validates imported prediction IDs, full route arguments,
+  errors, finite confidence/timing and frozen artifact/fixture metadata. Reports
+  preserve fallback/error denominators, accepted errors, coverage, Wilson
+  intervals and timing sample counts. Missing model results remain pending.
+- Fifteen standard-library harness tests passed using the bundled Python with
+  its temporary directory set inside ignored `.local-state/`; default sandbox
+  AppData temporary-file writes failed before this workspace-local rerun.
+  The development-only exact-phrase reference was exercised, with no model
+  invocation or latency data. It is not a measurement of the production Kotlin
+  rules. Semantic template-family review is still required before freezing the
+  reserved pool; no locked predictions were evaluated.
+- Source inspection found Von's custom encoder/masks/scorer path and roughly
+  3.16 GB published checkpoint tree. Read-only public revision lookup selected
+  source `9319ced779f8232ab1d8d3e9c69cdc52ddce77ec`; actual artifact checksums,
+  full-model export and desktop/mobile parity remain unverified. See
+  [feasibility findings](decision-model-feasibility.md).
+- This task did not run the Android gate because no Android files changed.
+  No target-device results, data-preservation result, inference privacy pass,
+  latency improvement or M4 acceptance pass is claimed.
+- Next bounded task: isolated development environment and pinned artifact
+  checksums, actual development-set Von predictions, then complete-model desktop
+  export/parity. Production dependency approval and in-place phone installation
+  remain separate gates. See [experiment plan](decision-model-test-plan.md).
+
 ## Validated meal-list answer APK installed — 2026-10-02
 
 - After explicit member approval and the complete 272-test Android gate,

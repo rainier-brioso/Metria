@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Metria goal journey — fictional design preview</title>
+<style>:root{color-scheme:light dark}body{margin:0;padding:16px}</style>
+<div id="metria-goal-journey" aria-label="Metria goal journey preview">
+  <div class="mg-preview-tools" hidden>
+    <label>Preview view <select data-preview="view"></select></label>
+    <label>Example state <select data-preview="state"></select></label>
+    <label><input type="checkbox" data-preview="largeText"> Enlarged text</label>
+  </div>
+  <div class="viz-dotted-background mg-stage">
+    <article class="mg-app" aria-label="Metria fictional goal example">
+      <div class="mg-status"><span>9:41</span><span>Fictional preview</span></div>
+      <div id="mg-content"></div>
+    </article>
+  </div>
+</div>
+<style>
+#metria-goal-journey { --mg-canvas:light-dark(#f7f7f3,#19181c); --mg-surface:light-dark(#ffffff,#26242b); --mg-subtle:light-dark(#f0f1ec,#333137); --mg-ink:light-dark(#19181c,#f7f7f3); --mg-muted:light-dark(#66636b,#c4bfca); --mg-primary:light-dark(#66507a,#d6bee9); --mg-soft:light-dark(#eee8f2,#39303f); --mg-accent:light-dark(#a8d94f,#a8d94f); --mg-accent-ink:#19181c; --mg-line:light-dark(#e4e3df,#514c57); --mg-error:light-dark(#b3261e,#ffb4ab); color:var(--mg-ink); font-family:system-ui,sans-serif; }
+#metria-goal-journey * { box-sizing:border-box; }
+#metria-goal-journey .mg-stage { padding:24px 8px; }
+#metria-goal-journey .mg-app { width:min(100%,390px); margin:auto; background:var(--mg-canvas); border:1px solid var(--mg-line); border-radius:28px; padding:16px 20px 24px; font-size:16px; line-height:1.5; }
+#metria-goal-journey .mg-app.mg-large { font-size:20px; }
+#metria-goal-journey .mg-status { display:flex; justify-content:space-between; gap:12px; color:var(--mg-muted); font-size:.75em; margin-bottom:16px; }
+#metria-goal-journey h1 { font-size:1.65em; line-height:1.2; font-weight:500; margin:0; letter-spacing:-.03em; }
+#metria-goal-journey h2 { font-size:1.1em; font-weight:500; margin:0; }
+#metria-goal-journey p { margin:8px 0 0; }
+#metria-goal-journey button, #metria-goal-journey input, #metria-goal-journey select { font:inherit; }
+#metria-goal-journey button { min-height:48px; border:0; border-radius:12px; padding:12px 16px; background:transparent; color:var(--mg-primary); text-align:left; }
+#metria-goal-journey button:focus-visible, #metria-goal-journey input:focus-visible, #metria-goal-journey select:focus-visible { outline:3px solid var(--mg-primary); outline-offset:3px; }
+#metria-goal-journey button:disabled { opacity:.6; }
+#metria-goal-journey .mg-main { background:var(--mg-accent); color:var(--mg-accent-ink); width:100%; text-align:center; font-weight:500; }
+#metria-goal-journey .mg-secondary { background:var(--mg-subtle); width:100%; text-align:center; }
+#metria-goal-journey .mg-heading { display:flex; gap:12px; align-items:center; margin-bottom:24px; }
+#metria-goal-journey .mg-heading button { padding:8px; min-width:48px; }
+#metria-goal-journey .mg-stack { display:grid; gap:16px; }
+#metria-goal-journey .mg-card { background:var(--mg-surface); border-radius:20px; padding:16px; }
+#metria-goal-journey .mg-hero { background:var(--mg-soft); border-radius:28px; padding:20px; }
+#metria-goal-journey .mg-row { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
+#metria-goal-journey .mg-row > * { min-width:0; }
+#metria-goal-journey .mg-muted { color:var(--mg-muted); font-size:.875em; }
+#metria-goal-journey .mg-value { font-size:2.25em; font-weight:500; letter-spacing:-.04em; font-variant-numeric:tabular-nums; margin-top:8px; }
+#metria-goal-journey .mg-unit { font-size:.45em; letter-spacing:0; font-weight:400; }
+#metria-goal-journey .mg-line { border-top:1px solid var(--mg-line); margin-top:16px; padding-top:12px; }
+#metria-goal-journey .mg-footer { display:grid; gap:8px; margin-top:24px; }
+#metria-goal-journey .mg-entry { width:100%; display:flex; align-items:center; justify-content:space-between; gap:12px; border-bottom:1px solid var(--mg-line); border-radius:0; padding:16px 0; color:var(--mg-ink); }
+#metria-goal-journey .mg-entry span { min-width:0; overflow-wrap:anywhere; }
+#metria-goal-journey .mg-entry small { display:block; color:var(--mg-muted); font-size:.875em; }
+#metria-goal-journey .mg-choice { width:100%; border:1px solid var(--mg-line); border-radius:20px; padding:16px; display:flex; align-items:center; gap:12px; background:var(--mg-surface); color:var(--mg-ink); }
+#metria-goal-journey .mg-choice[aria-pressed=true] { background:var(--mg-soft); border-color:var(--mg-primary); }
+#metria-goal-journey .mg-choice .mg-selection { margin-left:auto; }
+#metria-goal-journey .mg-steps { color:var(--mg-primary); font-size:.875em; margin-bottom:16px; }
+#metria-goal-journey .mg-labels { display:flex; justify-content:space-between; gap:16px; margin-top:8px; font-size:.875em; }
+#metria-goal-journey .mg-labels > span { max-width:48%; }
+#metria-goal-journey .mg-labels > span:last-child { text-align:right; }
+#metria-goal-journey .mg-track { height:8px; background:var(--mg-subtle); border-radius:12px; position:relative; margin-top:16px; }
+#metria-goal-journey .mg-track-fill { position:absolute; left:8%; right:8%; height:8px; background:var(--mg-primary); border-radius:12px; }
+#metria-goal-journey .mg-marker { position:absolute; left:var(--mg-marker); top:-4px; width:16px; height:16px; background:var(--mg-ink); border:3px solid var(--mg-surface); border-radius:50%; transform:translateX(-50%); }
+#metria-goal-journey .mg-meter { height:8px; background:var(--mg-subtle); border-radius:12px; margin:12px 0; }
+#metria-goal-journey .mg-meter > span { display:block; height:100%; background:var(--mg-primary); border-radius:12px; }
+#metria-goal-journey .mg-field { display:grid; gap:8px; }
+#metria-goal-journey input:not([type=checkbox]), #metria-goal-journey select { min-height:48px; width:100%; padding:12px; border:1px solid var(--mg-line); border-radius:12px; background:var(--mg-surface); color:var(--mg-ink); min-width:0; }
+#metria-goal-journey .mg-error { color:var(--mg-error); }
+#metria-goal-journey .mg-confirm { text-align:center; padding:24px 0; }
+#metria-goal-journey .mg-symbol { background:var(--mg-soft); color:var(--mg-primary); width:64px; height:64px; border-radius:50%; display:grid; place-items:center; margin:0 auto 24px; font-size:1.65em; }
+#metria-goal-journey .mg-nav { display:flex; justify-content:space-between; gap:8px; border-top:1px solid var(--mg-line); margin-top:24px; padding-top:8px; }
+#metria-goal-journey .mg-nav button { padding:8px; font-size:.875em; }
+#metria-goal-journey .mg-nav [aria-current=page] { color:var(--mg-primary); background:var(--mg-soft); }
+#metria-goal-journey .mg-preview-tools { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
+#metria-goal-journey .mg-preview-tools label { max-width:100%; }
+#metria-goal-journey [hidden] { display:none!important; }
+@media(max-width:360px) { #metria-goal-journey .mg-app { padding:16px; } #metria-goal-journey .mg-row { align-items:flex-start; } }
+</style>
+<script>
+(() => {
+  const root=document.getElementById('metria-goal-journey');
+  const content=root.querySelector('#mg-content');
+  const options={view:'hub',state:'Recorded goal',largeText:false,energy:'Manual reference'};
+  const views={hub:'Goals · G10',today:'Today · G11',recap:'Previous phase · G02',direction:'Direction · G04',weight:'Weight context · G05',inputs:'Review inputs · G06',review:'Confirm phase · G03',saved:'Saved · G07',changed:'Phase changed · G01',references:'Daily references · G08',context:'Weight summary · G09'};
+  const states=['Recorded goal','Just track','No goal','No readings','Equal range','Unknown phase dates','Save error','Saving'];
+  const esc=v=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const titles={maintain:'Maintain weight',lose:'Lose weight',gain:'Gain weight',track:'Just track'};
+  let current={intent:'maintain',start:'72',target:'70',low:'69',high:'71',calories:'2200',protein:'100',carbs:'',fat:'',since:'1 Oct 2026'};
+  let history=[{intent:'track',start:'',target:'',low:'',high:'',calories:'',protein:'',carbs:'',fat:'',since:'1 Sep 2026'}];
+  let selectedPhase=null,firstPhase=false,editorValues={},draft=null,editing=false,editorReturn='weight',editorKind='weight',leaveReturn='hub',error='',busy=false,saveTimer=null;
+  const action=(label,name,css='',extra='')=>`<button type="button" class="cursor-interaction ${css}" data-action="${name}" ${extra}>${label}</button>`;
+  const go=(label,view,css='')=>action(label,'go:'+view,css);
+  const head=(title,back='hub')=>`<div class="mg-heading">${go('‹',back,'', 'aria-label="Back"')}<h1>${title}</h1></div>`;
+  const footer=(main,secondary='')=>`<div class="mg-footer">${main}${secondary}</div>`;
+  const row=(label,value,view)=>`<button type="button" class="mg-entry cursor-interaction" data-action="${view}"><span>${label}<small>${esc(value)}</small></span><span aria-hidden="true">›</span></button>`;
+  const referenceRow=(label,value,unit)=>`<div class="mg-row mg-line"><span>${label}</span><span>${value?esc(value)+' '+unit:'Not set'}</span></div>`;
+  function example(){
+    const g={...current};
+    if(options.state==='Just track')Object.assign(g,{intent:'track',target:'',low:'',high:''});
+    if(options.state==='Equal range')Object.assign(g,{target:'70',low:'70',high:'70'});
+    return g;
+  }
+  function weightVisual(g,reading=true){
+    if(g.intent==='track'||(!g.target&&!g.low)) return '<p class="mg-muted">No weight target</p>';
+    if(g.low&&g.high&&Number(g.low)===Number(g.high))return `<p>Chosen weight · ${esc(g.low)} kg</p>`;
+    const a=Number(g.low||g.start),b=Number(g.high||g.target);
+    if(!Number.isFinite(a)||!Number.isFinite(b)||!a||!b||a===b)return `<p>Chosen target · ${esc(g.target||g.low)} kg</p>`;
+    const lo=Math.min(a,b),hi=Math.max(a,b),val=70.8;
+    const pos=reading?8+84*Math.max(0,Math.min(1,(val-lo)/(hi-lo))):null;
+    const label=g.low?'Chosen range':'Starting reference and chosen target';
+    return `<div role="img" aria-label="${label}: ${lo} to ${hi} kilograms${reading?', latest reading 70.8 kilograms':''}"><div class="mg-track"><div class="mg-track-fill"></div>${reading?`<span class="mg-marker" style="--mg-marker:${pos}%"></span>`:''}</div><div class="mg-labels"><span>${lo} kg<br>${g.low?'Lower':a===lo?'Start':'Target'}</span><span>${hi} kg<br>${g.high?'Upper':a===hi?'Start':'Target'}</span></div></div>${g.low&&g.target?`<p class="mg-muted">Chosen target · ${esc(g.target)} kg</p>`:''}${reading&&(val<lo||val>hi)?`<p class="mg-muted">Latest reading is ${val<lo?'below':'above'} this interval.</p>`:''}`;
+  }
+  function hub(){
+    const g=example(),empty=options.state==='No goal',hasReading=options.state!=='No readings';
+    return `<div class="mg-heading">${go('‹','today')}<h1>Goals</h1></div><div class="mg-stack">${empty?`<section class="mg-hero"><h2>Your direction, your choice</h2><p class="mg-muted">You can keep tracking without a goal.</p></section>${action('Set up a goal','begin:first','mg-main')}`:`<section class="mg-hero"><div class="mg-row"><h2>${titles[g.intent]}</h2><span class="mg-muted">Current</span></div><p class="mg-muted">Since ${g.since}</p><div class="mg-value">${hasReading?'70.8':esc(g.start)} <span class="mg-unit">kg</span></div><p class="mg-muted">${hasReading?'Latest reading · 7 Oct':'Starting reference · no readings yet'}</p>${weightVisual(g,hasReading)}</section>${action('Edit weight goal','begin:edit','mg-main')}${action('Update weight','open:reading')}`}
+    <section class="mg-card"><div class="mg-row"><h2>Daily references</h2><span class="mg-muted">${options.energy==='Manual reference'?'Entered by you':'Estimate'}</span></div><p>${empty?'Not set':esc(g.calories)+' kcal'}</p>${row('Reference details',empty?'Optional':`${g.protein||'—'} g protein · other macros not set`,'go:references')}</section>
+    <section><div class="mg-row"><h2>Previous phases</h2>${!empty?action('New phase','begin:new'):''}</div>${empty||!history.length?'<p class="mg-muted">No previous phases yet.</p>':history.slice().reverse().map((p,i)=>row(titles[p.intent],`Started ${p.since}`,'phase:'+i)).join('')}</section>
+    <details><summary>Manage goal data</summary><p class="mg-muted">Inspect and delete phases in their details. Deleting goal data keeps meals and weights.</p></details></div>`;
+  }
+  function today(){const g=example();return `<h1>Today</h1><p class="mg-muted">Wednesday, 7 October</p><div class="mg-stack" style="margin-top:24px"><section class="mg-card"><div class="mg-row"><h2>${options.state==='No goal'?'Your weight':titles[g.intent]}</h2>${go('Details','hub')}</div><p>${options.state==='No readings'?'No readings yet':'70.8 kg · Latest'}</p>${options.state==='No goal'?'':weightVisual(g,options.state!=='No readings')}${action('Update weight','open:reading')}</section><section class="mg-card"><div class="mg-row"><h2>Nutrition</h2><span class="mg-muted">Partial estimate</span></div><div class="mg-value">640 <span class="mg-unit">kcal recorded</span></div><p class="mg-muted">1 of 2 meals has an estimate</p>${row('Daily references','2200 kcal · Entered by you','go:references')}</section><section class="mg-card"><h2>Lunch</h2><p>Rice and vegetables</p><p class="mg-muted">Saved meal · 640 kcal estimate</p></section></div><nav class="mg-nav" aria-label="Main navigation">${action('Today','go:today','','aria-current="page"')}${action('Progress','unused','','disabled')}${action('Privacy','unused','','disabled')}</nav>`;}
+  function recap(){const p=selectedPhase||history[history.length-1]||current;return `${head('Previous phase')}<div class="mg-stack"><section class="mg-hero"><h2>${titles[p.intent]}</h2><p class="mg-muted">Started ${p.since}</p><p>End date unavailable</p><p class="mg-muted">This phase does not have a recorded end date.</p></section><section class="mg-card"><h2>Saved references</h2>${referenceRow('Calories',p.calories,'kcal')}${referenceRow('Protein',p.protein,'g')}</section><section><h2>Recorded summary</h2><p class="mg-muted">A phase summary is unavailable until its dates are known.</p></section></div>${footer(action('Start a new phase','begin:new','mg-main'),go('Keep tracking','hub','mg-secondary'))}<details class="mg-line"><summary>Manage this phase</summary><p class="mg-muted">Phase deletion will require confirmation in the app.</p></details>`;}
+  function direction(){const g=draft||example();return `${head(editing?'Edit goal':'New phase', 'leave')}<div class="mg-steps">Direction · Step 1 of 4</div><h2>What would you like to focus on?</h2><div class="mg-stack" style="margin-top:16px">${Object.entries(titles).map(([v,t])=>action(`<span>${t}</span><span class="mg-selection">${g.intent===v?'✓ Selected':'○'}</span>`,'intent:'+v,'mg-choice',`aria-pressed="${g.intent===v}"`)).join('')}</div>${footer(go('Continue','weight','mg-main'))}`;}
+  function weight(){const g=draft||example();return `${head('Your weight context',editing?'leave':'direction')}<div class="mg-steps">Weight · Step 2 of 4</div><section class="mg-hero"><h2>${titles[g.intent]}</h2><p class="mg-muted">Targets are optional and chosen by you.</p></section>${editing||options.energy==='Accepted estimate'?`<p class="mg-line">Starting reference · ${g.start?esc(g.start)+' kg':'Not set'}</p>`:row('Starting reference',g.start?g.start+' kg':'Not set','open:weight')}${g.intent==='track'?'<p class="mg-muted">Just track keeps your readings without a target.</p>':`${row('Chosen target',g.target?g.target+' kg':'Not set','open:weight')}${row('Chosen range',g.low&&g.high?g.low+'–'+g.high+' kg':'Not set','open:weight')}`}${footer(go('Continue',editing?'review':'inputs','mg-main'))}`;}
+  function inputs(){const g=draft||example();return `${head('Does this still look right?','weight')}<div class="mg-steps">References · Step 3 of 4</div><section class="mg-card"><h2>Daily references</h2><p class="mg-muted">${options.energy==='Manual reference'?'Entered by you':'Previously accepted maintenance estimate'}</p>${row('Calories',g.calories?g.calories+' kcal':'Not set','open:references')}${row('Protein',g.protein?g.protein+' g':'Not set','open:references')}<details><summary>Other macros</summary>${referenceRow('Carbohydrate',g.carbs,'g')}${referenceRow('Fat',g.fat,'g')}</details></section>${options.energy==='Accepted estimate'?`<section class="mg-card mg-line"><h2>Calculation inputs</h2>${row('About you','Age 35 · 176 cm · reviewed weight 72 kg','open:profile')}${row('Equation and activity','Selected equation · whole-day activity','open:profile')}<p class="mg-muted">Changing inputs requires a reviewed recalculation before saving a new estimate.</p></section>`:''}${footer(go('Review phase','review','mg-main'))}`;}
+  function review(){const g=draft||example();return `${head(editing?'Review changes':'Start a new phase?',editing?'weight':'inputs')}<div class="mg-steps">Review · Step 4 of 4</div><div class="mg-stack"><section class="mg-hero"><h2>${titles[g.intent]}</h2><p>Starting reference · ${g.start?esc(g.start)+' kg':'Not set'}</p><p>Chosen target · ${g.target?esc(g.target)+' kg':'Not set'}</p><p>Calories · ${g.calories?esc(g.calories)+' kcal':'Not set'}</p><p class="mg-muted">${options.energy==='Manual reference'?'Entered by you':'Reviewed estimate'}</p></section><section><h2>${editing?'Your current phase stays active':firstPhase?'Your first phase is ready to save':'Your current phase moves to history'}</h2><p class="mg-muted">${editing?'Its identity and starting date stay the same.':firstPhase?'Nothing changes until you save. Tracking stays available without a goal.':'Nothing changes until you save. Meals and weight records stay where they are.'}</p>${!firstPhase&&history.length>=12?'<p class="mg-muted">Your oldest previous phase will be removed from the 12-phase history.</p>':''}</section>${error?`<p class="mg-error" role="alert">${esc(error)}</p>`:''}</div>${footer(action(busy?'Saving…':editing?'Save changes':options.state==='Save error'?'Retry save':firstPhase?'Save goal':'Start new phase','save','mg-main',busy?'disabled aria-busy="true"':''),action('Cancel','cancel','mg-secondary'))}`;}
+  function saved(){return `<div class="mg-confirm"><div class="mg-symbol" aria-hidden="true">✓</div><h1>Saved</h1><p class="mg-muted">Your goal and references are ready.</p></div>${footer(go('Continue',editing?'references':'changed','mg-main'))}`;}
+  function changed(){return `<div class="mg-confirm"><div class="mg-symbol" aria-hidden="true">✓</div><h1>A new phase is ready</h1><p class="mg-muted">Your previous phase is available in Goals.</p></div><section class="mg-card"><h2>${titles[current.intent]}</h2><p>Started 7 Oct 2026</p></section>${footer(go('See daily references','references','mg-main'),go('Return to Goals','hub','mg-secondary'))}`;}
+  function references(){const g=current,estimated=options.energy==='Accepted estimate';return `${head('Daily references',options.view==='references'?'hub':'saved')}<div class="mg-steps">Summary · 1 of 2</div><section class="mg-hero"><p class="mg-muted">${estimated?'Accepted maintenance estimate':'Entered by you'}</p><div class="mg-value">${estimated?'2300':g.calories?esc(g.calories):'Not set'} ${g.calories?'<span class="mg-unit">kcal / day</span>':''}</div>${estimated?'<div role="img" aria-label="Illustrative accepted estimate 2300 kcal within activity scenario 2200 to 2500 kcal"><div class="mg-track"><div class="mg-track-fill"></div><span class="mg-marker" style="--mg-marker:36%"></span></div><div class="mg-labels"><span>2200 kcal</span><span>2500 kcal</span></div></div><p class="mg-muted">Approximate activity scenarios · example only</p>':''}</section><section>${referenceRow('Protein',g.protein,'g')}${referenceRow('Carbohydrate',g.carbs,'g')}${referenceRow('Fat',g.fat,'g')}</section><details class="mg-line"><summary>Source and method</summary><p class="mg-muted">${estimated?'This fictional example illustrates an already accepted estimate. It does not calculate a recommendation.':'These are member-entered references. No range or additional macros are inferred.'}</p></details>${footer(go('See weight context','context','mg-main'),action('Edit references','open:references','mg-secondary'))}`;}
+  function context(){const g=example();return `${head('Your weight context','references')}<div class="mg-steps">Summary · 2 of 2</div><section class="mg-hero"><h2>${titles[g.intent]}</h2><div class="mg-value">${g.start||'Not set'} ${g.start?'<span class="mg-unit">kg</span>':''}</div><p class="mg-muted">Starting reference</p>${weightVisual(g,false)}</section><p class="mg-muted">New readings help you see your own change over time.</p>${footer(go('Return to Goals','hub','mg-main'))}`;}
+  function editor(){const g=draft||current;const keys=editorKind==='reading'?['reading']:editorKind==='weight'?[...(!editing&&options.energy==='Manual reference'?['start']:[]),...(g.intent==='track'?[]:['target','low','high'])]:['calories','protein','carbs','fat'];const labels={start:'Starting reference (kg)',target:'Chosen target (kg)',low:'Range lower bound (kg)',high:'Range upper bound (kg)',calories:'Calories (kcal / day)',protein:'Protein (g / day)',carbs:'Carbohydrate (g / day)',fat:'Fat (g / day)',reading:'Weight (kg)'};
+    return `${head(editorKind==='reading'?'Update weight':editorKind==='weight'?'Weight context':'Daily references',editorReturn)}<div class="mg-stack">${keys.map(k=>`<label class="mg-field">${labels[k]}<input inputmode="decimal" type="text" data-field="${k}" value="${esc(editorValues[k]??(editorValues[k]??(k==='reading'?'':g[k]||'')))}" autocomplete="off"></label>`).join('')}${error?`<p class="mg-error" role="alert">${esc(error)}</p>`:''}</div>${footer(action(editorKind==='reading'?'Save weight':'Keep changes','editor-save','mg-main'),go('Cancel',editorReturn,'mg-secondary'))}`;}
+  function profile(){return `${head('Review calculation inputs','inputs')}<section class="mg-card"><h2>Previously reviewed example</h2><p>Age 35 · Height 176 cm</p><p>Reviewed weight 72 kg</p><p>Selected equation and whole-day activity</p></section><p class="mg-muted">The app’s existing suitability and calculation steps are required before changing an accepted estimate.</p>${footer(go('Keep these inputs','inputs','mg-main'),action('Use manual references','manual','mg-secondary'))}`;}
+  function leave(){return `${head('Leave setup?',leaveReturn)}<section class="mg-hero"><h2>Your changes are still here</h2><p class="mg-muted">Leaving discards this unsaved draft. Your saved phase stays unchanged.</p></section>${footer(action('Keep editing','keep','mg-main'),action('Leave without saving','cancel','mg-secondary'))}`;}
+  function render(){root.querySelector('.mg-app').classList.toggle('mg-large',options.largeText);const screens={hub,today,recap,direction,weight,inputs,review,saved,changed,references,context,editor,profile,leave};content.innerHTML=(screens[options.view]||hub)();content.setAttribute('aria-busy',String(busy));root.querySelectorAll('button').forEach(b=>{if(b.textContent==='‹')b.setAttribute('aria-label','Back');});if(globalThis.lucide)lucide.createIcons({attrs:{width:16,height:16}});}
+  function begin(mode){editing=mode==='edit';firstPhase=mode==='first';draft={...example()};if(mode==='first')draft={intent:'track',start:'',target:'',low:'',high:'',calories:'',protein:'',carbs:'',fat:'',since:'7 Oct 2026'};error='';options.view=editing?'weight':'direction';render();}
+  function navigate(view){if(busy)return;if(view==='leave'){leaveReturn=options.view;options.view='leave';}else options.view=view;error='';render();}
+  root.addEventListener('click',e=>{const b=e.target.closest('[data-action]');if(!b||!root.contains(b)||busy)return;const [type,value]=b.dataset.action.split(':');
+    if(type==='go')navigate(value);
+    if(type==='begin')begin(value);
+    if(type==='phase'){selectedPhase=history.slice().reverse()[Number(value)];navigate('recap');}
+    if(type==='intent'){if(!draft)draft={...example()};draft.intent=value;if(value==='track')Object.assign(draft,{target:'',low:'',high:''});render();}
+    if(type==='open'){editorReturn=options.view;editorKind=value;editorValues={};error='';options.view=value==='profile'?'profile':'editor';render();}
+    if(type==='manual'){options.energy='Manual reference';navigate('inputs');}
+    if(type==='keep')navigate(leaveReturn);
+    if(type==='cancel'){draft=null;error='';navigate('hub');}
+    if(type==='editor-save'){
+      const values=Object.fromEntries([...content.querySelectorAll('[data-field]')].map(el=>[el.dataset.field,el.value.trim()]));
+      editorValues=values;
+      editorValues=values;
+      editorValues=values;
+      if(Object.values(values).some(v=>v!==''&&(!/^\d+(\.\d+)?$/.test(v)||!Number.isFinite(Number(v))||Number(v)<0))){error='Enter a valid number, or leave an optional value blank.';render();return;}
+      if(editorKind==='weight'&&((!!values.low!==!!values.high)||(values.low&&Number(values.low)>Number(values.high))||(values.target&&values.low&&(Number(values.target)<Number(values.low)||Number(values.target)>Number(values.high))))){error='Enter both range bounds in order, with your target inside the range.';render();return;}
+      if(editorKind==='reading'&&!values.reading){error='Enter a weight before saving.';render();return;}
+      if(editorKind!=='reading'){Object.assign(draft||current,values);if(editorKind==='references')options.energy='Manual reference';}navigate(editorReturn);
+    }
+    if(type==='save'){
+      if(!draft)draft={...example()};if(options.state==='Save error'&&!error){error='Could not save. Your current phase is unchanged. Try again.';render();return;}
+      busy=true;error='';render();saveTimer=setTimeout(()=>{if(!editing&&!firstPhase){history.push({...current});history=history.slice(-12);}current={...draft,since:editing?current.since:'7 Oct 2026'};draft=null;busy=false;options.state='Recorded goal';options.view='saved';render();},500);
+    }
+  });
+  function applyPreview(){editing=false;firstPhase=options.state==='No goal';editorValues={};if(saveTimer)clearTimeout(saveTimer);busy=false;draft=null;error='';if(['direction','weight','inputs','review'].includes(options.view))draft={...example()};if(options.state==='Save error'&&options.view==='review')error='Could not save. Your current phase is unchanged. Try again.';if(options.energy==='Accepted estimate')current.calories='2300';else current.calories='2200';if(options.state==='Saving'&&options.view==='review')busy=true;render();}
+  render();
+  if(globalThis.Tweak){const tweak=new Tweak({container:root,onChange:applyPreview});tweak.addSelect(options,'view',{label:'Goal view',options:Object.entries(views).map(([value,label])=>({value,label}))});tweak.addSelect(options,'state',{label:'Example state',options:states});tweak.addSelect(options,'energy',{label:'Reference source',options:['Manual reference','Accepted estimate']});tweak.addToggle(options,'largeText',{label:'Enlarged text'});}
+  else {const tools=root.querySelector('.mg-preview-tools');tools.hidden=false;tools.querySelector('[data-preview=view]').innerHTML=Object.entries(views).map(([v,l])=>`<option value="${v}">${l}</option>`).join('');tools.querySelector('[data-preview=state]').innerHTML=states.map(s=>`<option>${s}</option>`).join('');tools.addEventListener('change',e=>{const k=e.target.dataset.preview;if(k)options[k]=e.target.type==='checkbox'?e.target.checked:e.target.value;applyPreview();});}
+})();
+</script>
+
+</html>

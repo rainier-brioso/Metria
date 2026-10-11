@@ -44,6 +44,7 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
     debugImplementation("androidx.compose.ui:ui-tooling")
+    debugImplementation("com.microsoft.onnxruntime:onnxruntime-android:1.22.0")
 
     // LiteRT-LM 0.13.0 publishes Kotlin 2.3 metadata. This native project owns
     // the matching compiler rather than bypassing compiler compatibility checks.

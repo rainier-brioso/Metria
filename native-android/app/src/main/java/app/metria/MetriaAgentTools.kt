@@ -11,6 +11,9 @@ import com.google.ai.edge.litertlm.ToolCall
  * vault access. MemberShell validates and executes the selected operation against a snapshot.
  */
 class MetriaReadToolSet : ToolSet {
+    @Tool(description = "Read the exact saved meal currently selected by the member. Use only for questions in a meal-specific conversation. This reads one locally selected record and never searches by name or date.")
+    fun read_selected_meal(): Map<String, Any> = hostExecutionOnly("read_selected_meal", "")
+
     @Tool(description = "Read the most recent recorded meal and its saved calorie/protein estimates within the last 90 days. Use for my last meal or mi ultima comida. Returns one meal, missing/partial estimates, or an empty/ambiguous result; never a day total.")
     fun read_latest_meal(): Map<String, Any> = hostExecutionOnly("read_latest_meal", "")
 
@@ -66,7 +69,7 @@ object MetriaNativeToolCallAdapter {
     internal fun adapt(toolName: String, arguments: Map<String, *>): PrivateCoachToolCall? {
         val name = toolName.trim().lowercase()
         return when (name) {
-            "draft_meal", "read_latest_meal" -> if (arguments.isEmpty()) PrivateCoachToolCall(intent = name) else null
+            "draft_meal", "read_latest_meal", "read_selected_meal" -> if (arguments.isEmpty()) PrivateCoachToolCall(intent = name) else null
             "read_progress_overview" -> {
                 val period = arguments.string("period")?.takeIf { it in setOf("today", "week") }
                     ?: return null
@@ -964,10 +967,15 @@ data class RequiredAgentTool(
     val fromDaysAgo: Int? = null,
     val toDaysAgo: Int? = null,
     val targetDate: java.time.LocalDate? = null,
+    /** Ephemeral host scope only; this value is never included in a model prompt or tool argument. */
+    val selectedMealId: String? = null,
+    val selectedMealQuestion: String? = null,
 ) {
     val retryInstruction: String = when (name) {
         "read_latest_meal" ->
             "Grounding correction: call read_latest_meal with no arguments now. This asks about the most recent recorded meal, not a day total. Do not answer before its fresh local result."
+        "read_selected_meal" ->
+            "Grounding correction: call read_selected_meal with no arguments now. The host will read only the exact meal selected by the member. Do not answer before its fresh local result."
         "read_progress_overview" ->
             "Grounding correction: this question asks about the member's personal progress. " +
                 "Call $name with period=$period now. Do not answer with prose or a capability list before the tool result."
@@ -991,7 +999,8 @@ data class RequiredAgentTool(
         (period == null || period == call.period) &&
         (daysAgo == null || (call.daysAgo == daysAgo && call.mealSlot == null)) &&
         (fromDaysAgo == null || call.fromDaysAgo == fromDaysAgo) &&
-        (toDaysAgo == null || call.toDaysAgo == toDaysAgo)
+        (toDaysAgo == null || call.toDaysAgo == toDaysAgo) &&
+        (name != "read_selected_meal" || (call.intent == "read_selected_meal" && call.daysAgo == null && call.query == null))
 }
 
 /**
@@ -1118,7 +1127,11 @@ object MetriaAgentGroundingPolicy {
         memberText: String,
         history: List<PrivateConversationMessage> = emptyList(),
         today: java.time.LocalDate = java.time.LocalDate.now(),
+        selectedMealId: String? = null,
     ): RequiredAgentTool? {
+        selectedMealId?.takeIf { it.isNotBlank() && selectedMealQuestionIsInScope(memberText) }?.let {
+            return RequiredAgentTool("read_selected_meal", selectedMealId = it, selectedMealQuestion = memberText.take(600))
+        }
         savedDishQuestion.matchEntire(memberText)?.groupValues?.getOrNull(1)
             ?.trim()
             ?.takeIf { it.length in 2..120 }
@@ -1202,6 +1215,13 @@ object MetriaAgentGroundingPolicy {
         if (broadProgressPhrases.none { it in normalized }) return null
         val period = if ("today" in normalized || "hoy" in normalized) "today" else "week"
         return RequiredAgentTool("read_progress_overview", period)
+    }
+
+    private fun selectedMealQuestionIsInScope(question: String): Boolean {
+        val normalized = java.text.Normalizer.normalize(question.lowercase(), java.text.Normalizer.Form.NFD)
+            .replace(Regex("\\p{M}+"), "")
+        if (Regex("\\b(?:latest|last|most recent|ultima|mas reciente|yesterday|ayer|today|hoy|days? ago|hace|weight|peso|progress|progreso|goal|objetivo|week|semana)\\b").containsMatchIn(normalized)) return false
+        return SelectedSavedMealReply.supportsQuestion(question)
     }
 
     /** Deterministic no-read boundary for historical requests outside supported contracts. */

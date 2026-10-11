@@ -13,6 +13,8 @@ ios/
 native-android/.kotlin/
 /data/usda/raw/
 /data/usda/generated/
+/native-android/app/src/debug/assets/decision-model/minilm/model_qint8_arm64.onnx
 __pycache__/
 .local-state/
+.codex-remote-attachments/
 !broker/.env.example

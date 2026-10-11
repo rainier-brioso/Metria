@@ -1,0 +1,9 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity
+            android:name="app.metria.debug.VonPilotActivity"
+            android:exported="true"
+            android:process=":von_pilot"
+            android:screenOrientation="unspecified" />
+    </application>
+</manifest>

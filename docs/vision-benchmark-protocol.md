@@ -71,6 +71,13 @@ has a reasonable reference; otherwise mark it uncertain.
 
 Use the exact current ADB device from `adb devices -l`; never persist its
 identity. The technical audit supplies per-run duration/outcome. For the warm
+sequence, new runs additionally retain optional first-output, stage timing and
+start/end Android thermal severity in the encrypted audit (2026-10-11 extension).
+First-output is the first nonblank text callback; model-request includes
+vision/prefill/generation. Preparation is measured separately before analysis,
+so do not add it to or equate the stage sum with the existing total. Thermal
+severity is not degrees or peak heat. Legacy/unavailable fields remain unknown.
+The extension covers meal-photo analysis only. For the warm
 sequence, record battery level and Android thermal status before and after,
 plus app memory and frame/jank data when useful, following `docs/TESTING.md`.
 Note the runtime/model/delegates and whether a run was first-after-launch or

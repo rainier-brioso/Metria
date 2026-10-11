@@ -1,6 +1,6 @@
 package app.metria
 
-/** Optional member-entered daily targets; Metria never infers or recommends them. */
+/** Optional member-confirmed daily references. Derived energy requires encrypted GoalSetup provenance. */
 data class NutritionTargets(
     val caloriesKcal: Double? = null,
     val proteinGrams: Double? = null,

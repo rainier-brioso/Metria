@@ -39,6 +39,18 @@ class FoodCatalogTest {
         assertTrue(FoodCatalog.search(catalog, "p").isEmpty())
     }
 
+    @Test fun `Spanish tomato sauce finds sauce without matching plain tomatoes or inventing pasta`() {
+        val sauces = catalog.copy(foods = listOf(
+            catalog.foods.first().copy(fdcId = 10, description = "Tomato, sauce, canned, with salt added"),
+            catalog.foods.first().copy(fdcId = 11, description = "Tomatoes, raw"),
+            catalog.foods.first().copy(fdcId = 12, description = "Squash, spaghetti, raw"),
+        ))
+        assertEquals(10L, FoodCatalog.suggest(sauces, "Salsa de tomate")?.fdcId)
+        assertEquals(listOf(10L), FoodCatalog.search(sauces, "salsa de tomate").map { it.fdcId })
+        assertTrue(FoodCatalog.candidatesForAssistantItem(sauces, "Espagueti").isEmpty())
+        assertTrue(FoodCatalog.candidatesForAssistantItem(sauces, "Albóndigas de carne").isEmpty())
+    }
+
     @Test fun `local assistant candidates ignore preparation but not food identity`() {
         assertEquals("Chicken breast, roasted", FoodCatalog.suggest(catalog, "baked chicken breast")?.description)
         assertEquals("Chicken breast, roasted", FoodCatalog.suggest(catalog, "fried chicken pieces")?.description)

@@ -399,6 +399,8 @@ private fun nutritionLine(nutrition: CatalogNutrition): String = listOfNotNull(
 fun MetriaMealReviewSheet(
     proposal: MealProposal,
     manualEntry: Boolean = false,
+    initialMealSlot: String? = null,
+    initialRecordedDate: LocalDate? = null,
     catalog: OfflineFoodCatalog?,
     corrections: List<FoodCorrection>,
     referenceThumbnailBase64: String?,
@@ -438,8 +440,8 @@ fun MetriaMealReviewSheet(
         LocalTime.now().withSecond(0).withNano(0).toString()
     }
     val captureTime = remember(captureTimeText) { LocalTime.parse(captureTimeText) }
-    val initialDate = rememberSaveable(proposal.items.hashCode()) { LocalDate.now().toString() }
-    var date by rememberSaveable(proposal.items.hashCode()) { mutableStateOf(initialDate) }
+    val initialDate = rememberSaveable(proposal.items.hashCode(), initialRecordedDate) { (initialRecordedDate ?: LocalDate.now()).toString() }
+    var date by rememberSaveable(proposal.items.hashCode(), initialRecordedDate) { mutableStateOf(initialDate) }
     val initialTitle = rememberSaveable(proposal.items.hashCode()) {
         MealIdentity.titleFor(proposalItems.map { MealEntryItem(it.name, null, null) })
     }
@@ -454,14 +456,14 @@ fun MetriaMealReviewSheet(
     var acceptedDishIds by rememberSaveable(proposal.items.hashCode(), stateSaver = StringMapSaver) {
         mutableStateOf(emptyMap())
     }
-    var mealSlot by rememberSaveable(proposal.items.hashCode()) { mutableStateOf<String?>(null) }
+    var mealSlot by rememberSaveable(proposal.items.hashCode()) { mutableStateOf(initialMealSlot?.takeIf { it in MealSlots.allowed }) }
     var keepReference by rememberSaveable(proposal.items.hashCode()) { mutableStateOf(referenceThumbnailBase64 != null) }
     var detailsExpanded by rememberSaveable(proposal.items.hashCode()) { mutableStateOf(false) }
     var editingDishId by rememberSaveable(proposal.items.hashCode()) { mutableStateOf<String?>(null) }
     var error by rememberSaveable(proposal.items.hashCode()) { mutableStateOf<String?>(null) }
     var showLeaveConfirmation by rememberSaveable(proposal.items.hashCode()) { mutableStateOf(false) }
 
-    val initialExitState by rememberSaveable(proposal.items.hashCode(), stateSaver = MealReviewDraftStateSaver) {
+    val initialExitState by rememberSaveable(proposal.items.hashCode(), initialRecordedDate, stateSaver = MealReviewDraftStateSaver) {
         mutableStateOf(
             reviewExitState(
                 items = initialItems,
@@ -469,7 +471,7 @@ fun MetriaMealReviewSheet(
                 includedPossibleIds = emptySet(),
                 title = initialTitle,
                 date = initialDate,
-                mealSlot = null,
+                mealSlot = initialMealSlot?.takeIf { it in MealSlots.allowed },
                 keepReference = referenceThumbnailBase64 != null,
                 dishMemoryChoices = emptyMap(),
                 acceptedDishIds = emptyMap(),
@@ -671,6 +673,18 @@ fun MetriaMealReviewSheet(
                 onKeepReferenceChange = { keepReference = it },
                 similarMeal = similarMeal,
                 totals = totals,
+                onScalePortions = { factor ->
+                    val scaled = app.metria.MealPortionScale.apply(items.map { it.grams }, factor)
+                    if (scaled == null) false else {
+                        items = items.mapIndexed { index, item -> item.copy(grams = scaled[index]) }
+                        includedPossibleIds = emptySet()
+                        error = null
+                        true
+                    }
+                },
+                nutrientDetails = app.metria.CatalogNutrientDetails.calculate(items.filter {
+                    it.evidence == "seen" || it.id in includedPossibleIds
+                }.map { catalogMatches[it.id] to parsedGrams[it.id] }),
                 isPartialEstimate = isPartialEstimate,
                 includedIds = includedIds,
                 needsReviewIds = needsReviewIds,
@@ -814,7 +828,9 @@ private fun MealReview(
     onKeepReferenceChange: (Boolean) -> Unit,
     similarMeal: MealEntry?,
     totals: CatalogNutrition?,
+    onScalePortions: (Double) -> Boolean,
     isPartialEstimate: Boolean,
+    nutrientDetails: List<app.metria.CatalogNutrientAmount>,
     includedIds: Set<String>,
     needsReviewIds: Set<String>,
     catalog: OfflineFoodCatalog?,
@@ -939,6 +955,8 @@ private fun MealReview(
                     excludedItems = items.filter { it.id in needsReviewIds }.map { it.name.ifBlank { "Unnamed food" } },
                     catalog = catalog,
                 )
+                app.metria.ui.components.CatalogNutrientDetailsCard(nutrientDetails, catalog?.sourceRelease)
+                app.metria.ui.components.MealPortionControl(onScalePortions)
             }
             item {
                 Card(colors = CardDefaults.cardColors(containerColor = MetriaColors.Surface)) {
@@ -1190,7 +1208,7 @@ private fun NutritionReviewCard(
             if (totals == null) {
                 Text("Review at least one food and its portion to calculate what Metria can.", color = MetriaColors.InkMuted)
             } else {
-                Text(nutritionLine(totals), style = MaterialTheme.typography.titleMedium)
+                app.metria.ui.components.MealNutritionMetrics(totals.caloriesKcal, totals.proteinGrams, totals.carbohydrateGrams, totals.fatGrams)
                 if (isPartial) {
                     Text(
                         "Calculated from ${includedItems.joinToString().ifBlank { "reviewed foods" }}. Not yet included: ${excludedItems.joinToString().ifBlank { "other foods" }}.",
