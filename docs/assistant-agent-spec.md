@@ -5,12 +5,25 @@
 ## Purpose and boundary
 
 The member approved a debug-only MiniLM fast path for explicit English requests
-to list today's recorded meals (2026-10-11). The host read policy independently
-constrains the selection; fresh bounded records and `MetriaMealRecordReply`
+to list today's recorded meals, extended to yesterday's explicit meal questions
+and saved calorie/protein questions about the latest recorded meal
+(2026-10-11/12). The next 2026-10-12 slice supports one requested recorded
+calorie/protein total for today through the existing exact-day result, with
+strict date/metric/count/coverage checks and no goal comparison. The host read policy independently
+constrains the selection; fresh bounded records and `MetriaMealRecordReply` or
+`LatestMealNutritionReply`
 retain the existing validation and encrypted timeline. Accepted turns omit
 native Gemma generation. Unsupported/uncertain requests and router errors keep
-the native protocol below. Release behavior and Gemma preparation are unchanged.
+the native protocol below. Release keeps Gemma inference and its preparation flow.
 See `minilm-chat-integration.md` for implementation and pending phone acceptance.
+
+The 2026-10-12 natural-phrasing slice adds bounded English paraphrases and short
+calorie/protein follow-ups. Fast follow-ups require an ephemeral last validated
+today-nutrition/latest-meal read, its unchanged local reference date and current
+unlocked session. They inherit only the operation scope, perform a fresh read
+and never reuse previous answer values as evidence. Stop, lock, restart,
+new/unrelated operations and date changes revoke fast scope. Unsupported or
+unresolved follow-ups keep the normal assistant protocol below.
 
 Metria uses LiteRT-LM's native `Conversation` and tool-call protocol to provide a
 continuous, private assistant. The model receives no vault object, database handle,

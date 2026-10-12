@@ -116,15 +116,33 @@ material.
 ## Bounded local assistant agent
 
 Member-selected debug optimization (2026-10-11): MiniLM may select only an
-explicit English request for today's meal list, additionally constrained by
+explicit English request for today's or yesterday's meal list, or saved calorie/
+protein estimates for the latest recorded meal. The 2026-10-12 extension also
+supports one requested recorded calorie/protein total for today, additionally constrained by
 the host's independent read policy. The existing dispatcher reads fresh local
 records and the existing validated deterministic meal reply answers the turn
 without Gemma generation. Unknown/unsupported requests and router failure keep
 the existing assistant path. Inputs and embeddings remain transient on-device;
 no router reports, raw logs, new vault schema or writes are added. Debug-only
 model provisioning and pending acceptance are tracked in
-`minilm-chat-integration.md`. Release routing and the initial Gemma-readiness
-requirement remain unchanged; this does not prove reduced resident memory.
+`minilm-chat-integration.md`. Release keeps Gemma inference and the initial
+Gemma-readiness requirement; this does not prove reduced resident memory.
+
+Approved natural phrasing/follow-up slice (2026-10-12): broader bounded English
+paraphrases retain independent host validation. A terse calorie/protein follow-up
+may use only an ephemeral scope earned by the last validated MiniLM today-
+nutrition or latest-meal read in the current unlocked session. The scope carries
+operation/date, never record values. Every follow-up reads fresh records and
+passes the existing validators. Stop, lock, restart, new/unrelated operations and
+date rollover invalidate it; missing scope follows the normal assistant path.
+No new vault or conversation representation is introduced.
+
+Member-approved routing monitoring (2026-10-12) extends the existing opt-in,
+bounded content-free assistant trace with fixed route choices/rejection outcomes
+and finite cosine scores. This allows authorized local inspection after lock has
+cleared transient Developer diagnostics. It stores no questions, replies,
+embeddings, record values or exception messages, and retains the existing
+24-hour/100-event/64-KB limit, deletion, archive exclusion and release no-op.
 
 Member-approved photo navigation (2026-10-11): an explicitly accepted meal-image
 analysis receives a transient UUID at start, reused as its eventual local audit

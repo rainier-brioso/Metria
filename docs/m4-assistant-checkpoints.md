@@ -2381,3 +2381,153 @@ target-phone interaction recheck pending.
   to begin Nebius work that can be developed and tested without the phone.
   Next bounded task: optional-cloud request/consent contracts and synthetic
   desktop tests. No real-data transfer or deployment is enabled by this step.
+
+### MiniLM yesterday lookup installed — 2026-10-11
+
+- Following checkpoint `2efa900`, extended the existing debug-only MiniLM meal
+  lookup to explicit English yesterday questions. The host freezes the reference
+  day, applies offset 0/1 once and validates source, exact date, bounded coverage
+  and the deterministic reply before publication. Nutrition, advice, writes,
+  mixed questions and other dates keep the ordinary assistant path.
+- Custom explorer, worker and reviewer handled scope, implementation and
+  independent review. No material review finding remains. Complete Android
+  gate passed: 454 tests, zero failures/errors/skips, debug APK assembly and
+  release Kotlin compilation. `git diff --check` passed.
+- Existing authorized in-place Chat cycle: `adb install -r` returned `Success`
+  on Samsung SM-S928B / Android 16; launch returned `Status: ok`. No data clear,
+  uninstall, signing change, vault/model deletion or biometric automation.
+  The member compared yesterday's reply with retained records and confirmed
+  “Reply matches; MiniLM yesterday route shown.” This is the named yesterday
+  physical pass; no inference benchmark or broader gate completion is claimed.
+- The member also confirmed today's meal lookup remained correct with MiniLM,
+  and the two-days-ago lookup was correct through the normal route. Empty,
+  cancellation/relock and missing/corrupt-model checks remain open.
+- Details, APK hash and next bounded checks are in
+  [MiniLM integration](minilm-chat-integration.md#yesterday-lookup-expansion--2026-10-11).
+
+### MiniLM latest-meal estimates installed — 2026-10-12
+
+- Extended the debug fast route to explicit English calorie/protein questions
+  about the latest recorded meal, including polite paraphrases. Separate MiniLM
+  intent prototypes compete with each other and fallback examples; the host
+  independently checks scope. The existing deterministic latest-meal reply keeps
+  saved estimates, full/partial/missing coverage, ambiguous-time handling and
+  factual audit. No new nutrition calculation, write, payload or dependency.
+- Shared pure response validation freezes the reference date for latest reads
+  and correctly validates target date plus offset for today/yesterday lists.
+  The lifecycle uses that same validator covered by the tests. Independent
+  review found no remaining material issue.
+- Complete Android gate passed: 457 tests, zero failures/errors/skips, debug
+  assembly and release Kotlin compilation; `git diff --check` passed. A concurrent
+  focused Gradle run was stopped after an incremental-cache error; compiler
+  fallback completed the full gate. Details and APK hash are in
+  [MiniLM integration](minilm-chat-integration.md#latest-meal-estimate-expansion--2026-10-12).
+- Within the already approved in-place Chat cycle, install returned `Success`
+  on Samsung SM-S928B / Android 16 and launch returned `Status: ok`. No data
+  clear, uninstall, signing change, vault/model deletion or biometric automation.
+  The member reported “Matches saved meal; no MiniLM latest route.” Saved-record
+  correctness is confirmed, but the fast-route gate failed. Existing content-free
+  event metadata confirms native tool selection and continuation; the router's
+  reason for declining remains unknown. Next bounded work: ephemeral debug
+  decision outcome, then retry the same in-app phrase without loosening thresholds.
+  No new benchmark or broader milestone acceptance is claimed.
+
+### Latest-meal fallback diagnostics installed — 2026-10-12
+
+- The existing content-free event trace confirmed the reported latest-meal
+  answer used Gemma's native tool path. The exact requested polite phrase passes
+  host-policy tests; the prior boolean router concealed the reason for declining.
+- Added ephemeral debug-only typed outcomes and finite similarity scores, kept
+  separate from Gemma's timing string. No raw question, answer, record, embedding,
+  exception text or new persisted trace is added. Similarity/margin cutoffs remain
+  unchanged. Reset boundaries cover new turns, cancellation, lock, explicit
+  conversation clear, unload and idle style changes.
+- Full gate passed: 460 tests, zero failures/errors/skips; debug assembly and
+  release compilation. Review's stale diagnostic reset findings were fixed;
+  parent checked the correction and `git diff --check` passed.
+- Retry build installed in place under existing approval; `install -r` returned
+  `Success` on Samsung SM-S928B / Android 16. The member was asked to report only
+  the MiniLM route outcome for the same question. ADB lost its connection during
+  launch, so the member opened Metria manually.
+- On retry, the member reported an instant answer similar to the previous one
+  and confirmed `Assistant route: MiniLM latest-meal read; Gemma generation skipped.`
+  This is a targeted latest-meal fast-route pass on the retry build. The initial
+  fallback cause remains unknown; thresholds/scope were unchanged. Broader
+  reliability, protein, partial/missing/empty/ambiguous and lifecycle checks
+  remain open; no measured latency or milestone completion is claimed.
+
+### MiniLM today's recorded nutrition installed — 2026-10-12
+
+- Added a debug fast route for explicit English questions about one recorded
+  calorie/protein total today. Matching today summary scope is narrowed to the
+  existing exact-day offset-zero result, with frozen date, no goals and unchanged
+  calculations. Strict source/date/metric/language/count/value/interpretation
+  checks precede evidence and deterministic reply publication. Partial/missing
+  estimates and unknown unrecorded meals remain explicit.
+- Independent review corrected date scope, validation order, competing intent
+  coverage and aggregate/subtotal validation. Decimal rounding checks preserve
+  legitimate separately rounded values. Final re-review found no material issue.
+- Complete gate passed: 464 tests, zero failures/errors/skips, debug assembly and
+  release Kotlin compilation. `git diff --check` passed. Initial fixture failure
+  was corrected to follow the existing all-four-fields summary inclusion rule;
+  calculation behavior remains unchanged. Details/hash in
+  [MiniLM integration](minilm-chat-integration.md#todays-recorded-nutrition-expansion--2026-10-12).
+- Approved ongoing in-place cycle: `install -r` returned `Success` on Samsung
+  SM-S928B / Android 16; launch returned `Status: ok`. No data clear, uninstall,
+  signing replacement, vault/model deletion, biometric automation or private
+  record inspection. The member's calorie/protein comparison and route checks
+  were partly reported: calories used MiniLM, protein used Gemma. Calorie route
+  activation is confirmed; numeric comparison was not separately reported and
+  protein fast-route acceptance remains open. Next bounded task: inspect the
+  content-free protein outcome/scores from Developer diagnostics before changing
+  the router. No benchmark or milestone completion is claimed.
+
+### Retained route monitoring installed — 2026-10-12
+
+- The member requested routing decisions in existing monitoring instead of
+  manually copying diagnostics. Extended the existing opt-in content-free trace
+  with MiniLM decision/rejection outcomes and bounded finite cosine scores,
+  native/legacy Gemma selection and host replies. Eight-column legacy rows are
+  preserved; only route decisions may append three score fields. No question,
+  answer, record, embedding or exception text is stored. Existing retention,
+  release no-op, deletion and archive exclusion remain.
+- Complete gate passed: 466 tests, zero failures/errors/skips; debug assembly
+  and release compilation. Score parsing, normalization and restart compatibility
+  are covered. Independent re-review found no issue; `git diff --check` passed.
+  Details/hash in [MiniLM integration](minilm-chat-integration.md#retained-routing-monitoring--2026-10-12).
+- Approved in-place installation succeeded on Samsung SM-S928B / Android 16;
+  launch returned `Status: ok`. No data clear, uninstall, signing replacement,
+  vault/model deletion or biometric automation. Member unlock and one protein
+  question were requested; diagnosis will use the retained technical events.
+  The member confirmed the named protein question answered. Direct content-free
+  trace inspection confirmed MiniLM acceptance/selection, finite scores and
+  an accepted host reply audit. Old rows and the new scored row were readable.
+  This verifies monitoring and that named protein route; numeric comparison,
+  broader acceptance and the original fallback cause remain unconfirmed.
+
+### Natural read phrasing and metric follow-ups installed — 2026-10-12
+
+- Broadened full-match English phrasing for the existing read operations. Short
+  calories/protein follow-ups consume a same-day, unlocked, transient scope from
+  a validated MiniLM nutrition/latest-meal result and perform a fresh read.
+  No earlier values or model prose become evidence; unrelated requests and
+  lifecycle boundaries revoke that scope. Selected-meal, mixed and unsupported
+  requests retain normal handling.
+- Complete gate passed: 468 tests, zero failures/errors/skips, debug assembly and
+  release Kotlin compilation. Independent review found no material issue;
+  `git diff --check` passed. Details/hash in
+  [MiniLM integration](minilm-chat-integration.md#natural-phrasing-and-metric-follow-ups--2026-10-12).
+- Approved in-place installation succeeded on Samsung SM-S928B / Android 16;
+  launch returned `Status: ok`. No data clear, uninstall, signing replacement,
+  vault/model deletion or biometric automation. The member confirmed natural
+  day calories, immediate protein follow-up and natural meal lookup all matched
+  their records. Direct content-free trace inspection confirmed MiniLM selection
+  and accepted host audits for all three, with fresh day/day/meal reads and no
+  Gemma generation. A later post-unlock short follow-up was confirmed from
+  retained events: MiniLM scope rejection, native Gemma selection, fresh today's
+  nutrition read and accepted reply audit. The member reported completion but
+  did not separately compare its numbers. The reported topic-change sequence
+  has no matching retained turn evidence; topic-change/restart/date-rollover and
+  other rejection checks remain open. Combined checkpoint review found no
+  material gap. Next bounded task: obtain explicit approval to commit/push this
+  reviewed checkpoint, then verify the remaining follow-up boundary cases.

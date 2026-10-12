@@ -79,6 +79,57 @@ class AssistantTraceStoreTest {
     }
 
     @Test
+    fun `route metadata keeps legacy rows and bounded finite scores across restart`() {
+        val root = Files.createTempDirectory("trace-test").toFile()
+        AssistantTraceStore(root, true, { 1_000L }).use { trace ->
+            trace.setEnabled(true)
+            trace.flush()
+            trace.record("route_decision", "agent_turn", "rejected", "margin", "read_day_nutrition", "today", 42L,
+                positiveScore = 0.71234f, competingScore = 0.68123f, fallbackScore = 0.42f)
+            trace.record("route_selected", "coach_intent", "accepted", "legacy_gemma", requestId = 43L)
+            trace.flush()
+            val rows = root.resolve(AssistantTraceStore.relativePath).readLines()
+            assertEquals(11, rows.first().split('\t').size)
+            assertTrue(rows.first().endsWith("0.7123\t0.6812\t0.4200"))
+            assertEquals(8, rows.last().split('\t').size)
+        }
+        AssistantTraceStore(root, true, { 1_000L }).use { trace ->
+            trace.flush()
+            assertEquals(2, trace.status().eventCount)
+            val rows = root.resolve(AssistantTraceStore.relativePath).readLines()
+            assertEquals(11, rows.first().split('\t').size)
+            assertEquals(8, rows.last().split('\t').size)
+        }
+    }
+
+    @Test
+    fun `invalid scores never persist nonfinite values and malformed score rows are pruned`() {
+        val root = Files.createTempDirectory("trace-test").toFile()
+        AssistantTraceStore(root, true, { 1_000L }).use { trace ->
+            trace.setEnabled(true)
+            trace.flush()
+            trace.record("route_decision", "agent_turn", "rejected", "similarity", requestId = 42L,
+                positiveScore = Float.NaN, competingScore = Float.POSITIVE_INFINITY, fallbackScore = 1.2f)
+            trace.record("route_decision", "agent_turn", "rejected", "margin", requestId = 43L,
+                positiveScore = 0.7f, competingScore = Float.NaN)
+            trace.record("route_decision", "agent_turn", "accepted", "minilm_accepted", requestId = 45L,
+                positiveScore = 1.0005f)
+            trace.flush()
+            val rows = root.resolve(AssistantTraceStore.relativePath).readLines()
+            assertEquals(8, rows.first().split('\t').size)
+            assertFalse(rows.any { it.contains("NaN") || it.contains("Infinity") })
+            assertTrue(rows.last().endsWith("1.0000\tnone\tnone"))
+        }
+        val file = root.resolve(AssistantTraceStore.relativePath)
+        file.appendText("\n1000\troute_decision\tagent_turn\trejected\tsimilarity\tnone\tnone\t44\tNaN\tnone\tnone\n")
+        AssistantTraceStore(root, true, { 1_000L }).use { trace ->
+            trace.flush()
+            assertEquals(3, trace.status().eventCount)
+            assertFalse(file.readText().contains("NaN"))
+        }
+    }
+
+    @Test
     fun `release build is a no-op and enabled marker survives restart`() {
         val root = Files.createTempDirectory("trace-test").toFile()
         AssistantTraceStore(root, false, { 1_000L }).use { trace ->

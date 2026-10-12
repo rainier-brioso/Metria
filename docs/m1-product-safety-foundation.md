@@ -144,6 +144,15 @@ outcome. It must not store prompts, model prose, tool arguments or results, reco
 values, photos, chat history, keys, or raw exceptions. It is never included in
 the encrypted vault or a recovery archive and can be cleared by the member.
 
+**Routing-monitoring extension — 2026-10-12:** the member requested recording
+MiniLM/Gemma routing in that same content-free trace. Fixed route selections,
+rejection categories and bounded finite classifier cosine scores may be retained
+under its existing opt-in, 100-event, 24-hour/64-KB limits. Scores are technical
+similarities, not confidence probabilities or nutrition values. This extension
+does not permit question text, replies, embeddings, record data or exception
+messages. Existing local-only access, archive exclusion, clear/delete and release
+no-op rules remain.
+
 **Image-development capture exception — 2026-09-27, opt-in revised
 2026-09-28:** For member-approved test images on a debug build only, a
 separate, explicit Developer diagnostics control may temporarily retain the

@@ -1097,7 +1097,7 @@ object MetriaAgentGroundingPolicy {
         RegexOption.IGNORE_CASE,
     )
     private val nutritionRecordedTotalAction = Regex(
-        """\b(?:registr\w*|anotad\w*|apuntad\w*|consum\w*|inger\w*|com[ií]|eaten|ate|log(?:ged)?|record(?:ed)?|register(?:ed|s|ing)?|track(?:ed)?)\b""",
+        """\b(?:registr\w*|anotad\w*|apuntad\w*|consum\w*|inger\w*|com[ií]|eat|eaten|ate|log(?:ged)?|record(?:ed)?|register(?:ed|s|ing)?|track(?:ed)?)\b""",
         RegexOption.IGNORE_CASE,
     )
     private val nutritionCurrentDayPeriod = Regex("""\b(?:today|hoy)\b""", RegexOption.IGNORE_CASE)
@@ -1526,6 +1526,7 @@ object MetriaAgentMigrationPolicy {
     )
 
     fun useLegacyWriteRoute(memberText: String): Boolean {
+        if (MiniLmMealReadPolicy.isAnyDirectReadInScope(memberText)) return false
         val words = memberText.lowercase()
             .replace(Regex("[^\\p{L}\\p{N}.,]+"), " ")
             .split(' ')

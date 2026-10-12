@@ -1,7 +1,10 @@
 package app.metria.debug
 
 import android.content.Context
-import app.metria.MiniLmTodayMealPolicy
+import app.metria.MiniLmMealReadPolicy
+import app.metria.MiniLmRouteDecision
+import app.metria.MiniLmRouteOutcome
+import app.metria.MiniLmRouteScoring
 import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
@@ -13,14 +16,16 @@ import java.security.MessageDigest
 import kotlin.math.sqrt
 
 /**
- * Debug-only, local MiniLM prototype router for the single today's-meal-list read.
+ * Debug-only, local MiniLM prototype router for bounded meal-list and nutrition reads.
  * Create/use this away from the UI thread. Input text is never logged or persisted.
  */
-class MiniLmMealRouter(context: Context) : AutoCloseable {
+internal class MiniLmMealRouter(context: Context) : AutoCloseable {
     private val appContext = context.applicationContext
     private val session: OrtSession
     private val tokenizer: MiniLmWordPieceTokenizer
-    private val positivePrototypes: List<FloatArray>
+    private val mealListPrototypes: List<FloatArray>
+    private val latestMealPrototypes: List<FloatArray>
+    private val todayNutritionPrototypes: List<FloatArray>
     private val fallbackPrototypes: List<FloatArray>
     private var closed = false
 
@@ -43,28 +48,54 @@ class MiniLmMealRouter(context: Context) : AutoCloseable {
         try {
             validateSession(created)
             session = created
-            val examples = POSITIVE_EXAMPLES + FALLBACK_EXAMPLES
+            val examples = MEAL_LIST_EXAMPLES + LATEST_MEAL_EXAMPLES + TODAY_NUTRITION_EXAMPLES + FALLBACK_EXAMPLES
             val vectors = embed(examples)
-            positivePrototypes = vectors.take(POSITIVE_EXAMPLES.size)
-            fallbackPrototypes = vectors.drop(POSITIVE_EXAMPLES.size)
+            mealListPrototypes = vectors.take(MEAL_LIST_EXAMPLES.size)
+            latestMealPrototypes = vectors.subList(
+                MEAL_LIST_EXAMPLES.size,
+                MEAL_LIST_EXAMPLES.size + LATEST_MEAL_EXAMPLES.size,
+            )
+            todayNutritionPrototypes = vectors.subList(
+                MEAL_LIST_EXAMPLES.size + LATEST_MEAL_EXAMPLES.size,
+                MEAL_LIST_EXAMPLES.size + LATEST_MEAL_EXAMPLES.size + TODAY_NUTRITION_EXAMPLES.size,
+            )
+            fallbackPrototypes = vectors.drop(
+                MEAL_LIST_EXAMPLES.size + LATEST_MEAL_EXAMPLES.size + TODAY_NUTRITION_EXAMPLES.size,
+            )
         } catch (error: Throwable) {
             created.close()
             throw error
         }
     }
 
-    /** Returns true only when both the conservative English scope guard and MiniLM agree. */
+    /** Returns scores only for bounded, content-free diagnostics; input is never retained. */
     @Synchronized
-    fun acceptsTodayMealList(text: String): Boolean {
-        if (closed || Thread.currentThread().isInterrupted || !MiniLmTodayMealPolicy.isInScope(text)) return false
+    fun routeMealRead(text: String, toolName: String): MiniLmRouteDecision {
+        if (closed) return MiniLmRouteDecision(MiniLmRouteOutcome.RUNTIME_UNAVAILABLE)
+        if (Thread.currentThread().isInterrupted) return MiniLmRouteDecision(MiniLmRouteOutcome.INTERRUPTED)
+        if (!MiniLmMealReadPolicy.isInScope(text, toolName)) {
+            if (toolName != "read_day_nutrition" || !MiniLmMealReadPolicy.isTodayNutritionInScope(text)) {
+                return MiniLmRouteDecision(MiniLmRouteOutcome.SCOPE_REJECTED)
+            }
+        }
         return try {
             val query = embed(listOf(text)).single()
-            if (Thread.currentThread().isInterrupted) return false
-            val positive = positivePrototypes.maxOfOrNull { cosine(query, it) } ?: return false
-            val fallback = fallbackPrototypes.maxOfOrNull { cosine(query, it) } ?: return false
-            positive >= MIN_POSITIVE_SIMILARITY && positive - fallback >= MINIMUM_MARGIN
+            if (Thread.currentThread().isInterrupted) return MiniLmRouteDecision(MiniLmRouteOutcome.INTERRUPTED)
+            val (positiveExamples, competingExamples) = when (toolName) {
+                "read_meals" -> mealListPrototypes to (latestMealPrototypes + todayNutritionPrototypes)
+                "read_latest_meal" -> latestMealPrototypes to (mealListPrototypes + todayNutritionPrototypes)
+                "read_day_nutrition" -> todayNutritionPrototypes to (mealListPrototypes + latestMealPrototypes)
+                else -> return MiniLmRouteDecision(MiniLmRouteOutcome.SCOPE_REJECTED)
+            }
+            val positive = positiveExamples.maxOfOrNull { cosine(query, it) }
+                ?: return MiniLmRouteDecision(MiniLmRouteOutcome.INFERENCE_FAILED)
+            val competing = competingExamples.maxOfOrNull { cosine(query, it) }
+                ?: return MiniLmRouteDecision(MiniLmRouteOutcome.INFERENCE_FAILED)
+            val fallback = fallbackPrototypes.maxOfOrNull { cosine(query, it) }
+                ?: return MiniLmRouteDecision(MiniLmRouteOutcome.INFERENCE_FAILED)
+            MiniLmRouteScoring.decide(positive, competing, fallback)
         } catch (_: Exception) {
-            false
+            MiniLmRouteDecision(MiniLmRouteOutcome.INFERENCE_FAILED)
         }
     }
 
@@ -212,23 +243,56 @@ class MiniLmMealRouter(context: Context) : AutoCloseable {
         const val VOCAB_SHA256 = "07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3"
         const val MAX_ASSET_BYTES = 24 * 1024 * 1024
         const val EMBEDDING_DIMENSION = 384
-        const val MIN_POSITIVE_SIMILARITY = 0.58f
-        const val MINIMUM_MARGIN = 0.06f
-        val POSITIVE_EXAMPLES = listOf(
+        val MEAL_LIST_EXAMPLES = listOf(
             "Show the meals I recorded today",
             "List my saved meals for today",
             "What meals have I logged today",
             "What did I eat today",
             "Which meals are in my record for today",
-            "Show me all the food I saved today"
+            "Remind me what I ate today",
+            "Could you remind me what I ate today",
+            "Show me all the food I saved today",
+            "Show the meals I recorded yesterday",
+            "List my saved meals for yesterday",
+            "What meals have I logged yesterday",
+            "What did I eat yesterday",
+            "Which meals are in my record for yesterday",
+            "Remind me what I ate yesterday",
+            "Could you remind me what I ate yesterday",
+            "Show me all the food I saved yesterday"
+        )
+        val LATEST_MEAL_EXAMPLES = listOf(
+            "How many calories were in my last meal",
+            "Could you tell me how many calories were in my last meal",
+            "How much protein was in my latest meal",
+            "Could you tell me how much protein was in my latest meal",
+            "What were the calories in my most recent meal",
+            "What was the protein in my last meal",
+            "Tell me the calories in my latest meal",
+            "How many calories did my latest meal have",
+            "Calories in my last meal",
+            "Protein in my latest meal",
+        )
+        val TODAY_NUTRITION_EXAMPLES = listOf(
+            "How many calories did I eat today",
+            "How much protein have I logged today",
+            "Could you tell me how many calories I recorded today",
+            "Could you tell me how much protein I recorded today",
+            "Show my recorded calories for today",
+            "Show my recorded protein for today",
+            "How many calories have I recorded today",
+            "How much protein did I log today",
+            "What's my protein total today",
+            "What's my calorie total today",
+            "How much protein did I have today",
+            "How many calories have I had today",
         )
         val FALLBACK_EXAMPLES = listOf(
             "I just ate eggs and toast",
             "Log a chicken meal for today",
             "What should I eat tomorrow",
-            "Show my meals from yesterday",
             "Show today's meals and suggest dinner",
-            "How many calories did I eat today",
+            "Show yesterday's meals and suggest dinner",
             "What did I eat this week",
             "Help me make a meal plan",
             "Add the lunch I just had",

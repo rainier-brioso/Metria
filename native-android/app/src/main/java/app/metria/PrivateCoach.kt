@@ -101,7 +101,7 @@ data class PrivateCoachToolCall(
     val mealSlot: String? = null,
     val message: String? = null,
     val query: String? = null,
-    /** Host-only frozen date for the MiniLM today's-meal-list handoff; never model-authored. */
+    /** Host-only frozen local reference/as-of day; `daysAgo` is applied once to select the MiniLM read day. */
     val hostReadDate: LocalDate? = null,
 )
 

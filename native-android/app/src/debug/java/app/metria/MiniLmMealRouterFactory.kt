@@ -11,7 +11,11 @@ internal object MiniLmMealRouterFactory {
     private class DebugMiniLmMealRouter(
         private val delegate: app.metria.debug.MiniLmMealRouter
     ) : MiniLmMealRouter {
-        override fun acceptsTodayMealList(text: String): Boolean = delegate.acceptsTodayMealList(text)
+        override fun routeMealRead(text: String, toolName: String): MiniLmRouteDecision = try {
+            delegate.routeMealRead(text, toolName)
+        } catch (_: Exception) {
+            MiniLmRouteDecision(MiniLmRouteOutcome.RUNTIME_UNAVAILABLE)
+        }
         override fun close() = delegate.close()
     }
 }

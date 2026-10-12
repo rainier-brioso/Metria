@@ -214,7 +214,7 @@ class ModelLifecycle(
     private var pendingAssistantStyle: AssistantStyle? = null
     private var pendingPrivateAgentToolName: String? = null
     private var pendingPrivateAgentRequiredTool: RequiredAgentTool? = null
-    private var pendingMiniLmMealListRead = false
+    private var pendingMiniLmMealRead = false
     private var lifecycleClosed = false
     private var createdMiniLmMealRouter: MiniLmMealRouter? = null
     private var privateAgentToolRounds = 0
@@ -256,6 +256,10 @@ class ModelLifecycle(
     private var assistantOperation: String? = null
     private var coachToolCall: PrivateCoachToolCall? = null
     private var diagnostics = "No local performance measurement recorded yet."
+    // Debug-only, content-free MiniLM outcome retained separately from the latest timing sample.
+    private var miniLmRouteDiagnostic: String? = null
+    // Process-local context for one narrowly scoped nutrition follow-up. Never persisted.
+    private var miniLmReadFollowUpScope: MiniLmMealReadPolicy.FollowUpScope? = null
     private var backendSummary = "Text: CPU | Vision: CPU | Audio: CPU"
     // Debug builds expose only the latest response in-memory to diagnose strict-parser rejects.
     // It is cleared on the next operation, lock/background, and process death; never logged or saved.
@@ -366,6 +370,8 @@ class ModelLifecycle(
 
     @Synchronized
     fun unloadRuntime(): ModelStatus {
+        miniLmReadFollowUpScope = null
+        miniLmRouteDiagnostic = null
         runtimeGeneration += 1
         activeRuntimeLoad?.cancel(true)
         activeRuntimeLoad = null
@@ -403,6 +409,8 @@ class ModelLifecycle(
     /** Stops only the current assistant response; the verified local model stays available. */
     fun cancelAssistantRequest(): ModelStatus {
         val workersIdle = synchronized(this) {
+            miniLmReadFollowUpScope = null
+            miniLmRouteDiagnostic = null
             val cancellingFoodNameCorrection = assistantOperation == "meal_food_name_correction"
             assistantTraceStore?.record("cancelled", assistantOperation ?: "unknown", "cancelled")
             activeInference?.cancel(true)
@@ -455,7 +463,9 @@ class ModelLifecycle(
     /** Clears only conversational KV state; the verified model remains initialized. */
     @Synchronized
     fun clearPrivateAgentConversation(): ModelStatus {
+        miniLmReadFollowUpScope = null
         clearPrivateAgentConversationLocked()
+        miniLmRouteDiagnostic = null
         return statusLocked()
     }
 
@@ -468,6 +478,8 @@ class ModelLifecycle(
             reason = "Assistant style will apply after this response."
             return statusLocked()
         }
+        miniLmReadFollowUpScope = null
+        miniLmRouteDiagnostic = null
         clearPrivateAgentConversationLocked()
         assistantStyle = style
         pendingAssistantStyle = null
@@ -478,6 +490,8 @@ class ModelLifecycle(
     /** Vault lock boundary: discard chat KV state and any in-flight native chat turn only. */
     @Synchronized
     fun lockPrivateAgentConversation(): ModelStatus {
+        miniLmReadFollowUpScope = null
+        miniLmRouteDiagnostic = null
         assistantTraceStore?.record("locked", assistantOperation ?: "unknown", "cleared")
         if (assistantOperation == "meal_food_name_correction") {
             mealFoodCorrectionSequence += 1
@@ -536,10 +550,14 @@ class ModelLifecycle(
             // The existing native conversation was created with the previous style prompt.
             // Drop only its KV state; the visible/vault history is supplied on the next turn.
             clearPrivateAgentConversationLocked()
+            miniLmReadFollowUpScope = null
             assistantStyle = it
             pendingAssistantStyle = null
         }
+        val followUpScope = miniLmReadFollowUpScope
+        miniLmReadFollowUpScope = null
         state = "thinking"
+        miniLmRouteDiagnostic = null
         clearDeveloperResponseLocked()
         reason = "Continuing the private conversation locally."
         assistantProposal = null
@@ -554,7 +572,7 @@ class ModelLifecycle(
         assistantRequestId = requestId
         assistantTraceStore?.record("turn_started", "agent_turn", "started", requestId = requestId)
         activeInference = executor.submit {
-            runPrivateAgentTurn(loadedEngine, input, history, requestId, selectedMealId)
+            runPrivateAgentTurn(loadedEngine, input, history, requestId, selectedMealId, followUpScope)
         }
         return statusLocked()
     }
@@ -565,25 +583,40 @@ class ModelLifecycle(
         toolName: String,
         response: Map<String, Any?>,
     ): ModelStatus {
-        if (pendingMiniLmMealListRead) {
+        if (pendingMiniLmMealRead) {
             val requiredTool = pendingPrivateAgentRequiredTool
+            val expectedName = requiredTool?.name
+            val dayOffset = requiredTool?.daysAgo
+            val reply = requiredTool?.takeIf {
+                state == "loaded" && toolName == expectedName && pendingPrivateAgentToolName == expectedName
+            }?.let { MiniLmMealReadPolicy.validatedFastReadReply(it, response) }
             val expectedDate = requiredTool?.targetDate?.toString()
-            val validHandoff = state == "loaded" && toolName == "read_meals" &&
-                pendingPrivateAgentToolName == "read_meals" && requiredTool?.name == "read_meals" &&
-                requiredTool.daysAgo == 0 && expectedDate != null &&
-                response["from"] == expectedDate && response["to"] == expectedDate
-            val reply = if (validHandoff) MetriaMealRecordReply.from(requiredTool!!, response) else null
             val requestId = ++assistantRequestSequence
             assistantRequestId = requestId
-            pendingMiniLmMealListRead = false
+            pendingMiniLmMealRead = false
             pendingPrivateAgentToolName = null
             pendingPrivateAgentRequiredTool = null
             coachToolCall = null
             coachStreamingReply = null
             coachReply = reply
+            miniLmReadFollowUpScope = if (reply != null && pendingAssistantStyle == null) {
+                val referenceDate = requiredTool?.targetDate
+                when {
+                    referenceDate != null && expectedName == "read_day_nutrition" ->
+                        MiniLmMealReadPolicy.FollowUpScope(
+                            MiniLmMealReadPolicy.FollowUpOperation.TODAY_NUTRITION, referenceDate,
+                        )
+                    referenceDate != null && expectedName == "read_latest_meal" ->
+                        MiniLmMealReadPolicy.FollowUpScope(
+                            MiniLmMealReadPolicy.FollowUpOperation.LATEST_MEAL, referenceDate,
+                        )
+                    else -> null
+                }
+            } else null
             coachDiagnostic = when {
                 reply != null -> null
-                expectedDate != null && (response["from"] != expectedDate || response["to"] != expectedDate) ->
+                expectedName == "read_meals" && expectedDate != null &&
+                    (response["from"] != expectedDate || response["to"] != expectedDate) ->
                     "The selected day changed before Metria could verify it. Please ask again."
                 else -> "Metria could not verify that meal answer against your latest local records. Try asking again."
             }
@@ -591,17 +624,27 @@ class ModelLifecycle(
             assistantOperation = "agent_reply"
             reason = if (reply == null) "The MiniLM-routed meal read failed host validation safely." else "The recorded meal answer came from the validated local result."
             if (BuildConfig.DEBUG) {
-                diagnostics = if (reply == null) {
-                    "Assistant route: MiniLM today-meals read; host validation rejected the result."
-                } else {
-                    "Assistant route: MiniLM today-meals read; Gemma generation skipped."
+                diagnostics = when {
+                    expectedName == "read_latest_meal" && reply != null ->
+                        "Assistant route: MiniLM latest-meal read; Gemma generation skipped."
+                    expectedName == "read_latest_meal" ->
+                        "Assistant route: MiniLM latest-meal read; host validation rejected the result."
+                    expectedName == "read_day_nutrition" && reply != null ->
+                        "Assistant route: MiniLM today-nutrition read; Gemma generation skipped."
+                    expectedName == "read_day_nutrition" ->
+                        "Assistant route: MiniLM today-nutrition read; host validation rejected the result."
+                    reply == null -> "Assistant route: MiniLM ${if (dayOffset == 1) "yesterday-meals" else "today-meals"} read; host validation rejected the result."
+                    dayOffset == 0 -> "Assistant route: MiniLM today-meals read; Gemma generation skipped."
+                    else -> "Assistant route: MiniLM yesterday-meals read; Gemma generation skipped."
                 }
             }
             assistantTraceStore?.record(
                 if (reply == null) "reply_rejected" else "reply_audited",
                 "agent_turn",
                 if (reply == null) "rejected" else "accepted",
-                tool = "read_meals", requestId = requestId,
+                tool = expectedName?.takeIf { it in setOf("read_meals", "read_latest_meal", "read_day_nutrition") } ?: "none",
+                period = if (expectedName == "read_day_nutrition" || expectedName == "read_meals" && dayOffset == 0) "today" else "none",
+                requestId = requestId,
             )
             clearPrivateAgentConversationLocked()
             return statusLocked()
@@ -653,6 +696,7 @@ class ModelLifecycle(
 
     @Synchronized
     fun runTextSmokeTest(): ModelStatus {
+        miniLmReadFollowUpScope = null
         val loadedEngine = engine
         if (state != "loaded" || loadedEngine == null || !loadedEngine.isInitialized()) {
             reason = "Initialize LiteRT before running the local smoke test."
@@ -674,6 +718,7 @@ class ModelLifecycle(
      */
     @Synchronized
     fun proposeMealFromText(memberText: String): ModelStatus {
+        miniLmReadFollowUpScope = null
         val input = memberText.trim()
         val loadedEngine = engine
         if (input.length !in 1..600) {
@@ -707,6 +752,7 @@ class ModelLifecycle(
     /** Uses only the local text model to suggest a replacement label for one reviewed food. */
     @Synchronized
     fun suggestMealFoodName(currentName: String, memberCorrection: String): ModelStatus {
+        miniLmReadFollowUpScope = null
         val current = currentName.trim()
         val correction = memberCorrection.trim()
         if (activeMealFoodCorrectionWorkers > 0) {
@@ -754,6 +800,7 @@ class ModelLifecycle(
 
     @Synchronized
     fun cancelMealFoodNameCorrection(requestId: Long): ModelStatus {
+        miniLmReadFollowUpScope = null
         if (mealFoodCorrectionRequestId != requestId || mealFoodCorrectionState != "running") return statusLocked()
         mealFoodCorrectionSequence += 1
         if (assistantOperation == "meal_food_name_correction") {
@@ -774,6 +821,7 @@ class ModelLifecycle(
 
     @Synchronized
     fun clearMealFoodNameCorrection(): ModelStatus {
+        miniLmReadFollowUpScope = null
         if (mealFoodCorrectionState == "running") {
             mealFoodCorrectionRequestId?.let(::cancelMealFoodNameCorrection)
         }
@@ -787,6 +835,7 @@ class ModelLifecycle(
     /** Generates prose only from a purpose-built snapshot; it has no vault or write access. */
     @Synchronized
     fun proposeCoachInsight(memberText: String, snapshot: PrivateCoachSnapshot, conversationContext: String = ""): ModelStatus {
+        miniLmReadFollowUpScope = null
         val input = memberText.trim()
         val context = conversationContext.trim().take(1_900)
         val loadedEngine = engine
@@ -820,6 +869,7 @@ class ModelLifecycle(
 
     @Synchronized
     fun understandCoachRequest(memberText: String, conversationContext: String = ""): ModelStatus {
+        miniLmReadFollowUpScope = null
         val input = memberText.trim()
         val context = conversationContext.trim().take(1_900)
         val loadedEngine = engine
@@ -831,6 +881,9 @@ class ModelLifecycle(
         state = "thinking"; assistantOperation = "coach_intent"; coachToolCall = null; coachReply = null; coachStreamingReply = null; coachDiagnostic = null
         val requestId = ++assistantRequestSequence
         assistantRequestId = requestId
+        assistantTraceStore?.record(
+            "route_selected", "coach_intent", "accepted", reason = "legacy_gemma", requestId = requestId,
+        )
         activeInference = executor.submit { understandCoachRequest(loadedEngine, input, context, requestId) }
         return statusLocked()
     }
@@ -838,6 +891,7 @@ class ModelLifecycle(
     /** Sends a short ephemeral WAV directly to Gemma; the clip is deleted in all outcomes. */
     @Synchronized
     fun understandCoachAudio(audioFile: File, conversationContext: String = ""): ModelStatus {
+        miniLmReadFollowUpScope = null
         val loadedEngine = engine
         val context = conversationContext.trim().take(1_900)
         if (state != "loaded" || loadedEngine == null || !loadedEngine.isInitialized()) {
@@ -859,6 +913,7 @@ class ModelLifecycle(
 
     @Synchronized
     fun clearMealDraft(): ModelStatus {
+        miniLmReadFollowUpScope = null
         if (mealFoodCorrectionState == "running") mealFoodCorrectionRequestId?.let(::cancelMealFoodNameCorrection)
         mealFoodCorrectionRequestId = null
         mealFoodCorrectionState = "idle"
@@ -885,6 +940,7 @@ class ModelLifecycle(
     /** Remove only the unsaved photo proposal; leave chat and other review state alone. */
     @Synchronized
     fun discardImageMealDraft(): ModelStatus {
+        miniLmReadFollowUpScope = null
         proposal = null
         proposalDiagnostic = null
         referenceThumbnailBase64 = null
@@ -894,12 +950,14 @@ class ModelLifecycle(
     /** Remove only the unsaved text proposal; visible conversation is unchanged. */
     @Synchronized
     fun discardAssistantMealDraft(): ModelStatus {
+        miniLmReadFollowUpScope = null
         assistantProposal = null
         return statusLocked()
     }
 
     @Synchronized
     fun prepareImage(contentResolver: ContentResolver, sourceUri: Uri, deleteSourceAfterCopy: File? = null): ModelStatus {
+        miniLmReadFollowUpScope = null
         if (activeInference?.isDone == false) {
             imageReason = "Wait for the active local operation to finish."
             return statusLocked()
@@ -916,6 +974,7 @@ class ModelLifecycle(
     /** Checks the thermal guard before camera or library selection so no photo waits in a queue. */
     @Synchronized
     fun beginImageFlow(): ModelStatus {
+        miniLmReadFollowUpScope = null
         val now = SystemClock.elapsedRealtime()
         if (nextImageAnalysisAt > now) {
             imageState = "cooling_down"
@@ -933,6 +992,7 @@ class ModelLifecycle(
 
     @Synchronized
     fun finishImageCooldown(): ModelStatus {
+        miniLmReadFollowUpScope = null
         if (imageState != "cooling_down" || nextImageAnalysisAt > SystemClock.elapsedRealtime()) return statusLocked()
         preparedImage?.delete()
         preparedImage = null
@@ -945,6 +1005,7 @@ class ModelLifecycle(
 
     @Synchronized
     fun analyzePreparedImage(description: String = ""): ModelStatus {
+        miniLmReadFollowUpScope = null
         val prompt = runCatching { MealPhotoContext.prompt(description) }.getOrElse {
             imageReason = "Check your meal details before creating a draft."
             return statusLocked()
@@ -993,6 +1054,7 @@ class ModelLifecycle(
 
     @Synchronized
     fun cancelImageAnalysis(): ModelStatus {
+        miniLmReadFollowUpScope = null
         if (imageState != "analyzing") return statusLocked()
         analysisGeneration += 1
         activeInference?.cancel(true)
@@ -1016,6 +1078,7 @@ class ModelLifecycle(
 
     @Synchronized
     fun discardPreparedImage(): ModelStatus {
+        miniLmReadFollowUpScope = null
         imagePreparationGeneration += 1
         preparedImage?.delete()
         preparedImage = null
@@ -1032,6 +1095,7 @@ class ModelLifecycle(
 
     @Synchronized
     fun readNutritionLabel(): ModelStatus {
+        miniLmReadFollowUpScope = null
         val image = preparedImage
         if (imageState != "ready" || image == null || !image.isFile) {
             imageReason = "Select and prepare a label image before reading it."
@@ -1342,6 +1406,7 @@ class ModelLifecycle(
         history: List<PrivateConversationMessage>,
         requestId: Long,
         selectedMealId: String? = null,
+        followUpScope: MiniLmMealReadPolicy.FollowUpScope? = null,
     ) {
         if (!beginPrivateAgentWorker(loadedEngine, requestId)) return
         val startedAt = SystemClock.elapsedRealtime()
@@ -1360,57 +1425,152 @@ class ModelLifecycle(
                     assistantOperation = "agent_reply"
                     reason = "Historical request was answered by the local query boundary."
                     assistantTraceStore?.record(
+                        "route_selected", "agent_turn", "accepted", reason = "host_reply", requestId = requestId,
+                    )
+                    assistantTraceStore?.record(
                         "reply_audited", "agent_turn", "accepted",
                         reason = "historical_query_boundary", requestId = requestId,
                     )
                 }
                 return
             }
-            val requiredTool = MetriaAgentGroundingPolicy.requiredTool(memberText, history, queryToday, selectedMealId)
-            requiredTool?.let {
+            val hostRequiredTool = MetriaAgentGroundingPolicy.requiredTool(memberText, history, queryToday, selectedMealId)
+            hostRequiredTool?.let {
                 assistantTraceStore?.record(
                     "tool_required", "agent_turn", "waiting",
                     tool = traceToolName(it.name), period = it.period ?: "none", requestId = requestId,
                 )
             }
-            val todayMealListTool = MiniLmTodayMealPolicy.requiredReadTool(
-                hostRequiredTool = requiredTool,
+            val resolvedMiniLmRead = MiniLmMealReadPolicy.resolveReadRequest(
+                hostRequiredTool = hostRequiredTool,
                 text = memberText,
                 selectedMealId = selectedMealId,
                 today = queryToday,
+                followUpScope = followUpScope,
             )
-            val miniLmAccepts = if (todayMealListTool == null) false else try {
-                miniLmMealRouter.acceptsTodayMealList(memberText)
+            val miniLmMealReadTool = resolvedMiniLmRead?.takeIf { it.allowMiniLm }?.requiredTool
+            // A captured follow-up scope also constrains Gemma if MiniLM abstains: the same
+            // fresh, bounded local read remains required, while prose and history remain untrusted.
+            val requiredTool = MiniLmMealReadPolicy.gemmaFallbackRequiredTool(resolvedMiniLmRead, hostRequiredTool)
+            val classifierText = resolvedMiniLmRead?.classifierText ?: memberText
+            val miniLmDecision = if (miniLmMealReadTool == null) {
+                MiniLmRouteDecision(MiniLmRouteOutcome.SCOPE_REJECTED)
+            } else try {
+                miniLmMealRouter.routeMealRead(classifierText, miniLmMealReadTool.name)
             } catch (_: Exception) {
-                false
+                MiniLmRouteDecision(MiniLmRouteOutcome.RUNTIME_UNAVAILABLE)
             }
-            if (todayMealListTool != null && miniLmAccepts) {
+            val traceRoutePeriod = when {
+                miniLmMealReadTool?.name == "read_day_nutrition" -> "today"
+                miniLmMealReadTool?.name == "read_meals" && miniLmMealReadTool.daysAgo == 0 -> "today"
+                miniLmMealReadTool?.name == "read_meals" && miniLmMealReadTool.daysAgo == 1 -> "yesterday"
+                requiredTool?.period == "today" -> "today"
+                requiredTool?.period == "week" -> "week"
+                requiredTool?.daysAgo == 0 -> "today"
+                requiredTool?.daysAgo == 1 -> "yesterday"
+                else -> "none"
+            }
+            synchronized(this) {
+                if (engine !== loadedEngine || assistantRequestId != requestId) return
+                val traceReason = when (miniLmDecision.outcome) {
+                    MiniLmRouteOutcome.ACCEPTED -> "minilm_accepted"
+                    MiniLmRouteOutcome.SCOPE_REJECTED -> "scope"
+                    MiniLmRouteOutcome.SIMILARITY_REJECTED -> "similarity"
+                    MiniLmRouteOutcome.MARGIN_REJECTED -> "margin"
+                    MiniLmRouteOutcome.RUNTIME_UNAVAILABLE -> "runtime"
+                    MiniLmRouteOutcome.INFERENCE_FAILED -> "inference"
+                    MiniLmRouteOutcome.INTERRUPTED -> "interrupted"
+                }
+                assistantTraceStore?.record(
+                    "route_decision", "agent_turn",
+                    when (miniLmDecision.outcome) {
+                        MiniLmRouteOutcome.ACCEPTED -> "accepted"
+                        MiniLmRouteOutcome.INTERRUPTED -> "cancelled"
+                        MiniLmRouteOutcome.RUNTIME_UNAVAILABLE, MiniLmRouteOutcome.INFERENCE_FAILED -> "failed"
+                        else -> "rejected"
+                    },
+                    reason = traceReason,
+                    tool = miniLmMealReadTool?.name?.let(::traceToolName) ?: requiredTool?.name?.let(::traceToolName) ?: "none",
+                    period = traceRoutePeriod,
+                    requestId = requestId,
+                    positiveScore = miniLmDecision.positiveScore,
+                    competingScore = miniLmDecision.competingScore,
+                    fallbackScore = miniLmDecision.fallbackScore,
+                )
+            }
+            if (miniLmDecision.outcome != MiniLmRouteOutcome.ACCEPTED) {
+                // This lives outside the replaceable timing string so Gemma measurements later
+                // in the same turn cannot erase why the local shortcut declined it.
+                if (BuildConfig.DEBUG) {
+                    synchronized(this) {
+                        if (engine !== loadedEngine || assistantRequestId != requestId) return
+                        val diagnosticTool = miniLmMealReadTool?.name ?: requiredTool?.name.orEmpty()
+                        miniLmRouteDiagnostic = miniLmDecision.diagnostic(diagnosticTool)
+                    }
+                }
+            }
+            if (miniLmMealReadTool != null && miniLmDecision.outcome == MiniLmRouteOutcome.ACCEPTED) {
                 synchronized(this) {
                     if (engine !== loadedEngine || assistantRequestId != requestId) return
                     // This route carries no native conversation or prompt into Gemma. The existing
                     // UI performs the same bounded, unlocked-vault read and returns its typed result.
                     clearPrivateAgentConversationLocked()
-                    pendingPrivateAgentToolName = "read_meals"
-                    pendingPrivateAgentRequiredTool = todayMealListTool
-                    pendingMiniLmMealListRead = true
-                    coachToolCall = PrivateCoachToolCall(
-                        intent = "read_meals",
-                        daysAgo = 0,
-                        hostReadDate = queryToday,
-                    )
+                    pendingPrivateAgentToolName = miniLmMealReadTool.name
+                    pendingPrivateAgentRequiredTool = miniLmMealReadTool
+                    pendingMiniLmMealRead = true
+                    coachToolCall = when (miniLmMealReadTool.name) {
+                        "read_latest_meal" -> PrivateCoachToolCall(
+                            intent = "read_latest_meal", hostReadDate = queryToday,
+                        )
+                        "read_day_nutrition" -> PrivateCoachToolCall(
+                            intent = "read_day_nutrition", period = "historical_day", daysAgo = 0,
+                            hostReadDate = queryToday,
+                        )
+                        else -> PrivateCoachToolCall(
+                            intent = "read_meals", daysAgo = miniLmMealReadTool.daysAgo, hostReadDate = queryToday,
+                        )
+                    }
                     state = "loaded"
                     assistantOperation = "agent_waiting_tool"
                     coachDiagnostic = null
-                    reason = "MiniLM selected the local today-meals read."
+                    reason = when (miniLmMealReadTool.name) {
+                        "read_latest_meal" -> "MiniLM selected the local latest-meal read."
+                        "read_day_nutrition" -> "MiniLM selected the local today-nutrition read."
+                        else -> "MiniLM selected the local ${if (miniLmMealReadTool.daysAgo == 1) "yesterday" else "today"}-meals read."
+                    }
                     if (BuildConfig.DEBUG) {
-                        diagnostics = "Assistant route: MiniLM today-meals read; Gemma generation skipped."
+                        diagnostics = when (miniLmMealReadTool.name) {
+                            "read_latest_meal" -> "Assistant route: MiniLM latest-meal read; Gemma generation skipped."
+                            "read_day_nutrition" -> "Assistant route: MiniLM today-nutrition read; Gemma generation skipped."
+                            else -> if (miniLmMealReadTool.daysAgo == 0) {
+                                "Assistant route: MiniLM today-meals read; Gemma generation skipped."
+                            } else "Assistant route: MiniLM yesterday-meals read; Gemma generation skipped."
+                        }
                     }
                     assistantTraceStore?.record(
+                        "route_selected", "agent_turn", "accepted", reason = "minilm_accepted",
+                        tool = traceToolName(miniLmMealReadTool.name),
+                        period = traceRoutePeriod,
+                        requestId = requestId,
+                    )
+                    assistantTraceStore?.record(
                         "tool_required", "agent_turn", "waiting",
-                        tool = "read_meals", period = "today", requestId = requestId,
+                        tool = miniLmMealReadTool.name,
+                        period = if (miniLmMealReadTool.name == "read_day_nutrition" ||
+                            miniLmMealReadTool.name == "read_meals" && miniLmMealReadTool.daysAgo == 0) "today" else "none",
+                        requestId = requestId,
                     )
                 }
                 return
+            }
+            synchronized(this) {
+                if (engine !== loadedEngine || assistantRequestId != requestId) return
+                assistantTraceStore?.record(
+                    "route_selected", "agent_turn", "accepted", reason = "native_gemma",
+                    tool = miniLmMealReadTool?.name?.let(::traceToolName) ?: requiredTool?.name?.let(::traceToolName) ?: "none",
+                    period = traceRoutePeriod,
+                    requestId = requestId,
+                )
             }
             val conversation = synchronized(this) {
                 if (engine !== loadedEngine || assistantRequestId != requestId) return@synchronized null
@@ -1432,7 +1592,10 @@ class ModelLifecycle(
             }
             if (conversation == null) return
             val conversationLifetime = leasedLifetime ?: return
-            synchronized(this) { activeConversation = conversation }
+            synchronized(this) {
+                if (engine !== loadedEngine || assistantRequestId != requestId) return
+                activeConversation = conversation
+            }
             var response = sendPrivateAgentMessage(conversation, conversationLifetime, Message.user(memberText), requestId)
             val selectedTool = response.toolCalls.singleOrNull()?.let(MetriaNativeToolCallAdapter::adapt)
             if (
@@ -1932,7 +2095,7 @@ class ModelLifecycle(
         if (conversation != null && lifetime != null) lifetime.retire()
         pendingPrivateAgentToolName = null
         pendingPrivateAgentRequiredTool = null
-        pendingMiniLmMealListRead = false
+        pendingMiniLmMealRead = false
         privateAgentToolRounds = 0
     }
 
@@ -2703,7 +2866,7 @@ class ModelLifecycle(
         assistantOperation,
         assistantRequestId,
         coachToolCall,
-        diagnostics,
+        if (BuildConfig.DEBUG && miniLmRouteDiagnostic != null) "$diagnostics\n$miniLmRouteDiagnostic" else diagnostics,
         latestImageAudit,
         MealFoodNameCorrectionStatus(
             mealFoodCorrectionRequestId,

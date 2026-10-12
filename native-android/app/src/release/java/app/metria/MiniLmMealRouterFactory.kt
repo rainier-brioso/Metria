@@ -7,7 +7,8 @@ internal object MiniLmMealRouterFactory {
     fun create(context: Context): MiniLmMealRouter = ReleaseMiniLmMealRouter
 
     private object ReleaseMiniLmMealRouter : MiniLmMealRouter {
-        override fun acceptsTodayMealList(text: String): Boolean = false
+        override fun routeMealRead(text: String, toolName: String) =
+            MiniLmRouteDecision(MiniLmRouteOutcome.SCOPE_REJECTED)
         override fun close() = Unit
     }
 }

@@ -1931,7 +1931,10 @@ private fun PrivateAssistantChat(
         when (action) {
             AssistantAction.QueryLatestMeal -> {
                 if (nativeAgentTool) {
-                    val result = LatestMealNutritionResult.from(meals, today,
+                    val frozenMiniLmDate = call.hostReadDate.takeIf {
+                        call.intent == "read_latest_meal"
+                    }
+                    val result = LatestMealNutritionResult.from(meals, frozenMiniLmDate ?: today,
                         coachReplyLanguage(submittedQuestion, submittedConversationContext))
                     trackNativeRequest { continueAgentTool(call.intent, result) }
                 } else {
@@ -2026,14 +2029,35 @@ private fun PrivateAssistantChat(
             is AssistantAction.QueryDayNutrition -> {
                 val replyLanguage = coachReplyLanguage(submittedQuestion, submittedConversationContext)
                 val requestedMetric = MetriaAgentGroundingPolicy.historicalNutritionMetric(submittedQuestion)
-                val result = HistoricalDayNutritionResult.from(meals, today, action.daysAgo, requestedMetric)
+                val frozenMiniLmDate = call.hostReadDate.takeIf {
+                    nativeAgentTool && call.intent == "read_day_nutrition" && action.daysAgo == 0
+                }
+                val queryToday = frozenMiniLmDate ?: today
+                val result = HistoricalDayNutritionResult.from(meals, queryToday, action.daysAgo, requestedMetric)
                 val facts = HistoricalDayNutritionEvidenceText.format(result, replyLanguage)
-                messages = messages + PrivateChatMessage(facts, false, localEvidence = true)
                 if (nativeAgentTool) {
+                    val response = result + mapOf("reply_language" to replyLanguage, "summary" to facts)
+                    if (frozenMiniLmDate != null) {
+                        val required = requestedMetric?.let { metric ->
+                            RequiredAgentTool(
+                                "read_day_nutrition", period = "historical_day", daysAgo = 0,
+                                metric = metric, targetDate = frozenMiniLmDate,
+                            )
+                        }
+                        val fastReply = required?.let {
+                            MiniLmMealReadPolicy.todayNutritionReplyForFrozenRead(it, response)
+                        }
+                        if (fastReply != null) {
+                            messages = messages + PrivateChatMessage(facts, false, localEvidence = true)
+                        }
+                    } else {
+                        messages = messages + PrivateChatMessage(facts, false, localEvidence = true)
+                    }
                     trackNativeRequest {
-                        continueAgentTool(call.intent, result + mapOf("reply_language" to replyLanguage, "summary" to facts))
+                        continueAgentTool(call.intent, response)
                     }
                 } else {
+                    messages = messages + PrivateChatMessage(facts, false, localEvidence = true)
                     trackRequest(askCoach("""MEMBER_LANGUAGE: $replyLanguage
                         MEMBER_QUESTION: $submittedQuestion
                         [LOCAL_FACTS]
@@ -2139,7 +2163,7 @@ private fun PrivateAssistantChat(
                     "summary" to facts,
                 )
                 val validFrozenRead = frozenMiniLmDate?.let { frozenDate ->
-                    call.hostReadDate == frozenDate && MiniLmTodayMealPolicy.hasValidFrozenMealRead(call, toolResponse)
+                    call.hostReadDate == frozenDate && MiniLmMealReadPolicy.hasValidFrozenMealRead(call, toolResponse)
                 } ?: true
                 if (!validFrozenRead) {
                     // Do not add even a local-evidence chat row until the exact frozen-day

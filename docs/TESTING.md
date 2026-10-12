@@ -242,6 +242,17 @@ off by default, bounded to 100 events / 64 KiB and a rolling 24-hour window
 (pruned on startup, new writes, and hourly while open), and that **Clear
 trace** removes the file while **Disable** stops capture and removes it.
 
+Routing monitoring also records fixed MiniLM decision/rejection reasons and
+native/legacy Gemma selection. A scored routing event may append positive,
+competing and fallback cosine similarities, each finite and bounded; `none`
+means unavailable. These are similarities, not calibrated probabilities.
+The base TSV columns remain timestamp, kind, operation, outcome, reason, tool,
+period and request ID. Readers accept legacy eight-column rows and routing rows
+with three trailing score fields. Only allowlisted technical fields may be read;
+no question/answer/record is needed for route diagnosis. Inspect this retained
+trace instead of asking the member to transcribe transient Developer diagnostics,
+which can clear on lock. Biometric unlock is still a member action.
+
 After selecting the exact current device with `adb devices -l`, read only the
 metadata file from the debuggable app sandbox:
 
