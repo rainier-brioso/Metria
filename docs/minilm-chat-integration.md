@@ -584,3 +584,311 @@ post-unlock short follow-up avoided MiniLM and completed through the normal
 Gemma read path. Numeric comparison was not separately reported for this retry.
 The earlier topic-change sequence still has no matching retained turn evidence;
 topic-change, restart, date-rollover and other rejection cases remain open.
+
+## Weight read shortcuts — 2026-10-12
+
+Status: implementation, automated gate and review complete; the three named
+weight cases passed across the installed test builds. Broader phone acceptance
+remains open. Baseline checkpoint `3545c74` was committed and pushed with explicit
+member approval; its remaining meal-follow-up gates stay open.
+
+The member approved direct in-app shortcuts for “What's my latest weight?”,
+“When did I last weigh myself?” and “Show my recent weigh-ins”, after reporting
+an error/no answer for the second question on the previous build. Code inspection
+found no MiniLM weight route and no explicit host requirement for those forms
+in the existing historical-weight parser. This is a plausible structural gap,
+not proof of the original phone error cause.
+
+Authorized inspection of existing content-free monitoring found two recent
+native Gemma turns with no host-required tool: the first called `read_weight`
+and passed audit; the next attempted a personal factual reply without a record
+read and was rejected as `unsupported_personal_fact`. This is consistent with
+the reported latest-weight/date-question sequence, but the trace does not store
+question text and cannot independently identify it. New eligible questions must
+therefore retain an explicit bounded weight tool requirement even when MiniLM
+declines or the release factory keeps Gemma inference.
+
+Reuse the existing local `read_weight` permission and dispatcher. Latest value
+and date use its bounded 90-days-ago through today window; recent history uses
+29-days-ago through today (30 calendar days). Answers state explicit window
+dates, canonical kilograms and recorded dates. Empty results establish absence
+only within that window, never all-history absence. Return at most the existing
+24 latest rows, disclose omissions, and do not infer a weigh-in time, trend,
+advice, goals or changes from these shortcuts. Date/value/recent distinctions
+are host intent metadata, not new model permissions or stored member data.
+
+Strict full-message English eligibility, frozen reference-date validation,
+fresh records, deterministic formatting and the existing factual auditor guard
+the reply. Selected meal context, dated/mixed/write/advice requests and classifier
+uncertainty retain the normal path. Existing nutrition follow-up scope is not
+earned by a weight answer. Inputs/embeddings remain transient and monitoring
+retains only the existing allowlisted technical fields. No dependency, vault
+schema or UI navigation change is planned; release inference remains Gemma.
+
+Implemented in `MiniLmWeightReadPolicy` with the existing classifier, dispatcher
+and strict host reply path. Latest/date/recent are one weight embedding intent
+competing against all existing meal/nutrition intents and fallback examples at
+the unchanged thresholds. The fallback requires the same bounded `read_weight`
+window even when MiniLM declines. Only the new weight as-of anchor is removed
+for native fallback; historical exact-day requirements remain unchanged.
+
+Complete gate passed: 473 tests, zero failures/errors/skips, debug assembly and
+release Kotlin compilation. New tests cover grammar exclusions, exact bounded
+windows, frozen dates, host conflicts/selection, same-day differing records,
+actual factual audits, empty/omitted rows, malformed provenance/counts/dates/kg
+and date rollover. During verification, the shared meal guard initially blocked
+weight ranges and a test supplied the wrong resolver type. Reply formatting
+also exposed recorded-precision, count-phrase and ISO sentence-boundary audit
+failures; these were corrected before the passing gate. No factual-auditor rule
+was relaxed or changed. Final independent review found no material issue and
+`git diff --check` passed.
+
+APK: 214,729,304 bytes; SHA-256
+`cb4c2fd02fb51468f6c1020dd1431fa8ccfda2b7f6b3cbe29eb0aaf522113749`.
+
+Under the approved repeated Chat test cycle, `install -r` returned `Success`
+on Samsung SM-S928B / Android 16 and launch returned `Status: ok`, COLD activity
+time 1,281 ms (not response/model timing). No data clear, uninstall, signing
+replacement, vault/model deletion or biometric automation occurred. The member
+was asked to unlock and compare all three questions with saved records; that
+comparison and retained route inspection are pending. Empty, omitted-row,
+out-of-scope and lifecycle phone checks remain open beyond these named cases.
+
+First installed-build feedback: the member reported latest-weight correct and
+fast, but the second date question displayed the generic verification error.
+Retained events confirmed the first turn selected MiniLM `read_weight` and
+passed its host reply audit (positive/competing/fallback 0.9714/0.6095/0.5938).
+The next turn had `scope` rejection without scores or a required tool, selected
+native Gemma, performed no weight read, then failed `unsupported_personal_fact`.
+This rejects the hypothesis that the date reply failed MiniLM host validation;
+the turn did not enter that route. Exact member wording was requested to resolve
+the eligibility mismatch. Date-question and recent-list acceptance remain open;
+only the named latest-value case is member-matched and route-verified.
+
+The member clarified the date wording used the common `weight myself` typo
+instead of `weigh myself`. That literal variant was absent from the closed host
+grammar, explaining the scope rejection. Added only that variant to the last-
+weighed pattern and weight prototypes. Regression checks cover its integrated
+required read and audited deterministic date reply, with added-date and mixed-
+request variants still excluded. No threshold or factual-validation change.
+The complete gate passed again: 473 tests, zero failures/errors/skips, debug
+assembly and release Kotlin compilation. Independent review confirmed scope
+expanded only to the literal typo variant; `git diff --check` passed. Corrected
+APK SHA-256: `108ec5a4e850e815f30fc07b869fe43647aea39caf7cd785ec4b1bb67719b56c`
+(214,729,304 bytes). Phone retry remains pending.
+
+Corrected APK installed with `install -r: Success` on the same Samsung SM-S928B /
+Android 16 under the approved cycle. Launch returned `Status: ok`, COLD activity
+time 3,240 ms (not answer timing). No data clear, uninstall, signing replacement,
+vault/model deletion or biometric automation occurred. Member unlock, exact
+typo-question retry and recent-weigh-in comparison were requested. Both phone
+acceptance and retained-route confirmation are pending.
+
+The member reported another failure and identified recent-history wording with
+`resent wigh-ins`. Local inspection confirms those spelling differences fail
+the closed grammar before inference. Device trace inspection initially could
+not run because automatic approval review hit a 429 retry limit; this was a
+review-service failure, not a safety determination, and no bypass was attempted.
+No route outcome is inferred for this attempt and date-retry acceptance is not
+separately confirmed.
+
+Added contextual spelling aliases (`wigh` before `-ins`/` ins`, and `resent`
+only before `weigh-ins`/`weigh ins`). A complete supported read grammar must
+still match afterward; dated, mixed and write requests remain excluded. The
+classifier now receives that same normalized wording instead of the uncorrected
+text, retaining the member's intent rather than replacing it with a kind
+template. Regression checks cover both aliases, host/classifier agreement,
+fresh audited recent rows and selection/date/mixed/write exclusions. Gate and
+phone retry are pending.
+
+Spelling-normalization gate passed: 474 tests, zero failures/errors/skips, debug
+assembly and release compilation; independent review and `diff --check` passed.
+APK SHA-256 `b24e1b7006f986048264e7c2b7abd07a87a0c24519a2e000b4d3b78a4e5b8513`
+(214,729,304 bytes). Normal approval review subsequently completed device access.
+Retained events confirmed the previous date retry selected MiniLM `read_weight`
+and passed host audit (0.9536/0.5249/0.5150); a subsequent recent-list turn rejected
+scope, selected Gemma, then failed `unsupported_tool`. Member date comparison
+was not separately reported. This supports the identified spelling eligibility
+failure; no thresholds or validators were relaxed.
+
+Normalized-spelling build installed in place with `Success`; launch returned
+`Status: ok` on Samsung SM-S928B / Android 16, COLD activity time 1,215 ms (not
+response timing). Existing approved preservation/biometric rules were followed.
+Member unlock and exact recent-list typo retry were requested, plus explicit
+date-answer comparison from the prior retry. Acceptance remains pending.
+
+The member confirmed the recent-list retry worked, then explicitly confirmed
+both recent records and the previous last-weigh-in date matched saved records.
+Direct allowlisted trace inspection confirmed the normalized recent-list turn
+selected MiniLM `read_weight` and passed host audit, with positive/competing/
+fallback scores 0.9873/0.5059/0.6583. Gemma generation was skipped for this turn.
+Together with the earlier latest-value comparison and audited date retry, all
+three named weight shortcuts are member-matched and route-verified across the
+installed builds. The host inspected no private records or reply text. Empty,
+omitted-row, out-of-scope, lifecycle and broader spelling/paraphrase phone cases
+remain open; no general language-coverage or benchmark claim is made.
+
+## Broader read wording — 2026-10-12
+
+Status: implementation, full automated gate and review complete; installed,
+with the four named operation checks accepted on the latest build. Broader
+physical gates remain open. The member prioritized wording
+tolerance for existing shortcuts before adding more features. Keep the supported
+read operations and factual validators unchanged. Normalize spacing, Unicode
+apostrophes and bounded polite wrappers, then recognize a broader closed set of
+single-purpose English forms. Keep date/number/write words intact; no general
+fuzzy matching or semantic permission grant is introduced.
+
+Named forms include polite latest-weight questions, most recent weigh-in date,
+“Let me see my recent weigh-ins”, “What have I eaten today?”, “Remind me of
+today's meals”, short calories/protein-in-latest-meal questions, and “What's
+today's protein total?”. The same normalized member wording reaches the
+embedding classifier. Independent host scope, selected-context exclusion,
+cross-intent competition, thresholds, fresh reads and reply audits remain.
+Mixed/write/advice/goals/negation/unsupported-date requests and unearned short
+follow-ups must still decline. No dependency, tool, vault, navigation or audit
+policy change is authorized. Build/review and named phone checks are pending.
+
+Implemented shared `MiniLmReadTextNormalization` and broader closed grammars.
+The first gate caught comma-before-please forms that retained a trailing comma;
+the anchored suffix now consumes that optional comma together with `please`.
+Review also found the earlier weight group missing from the three meal routes'
+competing examples; all four groups now compete symmetrically without changing
+thresholds. No factual-audit, persistence, permission or tool behavior changed.
+
+Corrected full gate passed: 476 tests, zero failures/errors/skips, debug assembly
+and release Kotlin compilation. New cases cover normalization, host/classifier
+alignment, fresh validated empty replies for each operation and meaningful
+mixed/write/negation/unsupported-date exclusions. Final independent review found
+no material issue; `git diff --check` passed. APK: 214,729,304 bytes, SHA-256
+`d9b50c8dd3007da1cf28107bab480c1f0f566668f662246d3df0c2594c2e2916`.
+
+Pre-install ADB inventory returned no connected phone; reconnection was requested.
+No installation or new physical acceptance is claimed. Next bounded task:
+install in place under the approved cycle, then compare polite latest-weight,
+today-protein, meal-list and short latest-meal questions and inspect retained
+content-free route selections/audits. Remaining boundary gates stay open.
+
+After reconnection and the member's install instruction, `install -r` returned
+`Success` on Samsung SM-S928B / Android 16; launch returned `Status: ok`, COLD
+activity time 2,111 ms (not model/response timing). No data clear, uninstall,
+signing replacement, vault/model deletion or biometric automation occurred.
+Member unlock and four representative weight/day-protein/meal-list/latest-meal
+questions were requested. Member comparisons and retained-route confirmation
+are pending; no broader phrasing, lifecycle or milestone pass is inferred.
+
+## Chat copy and visible failures — 2026-10-12
+
+The member reported the first polite weight question's loading indicator
+disappeared while Chat stayed open with no answer, and requested message Copy.
+Retained trace found two scope-declined native turns with no required tool/read,
+both rejected for unsupported personal facts. The installed APK hash matched
+the reviewed wording build. The member's exact polite phrase passes a new
+host-requirement-to-audited-weight-result regression. The original runtime
+eligibility/presentation cause remains unresolved; no missing accepted MiniLM
+reply is inferred from these events.
+
+Completed message bubbles now expose a 48dp accessible options menu and Copy.
+Copies contain only the selected displayed plain text, marked sensitive in
+Android's OS clipboard; there are no reads, logs, network calls or automatic
+copies. Evidence must be expanded first. Thinking/streaming have no Copy, and
+saved-meal actions remain. Platform errors show generic feedback without content.
+Android 13+ supplies copy confirmation; older versions use generic feedback.
+
+Displayed errors also expose Copy and a polite accessibility announcement.
+Scroll effects now key on diagnostic content, fixing the missed re-scroll when
+thinking is replaced by an error without changing transient item count. This
+closes a static visibility gap, but its role in the reported no-answer case is
+not yet physically confirmed. Existing request-ID and recovery latches remain.
+
+Fixed content-free trace reasons distinguish unsupported wording, selected
+context, host requirement conflict and unresolved short-follow-up context.
+No question, selection ID or record data is added. Explicit weight requests
+under selected-meal context still disable MiniLM, but require the matching
+fresh weight read on native fallback. Genuine conflicting host requirements
+are preserved. These changes do not authorize writes or change record validation.
+Full build/review, installation and phone retry/Copy checks are pending.
+
+Complete gate passed: 479 tests, zero failures/errors/skips, debug assembly and
+release Kotlin compilation. Exact polite-question host integration, selected
+context native fallback and fixed trace-reason restart tests pass. Initial
+restart assertion omitted waiting for the trace's existing asynchronous startup;
+the test was corrected to flush that work before inspection. Final independent
+review found no material code issue; `git diff --check` passed. No Compose test
+infrastructure was added. UI/Copy/TalkBack/font/keyboard/rotation and redacted
+visual evidence remain physical gates, not inferred from these unit tests.
+
+APK: 214,729,304 bytes; SHA-256
+`a833d657c2b4c794adaa9279ffff46e38ab19552db58f1e27a813efbdc99d29b`.
+
+Approved in-place install returned `Success` on Samsung SM-S928B / Android 16;
+launch returned `Status: ok`, COLD activity time 1,263 ms (not response timing).
+No data clear, uninstall, signing replacement, vault/model deletion or biometric
+automation occurred. Member unlock, exact polite weight retry and copying the
+question back into the composer without sending were requested. Results and
+retained-route reasons remain pending; original failure cause remains unknown.
+
+Latest member feedback: Copy worked, but the answer still failed or was missing.
+The member clarified the requested Copy interaction is native long-press
+word/range selection with handles and toolbar, replacing the visible ⋮ menu.
+That UI correction is in progress. Retained new reason was `scope_text`, with
+native Gemma/no read/unsupported-personal-fact rejection. The known exact phrase
+passes the focused regression, so actual input spelling/formatting is still
+unresolved; copying the question verbatim here was requested, without records
+or answer text. Copy functionality alone does not close the reply failure gate.
+
+The member then pasted the copied question, which used `the latest wight`
+rather than the previously retyped `my latest weight`. This explains the retained
+`scope_text` rejection: both the determiner and noun spelling were outside the
+grammar. Added `the` alongside `my` for an explicit latest saved-weight read,
+plus the `wight` spelling only after latest/most-recent/last-recorded wording.
+Classifier text retains the normalized request. A regression uses the exact
+copied phrase with the real host requirement and audited fresh result; height,
+another person's records, dates, mixed requests and writes remain excluded.
+No classifier threshold, read window or factual validator changed.
+
+Native selection now replaces the initial Copy menu. Each completed text body
+has its own selection container for long-press word/range selection and the
+standard floating toolbar; no visible ⋮ controls remain. Saved-meal buttons and
+record-toggle headers stay outside selection, expanded evidence text alone is
+selectable, and streaming is excluded. The locally scoped clipboard adapter
+writes selected text with the sensitive flag and returns no clipboard content;
+the editable composer retains its normal paste behavior outside that scope.
+Rebuild/review and phone selection/reply retry are pending.
+
+Native-selection/actual-wording complete gate passed: 480 tests, zero failures/
+errors/skips, debug assembly and release Kotlin compilation. Independent review
+found no material issue; `git diff --check` passed. APK: 214,729,304 bytes,
+SHA-256 `504b80489d667b57cf8426e263801be385d980b9bd1563f1d408c43fb47bc8fe`.
+No Compose UI dependencies were added; native handles/toolbar, partial/full
+selection, composer paste, scrolling, TalkBack/font/rotation and redacted visual
+evidence remain phone gates. No general typo understanding is claimed.
+
+Native-selection build installed in place with `Success` on Samsung SM-S928B /
+Android 16; launch returned `Status: ok`, COLD activity time 2,726 ms (not answer
+timing). Existing preservation/biometric rules were followed. Member unlock,
+exact copied-question retry, word/range selection and Copy/paste into composer
+without sending were requested. Comparison, interaction and retained-route
+confirmation remain pending; broader visual/accessibility/lifecycle gates stay
+open. No raw screen or private member records were captured for this slice.
+
+The member confirmed both the exact copied-question answer and native word/range
+selection, Copy and composer paste worked as expected. Allowlisted retained
+events confirmed MiniLM `read_weight` selection followed by an accepted host
+reply audit, skipping Gemma generation; positive/competing/fallback scores were
+0.9891/0.5728/0.6277 at unchanged thresholds. This closes the named reply failure
+and basic selection/copy acceptance. It does not establish general typo coverage,
+error-display/TalkBack/font/rotation/lifecycle behavior or redacted visual gates.
+No raw clipboard, question transcript, reply or record was read from the phone.
+
+The member subsequently reported repeating all four questions successfully and
+fast. Direct content-free trace inspection confirmed the four operation turns
+selected MiniLM and passed host audits: `read_weight`, `read_day_nutrition/today`,
+`read_meals/today`, then `read_latest_meal`. All used fresh local reads and skipped
+Gemma generation. The three added operation scores (positive/competing/fallback)
+were 0.9857/0.7404/0.3132, 0.9898/0.5440/0.7645 and 0.9910/0.6543/0.4494.
+The weight scores were recorded above. The trace stores no question wording;
+member report supplies scenario identity/completion. This closes the named
+broader-wording operation check; fast is a member observation, not a controlled
+benchmark. Broader wording/typo, error display, accessibility, visual and
+lifecycle gates remain open. No code changed after the passing 480-test gate.

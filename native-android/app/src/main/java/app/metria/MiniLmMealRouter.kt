@@ -27,6 +27,11 @@ internal data class MiniLmRouteDecision(
             "read_latest_meal" -> "latest-meal"
             "read_meals" -> "meal-list"
             "read_day_nutrition" -> "today-nutrition"
+            "read_weight" -> "weight-history"
+            "goal_remaining" -> "goal-remaining"
+            "saved_recall" -> "saved-dish lookup"
+            "saved_draft" -> "saved-dish draft"
+            "navigation" -> "screen navigation"
             else -> "meal"
         }
         val scoreText = listOfNotNull(

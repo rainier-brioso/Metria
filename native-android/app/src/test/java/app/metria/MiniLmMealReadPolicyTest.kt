@@ -31,6 +31,9 @@ class MiniLmMealReadPolicyTest {
             "Remind me what I ate today",
             "Could you remind me what I ate yesterday?",
         ).forEach { assertTrue(it, MiniLmMealReadPolicy.isInScope(it)) }
+        listOf("What have I eaten today?", "Please remind me of today’s meals, please").forEach {
+            assertTrue(it, MiniLmMealReadPolicy.isInScope(it))
+        }
     }
 
     @Test
@@ -44,6 +47,8 @@ class MiniLmMealReadPolicyTest {
             "How many calories did my latest meal have?",
             "Calories in my last meal?",
             "Protein in my latest meal?",
+            "How many calories in my last meal?",
+            "Could you please tell me what’s the protein in my latest meal, please?",
         )
         accepted.forEach { text ->
             assertTrue(text, MiniLmMealReadPolicy.isInScope(text, "read_latest_meal"))
@@ -55,6 +60,140 @@ class MiniLmMealReadPolicyTest {
         assertTrue(
             MiniLmMealReadPolicy.requiredReadTool(null, accepted.first(), null, today)?.targetDate == today,
         )
+    }
+
+    @Test
+    fun normalizedParaphrasesKeepClosedToolAndClassifierAligned() {
+        val today = LocalDate.parse("2026-10-12")
+        val cases = listOf(
+            "What have I eaten today?" to "read_meals",
+            "Please remind me of today’s meals, please" to "read_meals",
+            "How many calories in my last meal?" to "read_latest_meal",
+            "Could you please tell me what’s the protein in my latest meal, please?" to "read_latest_meal",
+            "What’s today’s protein total?" to "read_day_nutrition",
+            "Could you tell me my calorie total for today, please?" to "read_day_nutrition",
+            "Ｃｏｕｌｄ　ｙｏｕ　ｓｈｏｗ　ｍｅ　ｍｙ　ｌａｔｅｓｔ　ｗｅｉｇｈｔ？" to "read_weight",
+            "When was my most recent weigh in?" to "read_weight",
+            "Let me see my recent weigh-ins." to "read_weight",
+        )
+        cases.forEach { (phrase, toolName) ->
+            val resolved = MiniLmMealReadPolicy.resolveReadRequest(null, phrase, null, today)
+            assertNotNull(phrase, resolved)
+            assertEquals(phrase, toolName, resolved!!.requiredTool.name)
+            assertTrue(phrase, MiniLmMealReadPolicy.isInScope(resolved.classifierText, toolName))
+            assertEquals(phrase, MiniLmReadTextNormalization.normalize(phrase), resolved.classifierText)
+            assertNotNull(phrase, MiniLmMealReadPolicy.validatedFastReadReply(
+                resolved.requiredTool,
+                validEmptyReply(resolved.requiredTool, today),
+            ))
+        }
+        assertEquals(
+            "read_meals",
+            MiniLmMealReadPolicy.resolveReadRequest(null, "Please remind me of yesterday’s meals, please", null, today)
+                ?.requiredTool?.name,
+        )
+        assertEquals(1, MiniLmMealReadPolicy.resolveReadRequest(
+            null, "Please remind me of yesterday’s meals, please", null, today,
+        )?.requiredTool?.daysAgo)
+        assertEquals(
+            "protein",
+            MiniLmMealReadPolicy.resolveReadRequest(null, "What’s today’s protein total?", null, today)
+                ?.requiredTool?.metric,
+        )
+    }
+
+    private fun validEmptyReply(tool: RequiredAgentTool, today: LocalDate): Map<String, Any?> = when (tool.name) {
+        "read_meals" -> {
+            val offset = requireNotNull(tool.daysAgo)
+            val target = today.minusDays(offset.toLong())
+            mapOf(
+                "source" to "metria_local_vault", "reply_language" to "English", "as_of" to today.toString(),
+                "from" to target.toString(), "to" to target.toString(), "meal_slot" to null,
+                "total_count" to 0, "returned_count" to 0, "omitted_count" to 0,
+                "coverage" to "full", "meals" to emptyList<Any>(),
+            )
+        }
+        "read_latest_meal" -> LatestMealNutritionResult.from(emptyList(), today, "English")
+        "read_day_nutrition" -> HistoricalDayNutritionResult.from(
+            emptyList(), today, 0, requireNotNull(tool.metric),
+        ) + ("reply_language" to "English")
+        "read_weight" -> {
+            val from = today.minusDays(requireNotNull(tool.fromDaysAgo).toLong())
+            mapOf(
+                "source" to "metria_local_vault", "reply_language" to "English", "as_of" to today.toString(),
+                "from" to from.toString(), "to" to today.toString(), "total_count" to 0,
+                "returned_count" to 0, "omitted_count" to 0, "coverage" to "full", "entries" to emptyList<Any>(),
+            )
+        }
+        else -> error("Unsupported fixture tool ${tool.name}")
+    }
+
+    @Test
+    fun yesterdayNutritionFollowUpCarriesHostMetricThroughFrozenVaultResultValidation() {
+        val today = LocalDate.parse("2026-10-12")
+        val proteinGoal = requireNotNull(MiniLmMealReadPolicy.resolveReadRequest(
+            null, "How much protein do I have left today?", null, today,
+        ))
+        val calorieGoal = requireNotNull(MiniLmMealReadPolicy.resolveReadRequest(
+            null, "And calories?", null, today,
+            MiniLmMealReadPolicy.FollowUpScope(
+                operation = MiniLmMealReadPolicy.FollowUpOperation.GOAL_REMAINING,
+                referenceDate = today,
+                metric = proteinGoal.requiredTool.metric,
+            ),
+        ))
+        assertEquals(CompanionAssistantPolicy.IntentKind.GOAL_REMAINING, calorieGoal.companion?.kind)
+        val followUpScope = MiniLmMealReadPolicy.FollowUpScope(
+            operation = MiniLmMealReadPolicy.FollowUpOperation.GOAL_REMAINING,
+            referenceDate = today,
+            metric = calorieGoal.companion?.metric,
+        )
+        val yesterdayRequired = RequiredAgentTool(
+            "read_day_nutrition", period = "historical_day", daysAgo = 1,
+            metric = calorieGoal.companion?.metric, targetDate = today.minusDays(1),
+        )
+        val resolved = requireNotNull(MiniLmMealReadPolicy.resolveReadRequest(
+            yesterdayRequired, "And yesterday?", null, today, followUpScope,
+        ))
+        assertTrue(resolved.allowMiniLm)
+        assertEquals("calories", resolved.requiredTool.metric)
+        assertNull(MetriaAgentGroundingPolicy.historicalNutritionMetric("And yesterday?"))
+
+        // Mirrors the trusted fields attached by ModelLifecycle to the native tool call.
+        val nativeCall = PrivateCoachToolCall(
+            intent = "read_day_nutrition", period = "historical_day", daysAgo = 1,
+            hostReadDate = today, hostMetric = resolved.requiredTool.metric,
+        )
+        val requestedMetric = MiniLmMealReadPolicy.nativeNutritionMetric(nativeCall, "And yesterday?")
+        assertEquals("calories", requestedMetric)
+        val vaultResult = HistoricalDayNutritionResult.from(emptyList(), today, 1, requestedMetric!!) +
+            ("reply_language" to "English")
+
+        assertNotNull(MiniLmMealReadPolicy.validatedFastReadReply(resolved.requiredTool, vaultResult))
+        assertNull(MiniLmMealReadPolicy.nativeNutritionMetric(
+            nativeCall.copy(hostReadDate = null), "And yesterday?",
+        ))
+    }
+
+    @Test
+    fun normalizationDoesNotEraseQualifiersOrTurnMixedRequestsIntoReads() {
+        val today = LocalDate.parse("2026-10-12")
+        listOf(
+            "Please show my weight and meals, please",
+            "What is my protein total yesterday?",
+            "What is my calorie total tomorrow?",
+            "What is my calorie goal today?",
+            "Add my meal today, please",
+            "Do not show my meals today",
+            "Show my meals yesterday and my weight",
+            "Show my meals from two days ago",
+            "Show my meals and recommend dinner today",
+            "Could you show me my selected meal?",
+            "Show yesterday's meals and meals today",
+        ).forEach { phrase ->
+            assertFalse(phrase, MiniLmMealReadPolicy.isAnyDirectReadInScope(phrase))
+            assertNull(phrase, MiniLmMealReadPolicy.resolveReadRequest(null, phrase, null, today))
+        }
     }
 
     @Test
@@ -359,6 +498,43 @@ class MiniLmMealReadPolicyTest {
             conflictingDay.requiredTool,
             MiniLmMealReadPolicy.gemmaFallbackRequiredTool(conflictingDay, null),
         )
+    }
+
+    @Test
+    fun goalRemainingFollowUpsReadFreshTodayOrYesterdayWithStrictHostScope() {
+        val today = LocalDate.parse("2026-10-12")
+        val scope = MiniLmMealReadPolicy.FollowUpScope(
+            MiniLmMealReadPolicy.FollowUpOperation.GOAL_REMAINING,
+            referenceDate = today,
+            metric = "calories",
+        )
+        val shortGoalFollowUp = MiniLmMealReadPolicy.resolveReadRequest(
+            RequiredAgentTool("read_nutrition_summary", period = "today", metric = "protein"),
+            "And protein?", null, today, scope,
+        )
+        assertEquals("read_nutrition_summary", shortGoalFollowUp?.requiredTool?.name)
+        assertEquals("protein", shortGoalFollowUp?.requiredTool?.metric)
+        assertTrue(shortGoalFollowUp?.allowMiniLm == true)
+        assertEquals(CompanionAssistantPolicy.IntentKind.GOAL_REMAINING, shortGoalFollowUp?.companion?.kind)
+
+        val yesterday = MiniLmMealReadPolicy.resolveReadRequest(null, "And yesterday?", null, today, scope)
+        assertEquals("read_day_nutrition", yesterday?.requiredTool?.name)
+        assertEquals("historical_day", yesterday?.requiredTool?.period)
+        assertEquals(1, yesterday?.requiredTool?.daysAgo)
+        assertEquals(today.minusDays(1), yesterday?.requiredTool?.targetDate)
+        assertNull(yesterday?.companion)
+        assertEquals(today.minusDays(1), MiniLmMealReadPolicy.gemmaFallbackRequiredTool(yesterday, null)?.targetDate)
+
+        val conflicting = MiniLmMealReadPolicy.resolveReadRequest(
+            RequiredAgentTool("read_nutrition_summary", period = "week", metric = "protein"),
+            "And protein?", null, today, scope,
+        )
+        assertFalse(conflicting?.allowMiniLm == true)
+        val conflictingYesterday = MiniLmMealReadPolicy.resolveReadRequest(
+            RequiredAgentTool("read_day_nutrition", period = "today", daysAgo = 1, metric = "calories"),
+            "And yesterday?", null, today, scope,
+        )
+        assertFalse(conflictingYesterday?.allowMiniLm == true)
     }
 
     @Test

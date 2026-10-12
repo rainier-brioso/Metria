@@ -346,12 +346,48 @@ lock/background and the existing response lifecycle invalidate the details.
 
 ## Assistant overlay and conversation
 
+**Approved companion bundle — 2026-10-12:** goal differences are concise recorded-
+estimate comparisons with reference and coverage limitations, never prescriptions.
+Saved-dish search presents at most three named possibilities; draft ambiguity
+offers explicit candidate choice. The selected draft leads to the existing
+focused review with saved foods/known amounts and blank unknown amounts. Review,
+Discard and final Save remain distinct; no assistant action writes automatically.
+New feature UI belongs in shared components/screens, not the shell coordinator.
+Navigation may close Chat to a known app destination while retaining conversation
+history, including the current question and opening reply. Leave only after
+those messages are retained; save failure keeps Chat open with a recoverable
+error. Late completion must not navigate after lock/Stop/new turn. Follow-up
+answers read fresh records and maintain the selected day/metric explicitly.
+Keyboard/font/TalkBack/rotation and visual gates remain required; the bundle's
+build does not close physical acceptance. See `../assistant-companion-bundle.md`.
+
+**Approved message selection — 2026-10-12:** completed message text supports
+long-press word/range selection, native selection handles and a floating Copy
+toolbar. The member replaced the initial visible ⋮ menu design with this
+interaction. Selection is contained within one message; saved-meal actions and
+record disclosure remain separate. Copy the selected plain text only on explicit
+member action, mark it sensitive for
+Android clipboard preview handling, and never log or inspect clipboard text.
+Keep this secondary to Send and preserve record collapse/saved-meal navigation.
+No Copy is offered on transient thinking/streaming. Menus dismiss normally,
+remain usable with keyboard/font scaling/TalkBack, and do not replay on rotation
+or restoration. Physical interaction and visual gates remain separate.
+Displayed recoverable errors also support text selection/Copy, announce politely, and scroll
+into view when replacing thinking even if the visible item count is unchanged.
+
 **Selected-function debug optimization — 2026-10-11:** an explicit English
 question listing today's recorded meals may use the local MiniLM route to the
 existing validated meal-list answer. Keep the same Send, thinking/Stop, evidence,
 empty-record and encrypted timeline behavior. There is no additional member
 screen or router terminology. Unsupported requests keep the existing assistant
 flow; physical acceptance is tracked in `../minilm-chat-integration.md`.
+
+**Approved weight shortcut extension — 2026-10-12:** existing Chat may answer
+latest saved weight/date or recent weigh-ins from a fresh bounded local read.
+Keep concise dated replies with explicit kilograms, read-window limits and
+omission disclosure. No additional controls or router terminology appear to the
+member. Existing thinking/Stop, empty, error, cancellation and restoration
+behavior remains; code/build evidence does not establish phone acceptance.
 
 **Proposed online extension, 2026-10-02:** use a separate, clearly labelled
 online composer, a focused sharing preview with **Send online** as its primary

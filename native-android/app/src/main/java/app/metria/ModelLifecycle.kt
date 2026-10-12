@@ -104,6 +104,12 @@ data class ModelStatus(
     val mealFoodCorrection: MealFoodNameCorrectionStatus,
     val debugLatestMealDraftCategory: String? = null,
     val imageAnalysisRequestId: String? = null,
+    val companionNavigation: CompanionNavigationRequest? = null,
+)
+
+data class CompanionNavigationRequest(
+    val requestId: Long,
+    val destination: CompanionAssistantPolicy.Destination,
 )
 
 @OptIn(ExperimentalApi::class)
@@ -215,6 +221,8 @@ class ModelLifecycle(
     private var pendingPrivateAgentToolName: String? = null
     private var pendingPrivateAgentRequiredTool: RequiredAgentTool? = null
     private var pendingMiniLmMealRead = false
+    private var pendingMiniLmCompanion: CompanionAssistantPolicy.Resolution? = null
+    private var companionNavigation: CompanionNavigationRequest? = null
     private var lifecycleClosed = false
     private var createdMiniLmMealRouter: MiniLmMealRouter? = null
     private var privateAgentToolRounds = 0
@@ -372,6 +380,8 @@ class ModelLifecycle(
     fun unloadRuntime(): ModelStatus {
         miniLmReadFollowUpScope = null
         miniLmRouteDiagnostic = null
+        pendingMiniLmCompanion = null
+        companionNavigation = null
         runtimeGeneration += 1
         activeRuntimeLoad?.cancel(true)
         activeRuntimeLoad = null
@@ -411,6 +421,8 @@ class ModelLifecycle(
         val workersIdle = synchronized(this) {
             miniLmReadFollowUpScope = null
             miniLmRouteDiagnostic = null
+            pendingMiniLmCompanion = null
+            companionNavigation = null
             val cancellingFoodNameCorrection = assistantOperation == "meal_food_name_correction"
             assistantTraceStore?.record("cancelled", assistantOperation ?: "unknown", "cancelled")
             activeInference?.cancel(true)
@@ -464,6 +476,8 @@ class ModelLifecycle(
     @Synchronized
     fun clearPrivateAgentConversation(): ModelStatus {
         miniLmReadFollowUpScope = null
+        pendingMiniLmCompanion = null
+        companionNavigation = null
         clearPrivateAgentConversationLocked()
         miniLmRouteDiagnostic = null
         return statusLocked()
@@ -491,6 +505,8 @@ class ModelLifecycle(
     @Synchronized
     fun lockPrivateAgentConversation(): ModelStatus {
         miniLmReadFollowUpScope = null
+        pendingMiniLmCompanion = null
+        companionNavigation = null
         miniLmRouteDiagnostic = null
         assistantTraceStore?.record("locked", assistantOperation ?: "unknown", "cleared")
         if (assistantOperation == "meal_food_name_correction") {
@@ -546,6 +562,8 @@ class ModelLifecycle(
             return statusLocked()
         }
         if (activeInference?.isDone == false || pendingPrivateAgentToolName != null) return statusLocked()
+        pendingMiniLmCompanion = null
+        companionNavigation = null
         pendingAssistantStyle?.let {
             // The existing native conversation was created with the previous style prompt.
             // Drop only its KV state; the visible/vault history is supplied on the next turn.
@@ -585,15 +603,28 @@ class ModelLifecycle(
     ): ModelStatus {
         if (pendingMiniLmMealRead) {
             val requiredTool = pendingPrivateAgentRequiredTool
+            val companion = pendingMiniLmCompanion
             val expectedName = requiredTool?.name
             val dayOffset = requiredTool?.daysAgo
             val reply = requiredTool?.takeIf {
                 state == "loaded" && toolName == expectedName && pendingPrivateAgentToolName == expectedName
-            }?.let { MiniLmMealReadPolicy.validatedFastReadReply(it, response) }
+            }?.let { required -> when (companion?.kind) {
+                CompanionAssistantPolicy.IntentKind.GOAL_REMAINING -> companion.metric?.let { metric ->
+                    GoalRemainingNutritionReply.from(response, required.targetDate ?: return@let null, metric)
+                }
+                CompanionAssistantPolicy.IntentKind.SAVED_RECALL -> companion.query?.let { query ->
+                    CompanionAssistantPolicy.savedDishReply(response, query, draft = false)
+                }
+                CompanionAssistantPolicy.IntentKind.SAVED_DRAFT -> companion.query?.let { query ->
+                    CompanionAssistantPolicy.savedDishReply(response, query, draft = true)
+                }
+                else -> MiniLmMealReadPolicy.validatedFastReadReply(required, response)
+            } }
             val expectedDate = requiredTool?.targetDate?.toString()
             val requestId = ++assistantRequestSequence
             assistantRequestId = requestId
             pendingMiniLmMealRead = false
+            pendingMiniLmCompanion = null
             pendingPrivateAgentToolName = null
             pendingPrivateAgentRequiredTool = null
             coachToolCall = null
@@ -602,19 +633,31 @@ class ModelLifecycle(
             miniLmReadFollowUpScope = if (reply != null && pendingAssistantStyle == null) {
                 val referenceDate = requiredTool?.targetDate
                 when {
+                    companion?.kind == CompanionAssistantPolicy.IntentKind.GOAL_REMAINING && referenceDate != null ->
+                        MiniLmMealReadPolicy.FollowUpScope(
+                            MiniLmMealReadPolicy.FollowUpOperation.GOAL_REMAINING, referenceDate, companion.metric,
+                        )
                     referenceDate != null && expectedName == "read_day_nutrition" ->
                         MiniLmMealReadPolicy.FollowUpScope(
-                            MiniLmMealReadPolicy.FollowUpOperation.TODAY_NUTRITION, referenceDate,
+                            MiniLmMealReadPolicy.FollowUpOperation.TODAY_NUTRITION,
+                            referenceDate.plusDays((requiredTool.daysAgo ?: 0).toLong()), requiredTool.metric,
+                            requiredTool.daysAgo ?: 0,
                         )
                     referenceDate != null && expectedName == "read_latest_meal" ->
                         MiniLmMealReadPolicy.FollowUpScope(
                             MiniLmMealReadPolicy.FollowUpOperation.LATEST_MEAL, referenceDate,
+                        )
+                    referenceDate != null && expectedName == "read_meals" ->
+                        MiniLmMealReadPolicy.FollowUpScope(
+                            MiniLmMealReadPolicy.FollowUpOperation.TODAY_MEALS,
+                            referenceDate.plusDays((dayOffset ?: 0).toLong()), dayOffset = dayOffset ?: 0,
                         )
                     else -> null
                 }
             } else null
             coachDiagnostic = when {
                 reply != null -> null
+                expectedName == "read_weight" -> "Metria could not verify that weight answer against your local records. Please ask again."
                 expectedName == "read_meals" && expectedDate != null &&
                     (response["from"] != expectedDate || response["to"] != expectedDate) ->
                     "The selected day changed before Metria could verify it. Please ask again."
@@ -622,17 +665,34 @@ class ModelLifecycle(
             }
             state = "loaded"
             assistantOperation = "agent_reply"
-            reason = if (reply == null) "The MiniLM-routed meal read failed host validation safely." else "The recorded meal answer came from the validated local result."
+            reason = if (reply == null) "The MiniLM-routed local read failed host validation safely."
+                else "The member request was answered from a validated local result."
             if (BuildConfig.DEBUG) {
                 diagnostics = when {
+                    companion?.kind == CompanionAssistantPolicy.IntentKind.GOAL_REMAINING && reply != null ->
+                        "Assistant route: MiniLM goal-remaining read; Gemma generation skipped."
+                    companion?.kind == CompanionAssistantPolicy.IntentKind.GOAL_REMAINING ->
+                        "Assistant route: MiniLM goal-remaining read; host validation rejected the result."
+                    companion?.kind == CompanionAssistantPolicy.IntentKind.SAVED_RECALL && reply != null ->
+                        "Assistant route: MiniLM saved-dish lookup; Gemma generation skipped."
+                    companion?.kind == CompanionAssistantPolicy.IntentKind.SAVED_RECALL ->
+                        "Assistant route: MiniLM saved-dish lookup; host validation rejected the result."
+                    companion?.kind == CompanionAssistantPolicy.IntentKind.SAVED_DRAFT && reply != null ->
+                        "Assistant route: MiniLM saved-dish draft; Gemma generation skipped."
+                    companion?.kind == CompanionAssistantPolicy.IntentKind.SAVED_DRAFT ->
+                        "Assistant route: MiniLM saved-dish draft; host validation rejected the result."
+                    expectedName == "read_weight" && reply != null ->
+                        "Assistant route: MiniLM weight-history read; Gemma generation skipped."
+                    expectedName == "read_weight" ->
+                        "Assistant route: MiniLM weight-history read; host validation rejected the result."
                     expectedName == "read_latest_meal" && reply != null ->
                         "Assistant route: MiniLM latest-meal read; Gemma generation skipped."
                     expectedName == "read_latest_meal" ->
                         "Assistant route: MiniLM latest-meal read; host validation rejected the result."
                     expectedName == "read_day_nutrition" && reply != null ->
-                        "Assistant route: MiniLM today-nutrition read; Gemma generation skipped."
+                        "Assistant route: MiniLM ${if (dayOffset == 1) "yesterday" else "today"}-nutrition read; Gemma generation skipped."
                     expectedName == "read_day_nutrition" ->
-                        "Assistant route: MiniLM today-nutrition read; host validation rejected the result."
+                        "Assistant route: MiniLM ${if (dayOffset == 1) "yesterday" else "today"}-nutrition read; host validation rejected the result."
                     reply == null -> "Assistant route: MiniLM ${if (dayOffset == 1) "yesterday-meals" else "today-meals"} read; host validation rejected the result."
                     dayOffset == 0 -> "Assistant route: MiniLM today-meals read; Gemma generation skipped."
                     else -> "Assistant route: MiniLM yesterday-meals read; Gemma generation skipped."
@@ -642,8 +702,13 @@ class ModelLifecycle(
                 if (reply == null) "reply_rejected" else "reply_audited",
                 "agent_turn",
                 if (reply == null) "rejected" else "accepted",
-                tool = expectedName?.takeIf { it in setOf("read_meals", "read_latest_meal", "read_day_nutrition") } ?: "none",
-                period = if (expectedName == "read_day_nutrition" || expectedName == "read_meals" && dayOffset == 0) "today" else "none",
+                tool = expectedName?.takeIf { it in setOf("read_meals", "read_latest_meal", "read_day_nutrition", "read_weight") } ?: "none",
+                period = when {
+                    expectedName !in setOf("read_day_nutrition", "read_meals") -> "none"
+                    dayOffset == 1 -> "yesterday"
+                    dayOffset == 0 -> "today"
+                    else -> "none"
+                },
                 requestId = requestId,
             )
             clearPrivateAgentConversationLocked()
@@ -691,6 +756,15 @@ class ModelLifecycle(
         activeInference = executor.submit {
             runPrivateAgentToolResult(conversation, lifetime, toolName, response, requestId, requiredTool)
         }
+        return statusLocked()
+    }
+
+    /** Consumes a current, one-use host navigation request before the UI changes destination. */
+    @Synchronized
+    fun completeCompanionNavigation(requestId: Long): ModelStatus? {
+        val request = companionNavigation ?: return null
+        if (request.requestId != requestId || assistantRequestId != requestId || state != "loaded") return null
+        companionNavigation = null
         return statusLocked()
     }
 
@@ -1441,27 +1515,38 @@ class ModelLifecycle(
                     tool = traceToolName(it.name), period = it.period ?: "none", requestId = requestId,
                 )
             }
+            val navigationIntent = CompanionAssistantPolicy.resolve(hostRequiredTool, memberText, selectedMealId, queryToday)
+                ?.takeIf { it.kind == CompanionAssistantPolicy.IntentKind.NAVIGATION }
             val resolvedMiniLmRead = MiniLmMealReadPolicy.resolveReadRequest(
                 hostRequiredTool = hostRequiredTool,
                 text = memberText,
                 selectedMealId = selectedMealId,
                 today = queryToday,
                 followUpScope = followUpScope,
-            )
+            ) ?: navigationIntent?.let { intent ->
+                MiniLmMealReadPolicy.ResolvedRead(
+                    RequiredAgentTool("host_navigation", query = intent.destination?.name),
+                    intent.classifierText,
+                    classifierKey = intent.classifierKey,
+                    companion = intent,
+                )
+            }
             val miniLmMealReadTool = resolvedMiniLmRead?.takeIf { it.allowMiniLm }?.requiredTool
             // A captured follow-up scope also constrains Gemma if MiniLM abstains: the same
             // fresh, bounded local read remains required, while prose and history remain untrusted.
-            val requiredTool = MiniLmMealReadPolicy.gemmaFallbackRequiredTool(resolvedMiniLmRead, hostRequiredTool)
+            val requiredTool = if (navigationIntent != null) null else
+                MiniLmMealReadPolicy.gemmaFallbackRequiredTool(resolvedMiniLmRead, hostRequiredTool)
             val classifierText = resolvedMiniLmRead?.classifierText ?: memberText
             val miniLmDecision = if (miniLmMealReadTool == null) {
                 MiniLmRouteDecision(MiniLmRouteOutcome.SCOPE_REJECTED)
             } else try {
-                miniLmMealRouter.routeMealRead(classifierText, miniLmMealReadTool.name)
+                miniLmMealRouter.routeMealRead(classifierText, resolvedMiniLmRead?.classifierKey ?: miniLmMealReadTool.name)
             } catch (_: Exception) {
                 MiniLmRouteDecision(MiniLmRouteOutcome.RUNTIME_UNAVAILABLE)
             }
             val traceRoutePeriod = when {
-                miniLmMealReadTool?.name == "read_day_nutrition" -> "today"
+                miniLmMealReadTool?.name == "read_day_nutrition" && miniLmMealReadTool.daysAgo == 0 -> "today"
+                miniLmMealReadTool?.name == "read_day_nutrition" && miniLmMealReadTool.daysAgo == 1 -> "yesterday"
                 miniLmMealReadTool?.name == "read_meals" && miniLmMealReadTool.daysAgo == 0 -> "today"
                 miniLmMealReadTool?.name == "read_meals" && miniLmMealReadTool.daysAgo == 1 -> "yesterday"
                 requiredTool?.period == "today" -> "today"
@@ -1472,9 +1557,20 @@ class ModelLifecycle(
             }
             synchronized(this) {
                 if (engine !== loadedEngine || assistantRequestId != requestId) return
-                val traceReason = when (miniLmDecision.outcome) {
+                val acceptedCompanionReason = if (miniLmDecision.outcome == MiniLmRouteOutcome.ACCEPTED) {
+                    when (resolvedMiniLmRead?.companion?.kind) {
+                        CompanionAssistantPolicy.IntentKind.GOAL_REMAINING -> "goal_remaining"
+                        CompanionAssistantPolicy.IntentKind.SAVED_RECALL -> "saved_dish_recall"
+                        CompanionAssistantPolicy.IntentKind.SAVED_DRAFT -> "saved_dish_draft"
+                        CompanionAssistantPolicy.IntentKind.NAVIGATION -> "navigation"
+                        null -> null
+                    }
+                } else null
+                val traceReason = acceptedCompanionReason ?: when (miniLmDecision.outcome) {
                     MiniLmRouteOutcome.ACCEPTED -> "minilm_accepted"
-                    MiniLmRouteOutcome.SCOPE_REJECTED -> "scope"
+                    MiniLmRouteOutcome.SCOPE_REJECTED -> if (miniLmMealReadTool == null) {
+                        MiniLmMealReadPolicy.scopeRejectionReason(memberText, selectedMealId)
+                    } else "scope"
                     MiniLmRouteOutcome.SIMILARITY_REJECTED -> "similarity"
                     MiniLmRouteOutcome.MARGIN_REJECTED -> "margin"
                     MiniLmRouteOutcome.RUNTIME_UNAVAILABLE -> "runtime"
@@ -1510,6 +1606,30 @@ class ModelLifecycle(
                 }
             }
             if (miniLmMealReadTool != null && miniLmDecision.outcome == MiniLmRouteOutcome.ACCEPTED) {
+                val companionIntent = resolvedMiniLmRead?.companion
+                if (companionIntent?.kind == CompanionAssistantPolicy.IntentKind.NAVIGATION) {
+                    synchronized(this) {
+                        if (engine !== loadedEngine || assistantRequestId != requestId || Thread.currentThread().isInterrupted) return
+                        clearPrivateAgentConversationLocked()
+                        pendingPrivateAgentToolName = null
+                        pendingPrivateAgentRequiredTool = null
+                        pendingMiniLmMealRead = false
+                        pendingMiniLmCompanion = null
+                        coachToolCall = null
+                        coachReply = "Opening ${when (companionIntent.destination) {
+                            CompanionAssistantPolicy.Destination.TODAY -> "Today"
+                            CompanionAssistantPolicy.Destination.HISTORY -> "weight history"
+                            CompanionAssistantPolicy.Destination.PRIVACY -> "Privacy settings"
+                            null -> "that screen"
+                        }} on this phone."
+                        coachDiagnostic = null
+                        state = "loaded"
+                        assistantOperation = "agent_reply"
+                        companionNavigation = companionIntent.destination?.let { CompanionNavigationRequest(requestId, it) }
+                        assistantTraceStore?.record("route_selected", "agent_turn", "accepted", reason = "navigation", requestId = requestId)
+                    }
+                    return
+                }
                 synchronized(this) {
                     if (engine !== loadedEngine || assistantRequestId != requestId) return
                     // This route carries no native conversation or prompt into Gemma. The existing
@@ -1518,33 +1638,66 @@ class ModelLifecycle(
                     pendingPrivateAgentToolName = miniLmMealReadTool.name
                     pendingPrivateAgentRequiredTool = miniLmMealReadTool
                     pendingMiniLmMealRead = true
+                    pendingMiniLmCompanion = companionIntent
                     coachToolCall = when (miniLmMealReadTool.name) {
+                        "read_weight" -> PrivateCoachToolCall(
+                            intent = "read_weight", fromDaysAgo = miniLmMealReadTool.fromDaysAgo,
+                            toDaysAgo = miniLmMealReadTool.toDaysAgo, hostReadDate = queryToday,
+                        )
                         "read_latest_meal" -> PrivateCoachToolCall(
                             intent = "read_latest_meal", hostReadDate = queryToday,
                         )
                         "read_day_nutrition" -> PrivateCoachToolCall(
-                            intent = "read_day_nutrition", period = "historical_day", daysAgo = 0,
+                            intent = "read_day_nutrition", period = "historical_day", daysAgo = miniLmMealReadTool.daysAgo ?: 0,
+                            hostReadDate = queryToday, hostMetric = miniLmMealReadTool.metric,
+                        )
+                        "read_nutrition_summary" -> PrivateCoachToolCall(
+                            intent = "read_nutrition_summary", period = "today", hostReadDate = queryToday,
+                            hostCompanionKind = companionIntent?.kind,
+                            hostMetric = companionIntent?.metric,
+                        )
+                        "search_saved_dishes" -> PrivateCoachToolCall(
+                            intent = "search_saved_dishes", query = miniLmMealReadTool.query,
+                            hostReadDate = queryToday, hostCompanionKind = companionIntent?.kind,
+                        )
+                        "read_meals" -> PrivateCoachToolCall(
+                            intent = "read_meals", daysAgo = miniLmMealReadTool.daysAgo,
                             hostReadDate = queryToday,
                         )
                         else -> PrivateCoachToolCall(
-                            intent = "read_meals", daysAgo = miniLmMealReadTool.daysAgo, hostReadDate = queryToday,
+                            intent = miniLmMealReadTool.name, hostReadDate = queryToday,
                         )
                     }
                     state = "loaded"
                     assistantOperation = "agent_waiting_tool"
                     coachDiagnostic = null
-                    reason = when (miniLmMealReadTool.name) {
+                    reason = when (companionIntent?.kind) {
+                        CompanionAssistantPolicy.IntentKind.GOAL_REMAINING -> "MiniLM selected a fresh local goal-remaining comparison."
+                        CompanionAssistantPolicy.IntentKind.SAVED_RECALL -> "MiniLM selected a bounded local saved-dish lookup."
+                        CompanionAssistantPolicy.IntentKind.SAVED_DRAFT -> "MiniLM selected a saved-dish meal draft for member review."
+                        else -> when (miniLmMealReadTool.name) {
+                        "read_weight" -> "MiniLM selected the local bounded weight-history read."
                         "read_latest_meal" -> "MiniLM selected the local latest-meal read."
-                        "read_day_nutrition" -> "MiniLM selected the local today-nutrition read."
+                        "read_day_nutrition" -> "MiniLM selected the local ${if (miniLmMealReadTool.daysAgo == 1) "yesterday" else "today"}-nutrition read."
                         else -> "MiniLM selected the local ${if (miniLmMealReadTool.daysAgo == 1) "yesterday" else "today"}-meals read."
+                        }
                     }
                     if (BuildConfig.DEBUG) {
-                        diagnostics = when (miniLmMealReadTool.name) {
+                        diagnostics = when (companionIntent?.kind) {
+                            CompanionAssistantPolicy.IntentKind.GOAL_REMAINING ->
+                                "Assistant route: MiniLM goal-remaining read; Gemma generation skipped."
+                            CompanionAssistantPolicy.IntentKind.SAVED_RECALL ->
+                                "Assistant route: MiniLM saved-dish lookup; Gemma generation skipped."
+                            CompanionAssistantPolicy.IntentKind.SAVED_DRAFT ->
+                                "Assistant route: MiniLM saved-dish draft; Gemma generation skipped."
+                            else -> when (miniLmMealReadTool.name) {
+                            "read_weight" -> "Assistant route: MiniLM weight-history read; Gemma generation skipped."
                             "read_latest_meal" -> "Assistant route: MiniLM latest-meal read; Gemma generation skipped."
-                            "read_day_nutrition" -> "Assistant route: MiniLM today-nutrition read; Gemma generation skipped."
+                            "read_day_nutrition" -> "Assistant route: MiniLM ${if (miniLmMealReadTool.daysAgo == 1) "yesterday" else "today"}-nutrition read; Gemma generation skipped."
                             else -> if (miniLmMealReadTool.daysAgo == 0) {
                                 "Assistant route: MiniLM today-meals read; Gemma generation skipped."
                             } else "Assistant route: MiniLM yesterday-meals read; Gemma generation skipped."
+                            }
                         }
                     }
                     assistantTraceStore?.record(
@@ -1556,8 +1709,13 @@ class ModelLifecycle(
                     assistantTraceStore?.record(
                         "tool_required", "agent_turn", "waiting",
                         tool = miniLmMealReadTool.name,
-                        period = if (miniLmMealReadTool.name == "read_day_nutrition" ||
-                            miniLmMealReadTool.name == "read_meals" && miniLmMealReadTool.daysAgo == 0) "today" else "none",
+                        period = when {
+                            miniLmMealReadTool.name == "read_day_nutrition" && miniLmMealReadTool.daysAgo == 0 -> "today"
+                            miniLmMealReadTool.name == "read_day_nutrition" && miniLmMealReadTool.daysAgo == 1 -> "yesterday"
+                            miniLmMealReadTool.name == "read_meals" && miniLmMealReadTool.daysAgo == 0 -> "today"
+                            miniLmMealReadTool.name == "read_meals" && miniLmMealReadTool.daysAgo == 1 -> "yesterday"
+                            else -> "none"
+                        },
                         requestId = requestId,
                     )
                 }
@@ -2876,6 +3034,7 @@ class ModelLifecycle(
         ),
         debugLatestMealDraftCategory.takeIf { BuildConfig.DEBUG },
         imageAnalysisRequestId,
+        companionNavigation,
     )
 
     private fun recordImageAuditLocked(

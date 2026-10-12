@@ -8,6 +8,39 @@ import org.junit.Test
 
 class AssistantTraceStoreTest {
     @Test
+    fun `scope reasons survive restart without private context`() {
+        val root = Files.createTempDirectory("trace-test").toFile()
+        val reasons = listOf("scope_text", "scope_selected", "scope_host", "scope_context")
+        AssistantTraceStore(root, true, { 1_000L }).use { trace ->
+            trace.setEnabled(true)
+            reasons.forEach { trace.record("route_decision", "agent_turn", "rejected", reason = it) }
+            trace.flush()
+        }
+        AssistantTraceStore(root, true, { 1_001L }).use { trace ->
+            trace.flush()
+            assertEquals(4, trace.status().eventCount)
+            val rows = root.resolve(AssistantTraceStore.relativePath).readLines().map { it.split('\t') }
+            assertEquals(reasons, rows.map { it[4] })
+            assertTrue(rows.all { it.size == 8 })
+        }
+    }
+
+    @Test
+    fun `companion route reasons persist as fixed metadata only`() {
+        val root = Files.createTempDirectory("trace-test").toFile()
+        val reasons = listOf("goal_remaining", "saved_dish_recall", "saved_dish_draft", "navigation")
+        AssistantTraceStore(root, true, { 1_000L }).use { trace ->
+            trace.setEnabled(true)
+            reasons.forEach { trace.record("route_decision", "agent_turn", "accepted", reason = it) }
+            trace.flush()
+        }
+        AssistantTraceStore(root, true, { 1_001L }).use { trace ->
+            trace.flush()
+            assertEquals(reasons, root.resolve(AssistantTraceStore.relativePath).readLines().map { it.split('\t')[4] })
+            assertEquals(reasons.size, trace.status().eventCount)
+        }
+    }
+    @Test
     fun `trace is off by default and does not create a file`() {
         val root = Files.createTempDirectory("trace-test").toFile()
         AssistantTraceStore(root, debugBuild = true, nowMillis = { 1_000L }).use { trace ->

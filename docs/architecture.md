@@ -1,5 +1,18 @@
 # Metria architecture
 
+## Chat navigation persistence
+
+The companion navigation handoff belongs to the Chat/session coordinator.
+It records the current accepted opening reply once, then awaits successful
+off-main encrypted retention of the complete turn before consuming the existing
+current-request navigation token. Save failure keeps Chat open. Debounced and
+urgent snapshots share a serialized session writer with snapshot tickets;
+conversation clear invalidates pending work before its serialized write. Lock,
+new conversation, cancellation and newer requests prevent late navigation.
+Temporary transcript state stays in the unlocked session and is released on
+invalidation. Existing vault representation and conversation retention rules
+are unchanged; no content enters monitoring.
+
 ## Optional phase calorie extension
 
 Member-approved policy (2026-10-08), specified in
@@ -91,6 +104,12 @@ existing summaries. No model, network dependency or cloud calculation is added.
 
 ## Privacy boundary
 
+Member-approved manual Chat copy (2026-10-12): explicit Copy may place only a
+chosen completed visible message on the OS-managed clipboard as plain text,
+marked sensitive for preview handling. This user-controlled transfer does not
+authorize automatic disclosure, clipboard reads, analytics or new persistence.
+Metria performs no network operation and copies no hidden model/tool state.
+
 Member-approved photo performance metadata extension (2026-10-11): the existing
 50-record encrypted image-analysis audit optionally retains image preparation,
 conversation setup, model-request, first nonblank streamed-text callback and
@@ -136,6 +155,20 @@ operation/date, never record values. Every follow-up reads fresh records and
 passes the existing validators. Stop, lock, restart, new/unrelated operations and
 date rollover invalidate it; missing scope follows the normal assistant path.
 No new vault or conversation representation is introduced.
+
+Approved weight read shortcuts (2026-10-12): debug MiniLM may recognize an
+explicit English latest-weight value/date or recent-weigh-in request using the
+existing `read_weight` permission. Latest reads cover 90-days-ago through today;
+recent reads cover 30 calendar days. Host-composed replies disclose window dates
+and omissions, validate fresh bounded rows and never claim all-history coverage.
+They do not grant write access or seed nutrition follow-up scope. Implementation
+and acceptance are tracked separately in `minilm-chat-integration.md`.
+
+Approved broader read wording (2026-10-12) uses shared bounded normalization and
+additional closed English paraphrases for existing operations. Both eligibility
+and embeddings receive the normalized member wording; host read scope remains
+independent. Date/number/write qualifiers are preserved and mixed requests still
+decline. No tool, schema, classifier threshold or factual-audit change is made.
 
 Member-approved routing monitoring (2026-10-12) extends the existing opt-in,
 bounded content-free assistant trace with fixed route choices/rejection outcomes

@@ -226,6 +226,9 @@ class MainActivity : FragmentActivity() {
         response: Map<String, Any?>,
     ): ModelStatus = modelLifecycle.continuePrivateAgentTool(toolName, response)
 
+    fun completeCompanionNavigation(requestId: Long): ModelStatus? =
+        modelLifecycle.completeCompanionNavigation(requestId)
+
     fun cancelPrivateAssistant(): ModelStatus = modelLifecycle.cancelAssistantRequest()
 
     fun clearLocalMealDraft(): ModelStatus = modelLifecycle.clearMealDraft()

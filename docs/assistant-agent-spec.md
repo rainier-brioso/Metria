@@ -4,6 +4,17 @@
 
 ## Purpose and boundary
 
+Approved companion bundle (2026-10-12): current goal differences, saved-dish
+recall, earned date/metric follow-ups, allowlisted in-app navigation and unsaved
+saved-dish meal handoffs are defined in `assistant-companion-bundle.md`. Fresh
+records and independent host validation govern each action. Goal comparisons
+use only today's current confirmed reference with explicit estimate limitations;
+historical reads never inherit it. Dish identity/choice stays host-held, amounts
+are not fabricated, and final member review remains the only save. Navigation
+and draft handoffs are one-use request-bound capabilities, not arbitrary model
+instructions. Develop/review the entire set before one in-place installation,
+then test each feature; milestone acceptance stays separate.
+
 The member approved a debug-only MiniLM fast path for explicit English requests
 to list today's recorded meals, extended to yesterday's explicit meal questions
 and saved calorie/protein questions about the latest recorded meal
@@ -24,6 +35,25 @@ unlocked session. They inherit only the operation scope, perform a fresh read
 and never reuse previous answer values as evidence. Stop, lock, restart,
 new/unrelated operations and date changes revoke fast scope. Unsupported or
 unresolved follow-ups keep the normal assistant protocol below.
+
+The member-approved weight shortcut slice (2026-10-12) reuses `read_weight`
+for explicit English latest recorded weight/date and recent weigh-in questions.
+Latest value/date are bounded to 90-days-ago through today; recent history uses
+30 calendar days, returning at most 24 latest records. Deterministic replies
+state window dates, kilograms and omissions; empty windows never imply no older
+records. Strict host grammar and frozen-date/count/row validation plus the
+existing factual auditor guard accepted MiniLM answers. Weight answers do not
+earn nutrition follow-up scope or permit writes. Implementation/build/phone
+acceptance are recorded separately in `minilm-chat-integration.md`.
+
+Approved wording-tolerance extension (2026-10-12): shared bounded normalization
+and additional single-purpose English forms may recognize polite requests and
+common read paraphrases across existing shortcuts. Classify that normalized
+wording; do not replace it with a preselected intent template. Independent host
+date/operation validation and factual audits remain mandatory. Politeness may
+be removed only at message boundaries; mixed content, negation, write verbs and
+date qualifiers cannot be stripped to make a request eligible. This does not
+claim arbitrary English or general typo understanding.
 
 Metria uses LiteRT-LM's native `Conversation` and tool-call protocol to provide a
 continuous, private assistant. The model receives no vault object, database handle,

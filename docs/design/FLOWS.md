@@ -353,6 +353,45 @@ is introduced. All history retains its separate date-grouped view.
 
 ## 6. Ask Metria
 
+**Approved companion bundle — 2026-10-12:** implement the complete local set
+before one installation, then test each feature. Goal questions compare fresh
+today estimates with current confirmed references, disclose partial/missing
+coverage and are not advice. No reference or usable estimate receives an explicit
+unavailable answer. Saved-dish recall shows bounded named matches; ambiguity is
+disclosed rather than choosing by confirmation frequency. “I had my usual…” may
+prepare only an unsaved saved-dish draft. Multiple candidates require choice;
+selection is re-resolved in the current unlocked vault before review. Saved
+amounts are prefilled, unknown amounts stay blank, and final reviewed Save alone
+records the meal. No previous image/audit is inherited.
+
+An earned short date/metric follow-up performs a new read; yesterday never uses
+today's goals. Missing or incompatible scope keeps safe normal handling.
+Explicit navigation uses an allowlisted existing destination, closes Chat and
+preserves its encrypted timeline for reopening. Retain the navigation question
+and opening reply before leaving Chat; if that save fails, remain in Chat with
+a recoverable error. Request identity, Stop and lock
+prevent stale navigation/draft actions. Success/empty/ambiguous/partial/error/
+cancelled/restored states retain existing review and conversation contracts.
+Detailed gates are in `../assistant-companion-bundle.md`.
+
+**Approved message selection — 2026-10-12:** long-press completed message text
+to select a word or range with native handles and the floating Copy toolbar.
+The member replaced the initial visible-options design with this interaction.
+Explicit Copy transfers only the selected plain text to Android's clipboard,
+marked sensitive to hide its preview. It does not send a turn, read clipboard
+content, copy hidden model/tool state or save new records. Thinking/streaming
+messages do not expose Copy. Keep keyboard, scrolling, saved-meal actions and
+record-detail disclosure usable; copying has system or generic text-free
+confirmation and a recoverable generic error if unavailable.
+
+**Approved weight shortcuts — 2026-10-12:** latest saved weight/date and recent
+weigh-in questions may use a debug-only local intent route and fresh existing
+bounded weight read. Answers disclose the window, kilograms, recorded dates and
+omissions; empty results never imply all-history absence. The same Chat Send,
+Stop, lock, evidence and encrypted retention states apply. No screen/navigation
+change or automatic write is introduced; acceptance is tracked in
+`../minilm-chat-integration.md`.
+
 **Debug MiniLM meal lookup — 2026-10-11:** the member approved direct Chat
 integration for explicit English requests to list today's recorded meals. Send
 keeps its existing pending/cancellation behavior. A local classification plus

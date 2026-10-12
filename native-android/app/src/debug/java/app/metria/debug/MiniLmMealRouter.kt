@@ -2,6 +2,7 @@ package app.metria.debug
 
 import android.content.Context
 import app.metria.MiniLmMealReadPolicy
+import app.metria.MiniLmReadTextNormalization
 import app.metria.MiniLmRouteDecision
 import app.metria.MiniLmRouteOutcome
 import app.metria.MiniLmRouteScoring
@@ -16,7 +17,7 @@ import java.security.MessageDigest
 import kotlin.math.sqrt
 
 /**
- * Debug-only, local MiniLM prototype router for bounded meal-list and nutrition reads.
+ * Debug-only, local MiniLM prototype router for bounded meal, nutrition, and weight reads.
  * Create/use this away from the UI thread. Input text is never logged or persisted.
  */
 internal class MiniLmMealRouter(context: Context) : AutoCloseable {
@@ -26,6 +27,11 @@ internal class MiniLmMealRouter(context: Context) : AutoCloseable {
     private val mealListPrototypes: List<FloatArray>
     private val latestMealPrototypes: List<FloatArray>
     private val todayNutritionPrototypes: List<FloatArray>
+    private val weightPrototypes: List<FloatArray>
+    private val goalRemainingPrototypes: List<FloatArray>
+    private val savedRecallPrototypes: List<FloatArray>
+    private val savedDraftPrototypes: List<FloatArray>
+    private val navigationPrototypes: List<FloatArray>
     private val fallbackPrototypes: List<FloatArray>
     private var closed = false
 
@@ -48,7 +54,8 @@ internal class MiniLmMealRouter(context: Context) : AutoCloseable {
         try {
             validateSession(created)
             session = created
-            val examples = MEAL_LIST_EXAMPLES + LATEST_MEAL_EXAMPLES + TODAY_NUTRITION_EXAMPLES + FALLBACK_EXAMPLES
+            val examples = MEAL_LIST_EXAMPLES + LATEST_MEAL_EXAMPLES + TODAY_NUTRITION_EXAMPLES + WEIGHT_EXAMPLES +
+                GOAL_REMAINING_EXAMPLES + SAVED_RECALL_EXAMPLES + SAVED_DRAFT_EXAMPLES + NAVIGATION_EXAMPLES + FALLBACK_EXAMPLES
             val vectors = embed(examples)
             mealListPrototypes = vectors.take(MEAL_LIST_EXAMPLES.size)
             latestMealPrototypes = vectors.subList(
@@ -59,8 +66,20 @@ internal class MiniLmMealRouter(context: Context) : AutoCloseable {
                 MEAL_LIST_EXAMPLES.size + LATEST_MEAL_EXAMPLES.size,
                 MEAL_LIST_EXAMPLES.size + LATEST_MEAL_EXAMPLES.size + TODAY_NUTRITION_EXAMPLES.size,
             )
-            fallbackPrototypes = vectors.drop(
+            weightPrototypes = vectors.subList(
                 MEAL_LIST_EXAMPLES.size + LATEST_MEAL_EXAMPLES.size + TODAY_NUTRITION_EXAMPLES.size,
+                MEAL_LIST_EXAMPLES.size + LATEST_MEAL_EXAMPLES.size + TODAY_NUTRITION_EXAMPLES.size + WEIGHT_EXAMPLES.size,
+            )
+            val goalStart = MEAL_LIST_EXAMPLES.size + LATEST_MEAL_EXAMPLES.size + TODAY_NUTRITION_EXAMPLES.size + WEIGHT_EXAMPLES.size
+            goalRemainingPrototypes = vectors.subList(goalStart, goalStart + GOAL_REMAINING_EXAMPLES.size)
+            val recallStart = goalStart + GOAL_REMAINING_EXAMPLES.size
+            savedRecallPrototypes = vectors.subList(recallStart, recallStart + SAVED_RECALL_EXAMPLES.size)
+            val draftStart = recallStart + SAVED_RECALL_EXAMPLES.size
+            savedDraftPrototypes = vectors.subList(draftStart, draftStart + SAVED_DRAFT_EXAMPLES.size)
+            val navigationStart = draftStart + SAVED_DRAFT_EXAMPLES.size
+            navigationPrototypes = vectors.subList(navigationStart, navigationStart + NAVIGATION_EXAMPLES.size)
+            fallbackPrototypes = vectors.drop(
+                navigationStart + NAVIGATION_EXAMPLES.size,
             )
         } catch (error: Throwable) {
             created.close()
@@ -74,19 +93,27 @@ internal class MiniLmMealRouter(context: Context) : AutoCloseable {
         if (closed) return MiniLmRouteDecision(MiniLmRouteOutcome.RUNTIME_UNAVAILABLE)
         if (Thread.currentThread().isInterrupted) return MiniLmRouteDecision(MiniLmRouteOutcome.INTERRUPTED)
         if (!MiniLmMealReadPolicy.isInScope(text, toolName)) {
-            if (toolName != "read_day_nutrition" || !MiniLmMealReadPolicy.isTodayNutritionInScope(text)) {
+            if (toolName != "read_day_nutrition" ||
+                (!MiniLmMealReadPolicy.isTodayNutritionInScope(text) && !MiniLmMealReadPolicy.isHistoricalNutritionInScope(text))) {
                 return MiniLmRouteDecision(MiniLmRouteOutcome.SCOPE_REJECTED)
             }
         }
         return try {
-            val query = embed(listOf(text)).single()
+            val query = embed(listOf(MiniLmReadTextNormalization.normalize(text))).single()
             if (Thread.currentThread().isInterrupted) return MiniLmRouteDecision(MiniLmRouteOutcome.INTERRUPTED)
-            val (positiveExamples, competingExamples) = when (toolName) {
-                "read_meals" -> mealListPrototypes to (latestMealPrototypes + todayNutritionPrototypes)
-                "read_latest_meal" -> latestMealPrototypes to (mealListPrototypes + todayNutritionPrototypes)
-                "read_day_nutrition" -> todayNutritionPrototypes to (mealListPrototypes + latestMealPrototypes)
-                else -> return MiniLmRouteDecision(MiniLmRouteOutcome.SCOPE_REJECTED)
-            }
+            val groups = listOf(
+                "read_meals" to mealListPrototypes,
+                "read_latest_meal" to latestMealPrototypes,
+                "read_day_nutrition" to todayNutritionPrototypes,
+                "read_weight" to weightPrototypes,
+                "goal_remaining" to goalRemainingPrototypes,
+                "saved_recall" to savedRecallPrototypes,
+                "saved_draft" to savedDraftPrototypes,
+                "navigation" to navigationPrototypes,
+            )
+            val positiveExamples = groups.singleOrNull { it.first == toolName }?.second
+                ?: return MiniLmRouteDecision(MiniLmRouteOutcome.SCOPE_REJECTED)
+            val competingExamples = groups.filterNot { it.first == toolName }.flatMap { it.second }
             val positive = positiveExamples.maxOfOrNull { cosine(query, it) }
                 ?: return MiniLmRouteDecision(MiniLmRouteOutcome.INFERENCE_FAILED)
             val competing = competingExamples.maxOfOrNull { cosine(query, it) }
@@ -259,7 +286,11 @@ internal class MiniLmMealRouter(context: Context) : AutoCloseable {
             "Which meals are in my record for yesterday",
             "Remind me what I ate yesterday",
             "Could you remind me what I ate yesterday",
-            "Show me all the food I saved yesterday"
+            "Show me all the food I saved yesterday",
+            "What have I eaten today",
+            "What have I eaten yesterday",
+            "Remind me of today's meals",
+            "Remind me of yesterday's meals"
         )
         val LATEST_MEAL_EXAMPLES = listOf(
             "How many calories were in my last meal",
@@ -272,6 +303,8 @@ internal class MiniLmMealRouter(context: Context) : AutoCloseable {
             "How many calories did my latest meal have",
             "Calories in my last meal",
             "Protein in my latest meal",
+            "How many calories in my last meal",
+            "What's the protein in my latest meal",
         )
         val TODAY_NUTRITION_EXAMPLES = listOf(
             "How many calories did I eat today",
@@ -286,6 +319,50 @@ internal class MiniLmMealRouter(context: Context) : AutoCloseable {
             "What's my calorie total today",
             "How much protein did I have today",
             "How many calories have I had today",
+            "What's today's protein total",
+            "What's today's calorie total",
+            "Tell me my calorie total for today",
+            "Tell me my protein total for today",
+        )
+        val WEIGHT_EXAMPLES = listOf(
+            "What's my latest weight",
+            "What is my latest weight",
+            "Show me the latest weight",
+            "When did I last weigh myself",
+            "When did I last weight myself",
+            "When was my last weigh-in",
+            "Show my recent weigh-ins",
+            "Show my weigh-ins from the last 30 days",
+            "List my recent weigh-ins",
+            "When was my most recent weigh in",
+            "Let me see my recent weigh-ins",
+            "Could you show me my latest weight",
+        )
+        val GOAL_REMAINING_EXAMPLES = listOf(
+            "How much protein do I have left today",
+            "How many calories do I have left today",
+            "How much protein remains against my goal today",
+            "How many calories remain against my goal today",
+        )
+        val SAVED_RECALL_EXAMPLES = listOf(
+            "Find my usual breakfast",
+            "Show my usual breakfast",
+            "Find my saved dish name",
+            "Show my saved dish name",
+            "Look up my saved dish name",
+        )
+        val SAVED_DRAFT_EXAMPLES = listOf(
+            "I had my usual breakfast",
+            "I ate my usual lunch",
+            "I ate my saved dish name",
+            "I had my saved dish name",
+        )
+        val NAVIGATION_EXAMPLES = listOf(
+            "Open my weight history",
+            "Show my weight history",
+            "Open today",
+            "Show my meals for today",
+            "Open privacy settings",
         )
         val FALLBACK_EXAMPLES = listOf(
             "I just ate eggs and toast",

@@ -7,6 +7,22 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MetriaAgentToolsTest {
+    @Test fun `companion requests retain host grounding when local classification declines`() {
+        val today = java.time.LocalDate.of(2026, 10, 12)
+        assertEquals(RequiredAgentTool("read_nutrition_summary", period = "today", metric = "protein"),
+            MetriaAgentGroundingPolicy.requiredTool("How much protein do I have left today?", today = today))
+        assertEquals(RequiredAgentTool("search_saved_dishes", query = "breakfast"),
+            MetriaAgentGroundingPolicy.requiredTool("Find my usual breakfast", today = today))
+        assertEquals(RequiredAgentTool("search_saved_dishes", query = "breakfast"),
+            MetriaAgentGroundingPolicy.requiredTool("I had my usual breakfast", today = today))
+        assertNull(MetriaAgentGroundingPolicy.requiredTool("Open my weight history", today = today))
+        assertNull(CompanionAssistantPolicy.resolve(null, "How much protein do I have left yesterday?", null, today))
+        assertNull(CompanionAssistantPolicy.resolve(null, "I had my usual breakfast and save it", null, today))
+        val required = RequiredAgentTool("search_saved_dishes", query = "breakfast")
+        assertTrue(required.accepts(PrivateCoachToolCall(intent = "search_saved_dishes", query = "breakfast")))
+        assertFalse(required.accepts(PrivateCoachToolCall(intent = "search_saved_dishes", query = "dinner")))
+    }
+
     @Test fun `no evidence correction preserves the original food question instead of becoming a new request`() {
         val instruction = MetriaAgentFactAuditor.retryInstruction(false, "¿El arroz tiene proteína?")
         assertTrue(instruction.contains("ORIGINAL_MEMBER_QUESTION: \"¿El arroz tiene proteína?\""))

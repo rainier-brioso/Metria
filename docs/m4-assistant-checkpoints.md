@@ -2531,3 +2531,241 @@ target-phone interaction recheck pending.
   other rejection checks remain open. Combined checkpoint review found no
   material gap. Next bounded task: obtain explicit approval to commit/push this
   reviewed checkpoint, then verify the remaining follow-up boundary cases.
+
+### Bounded weight read shortcuts — 2026-10-12
+
+- The previous MiniLM checkpoint was committed/pushed with member approval as
+  `3545c74`; its remaining boundary gates are still open. The member approved
+  latest saved weight, last weigh-in date and recent weigh-in shortcuts after
+  an error/no answer to the date question. Existing content-free trace showed
+  a compatible native turn rejected for a personal fact without a read; it
+  cannot independently identify the question text.
+- New strict English weight policy reuses `read_weight` with latest/date range
+  90-days-ago through today, or recent 30 calendar days, and at most 24 rows.
+  Fresh validated replies state kilograms, recorded dates, exact window and
+  omissions. Empty windows imply no global absence. Weight answers neither
+  grant writes nor seed nutrition follow-up scope. Eligible native fallback
+  retains its required weight read; original dated-weight requirements remain.
+- Complete gate passed: 473 tests, zero failures/errors/skips; debug assembly
+  and release Kotlin compilation. Final independent review and `diff --check`
+  passed after correcting dispatch/formatting/test issues without changing
+  factual-auditor rules. Details/hash in
+  [MiniLM integration](minilm-chat-integration.md#weight-read-shortcuts--2026-10-12).
+- Approved in-place installation returned `Success` on Samsung SM-S928B /
+  Android 16, then launch returned `Status: ok`, without data clear, uninstall,
+  signing replacement, vault/model deletion or biometric automation. Member
+  unlock and the three comparisons were requested. Named phone comparisons
+  and empty/omitted/out-of-scope/lifecycle cases are pending. Next bounded task:
+  inspect content-free route selections/reply audits after member completion.
+  No benchmark, new dependency, vault representation or milestone completion
+  is claimed.
+
+- Initial member feedback: latest value matched and was fast; trace confirmed
+  MiniLM weight selection and accepted host audit. Date question failed scope
+  eligibility, fell back to Gemma without a weight read, and was rejected for an
+  unsupported personal fact. Member clarification identified `weight myself`
+  versus the supported `weigh myself` wording. Added that exact typo variant
+  and regression coverage without relaxing thresholds or factual checks.
+  Corrected complete gate passed again (473 tests, zero failures/errors/skips,
+  debug assembly/release compilation), and independent review confirmed the
+  literal-only scope change. Corrected in-place install and launch succeeded
+  on the same Samsung SM-S928B / Android 16 with existing data preserved.
+  Exact typo/date retry and recent-list phone acceptance were requested and
+  remain pending alongside direct retained-route confirmation.
+
+- Subsequent feedback identified recent wording with `resent wigh-ins`. Added
+  contextual spelling normalization before the complete weight grammar and
+  used that same normalized text for embeddings. Mixed/write/dated/selected
+  requests stay excluded. Full gate passed: 474 tests, zero failures/errors/
+  skips, debug assembly/release compilation, independent review and diff check.
+  Earlier inspection was temporarily blocked by approval-service rate limiting;
+  normal review later recovered. Trace confirmed the previous date retry used
+  MiniLM and passed audit; recent-list attempt rejected scope and failed an
+  unsupported Gemma tool. Normalized build installed/launched in place on the
+  same phone with preservation rules. Recent-list retry and explicit member
+  comparison of the date answer are pending; no broader gate is closed.
+
+- Final member comparison confirmed recent records and the previous last-weigh-
+  in date both matched saved records. Direct content-free monitoring confirmed
+  the recent-list typo retry selected MiniLM `read_weight` and passed host audit,
+  skipping Gemma generation. All three named weight cases now have member
+  comparison and route evidence across the installed builds. Empty/omitted-row,
+  out-of-scope, lifecycle and broader phrasing phone cases remain open. The
+  474-test gate and review remain valid; no code changed after installation.
+  Next bounded task: prepare the weight checkpoint for explicit commit/push
+  approval, retaining these broader acceptance gaps.
+
+### Broader wording ready for phone test — 2026-10-12
+
+- Member approved wording tolerance across existing reads before more features.
+  Added shared bounded normalization for polite wrappers and existing contextual
+  spelling aliases, plus closed single-purpose weight/meal/latest-nutrition/day-
+  total paraphrases. Host date/metric scope, qualifier exclusions, selected
+  context, fresh reads, thresholds and factual-audit rules remain.
+- First verification caught comma-before-please normalization; corrected without
+  stripping request content. Independent review found asymmetric intent scoring
+  from the earlier weight extension; all four intent groups now compete against
+  the other three. Complete corrected gate passed: 476 tests, zero failures/
+  errors/skips, debug assembly/release compilation, final review and diff check.
+  Details/hash in [MiniLM integration](minilm-chat-integration.md#broader-read-wording--2026-10-12).
+- Phone disconnected before installation; reconnection requested. No installed
+  or physical pass is claimed. Next bounded task: approved in-place installation,
+  member unlock and four representative paraphrases, then retained-route audit.
+  Commit/push remains subject to explicit approval; preserve existing dirty
+  weight work and all open broader acceptance gates.
+
+- Reconnection completed and the member requested installation. `install -r`
+  succeeded on Samsung SM-S928B / Android 16 and launch returned `Status: ok`
+  with existing data preserved. Member unlock and four representative wording
+  checks were requested; comparisons and retained route/audit evidence remain
+  pending. No code changed after the 476-test gate and review.
+
+### Chat message copy and failure visibility — 2026-10-12
+
+- Member reported thinking disappearing with Chat still open and no answer,
+  then requested message Copy. Retained events showed scope rejection/native
+  Gemma/no record read/unsupported-personal-fact rejection. Exact question and
+  installed APK were checked; a real-host regression accepts that phrase. The
+  original runtime cause remains unresolved and no lost accepted reply is claimed.
+- Added accessible 48dp completed-message options/Copy, including displayed
+  errors and expanded evidence only. Plain text enters the sensitive-marked OS
+  clipboard only by explicit action; no clipboard reads/content logs/network or
+  hidden model/tool state. Error changes now trigger scrolling and polite live
+  announcements. New closed metadata reasons distinguish wording/selection/
+  host conflict/unresolved follow-up, without storing context IDs or text.
+- Selected context still disables weight shortcuts; explicit weight native
+  fallback now requires its own fresh bounded read instead of ungrounded prose.
+  Host conflicts and validators remain. Complete gate passed: 479 tests, zero
+  failures/errors/skips, debug assembly/release compilation, independent review
+  and diff check. Details/hash in
+  [MiniLM integration](minilm-chat-integration.md#chat-copy-and-visible-failures--2026-10-12).
+- Installation, exact-question retry, Copy/paste and error-visibility acceptance
+  are pending. Keyboard/font/TalkBack/rotation and before/after visual evidence
+  remain open; no Compose-test dependencies were introduced. Next bounded task:
+  approved in-place installation, member unlock/retry and Copy into composer
+  without submitting, then inspect retained route/audit reasons.
+
+- Approved in-place installation and launch succeeded on Samsung SM-S928B /
+  Android 16 with preservation rules. Member unlock, exact polite weight retry
+  and Copy/paste into the composer were requested. Physical results and retained
+  route reasons remain pending; broader UI gates above stay open.
+
+- Copy was member-confirmed working, but the member clarified native long-press
+  word/range selection was intended. Replaced the visible menu with per-message
+  native selection/toolbar and sensitive writes, leaving composer paste, saved-
+  meal actions and record disclosure separate. The pasted actual failed question
+  differed from the retyped one: `the latest wight` was outside grammar, explaining
+  `scope_text`. Added that bounded wording/spelling and real-host/validated-reply
+  regression with meaningful height/other-person/date/mixed/write exclusions.
+  Gate, review and exact copied-question/native-selection phone retry pending.
+
+- Corrected native-selection build passed the full 480-test gate (zero failures/
+  errors/skips), debug assembly/release compilation, independent review and diff
+  check. Approved in-place installation/launch succeeded on the same Samsung
+  SM-S928B / Android 16 with preservation rules. Member exact copied-question
+  retry and native word/range Copy/paste were requested; physical comparison,
+  route confirmation and broader UI gates remain pending. No raw/private screen
+  evidence was captured; redacted visual acceptance remains open.
+
+- Member confirmed the exact copied latest-weight question answered correctly
+  and native word/range selection, Copy and composer paste worked. Direct
+  content-free trace confirmed MiniLM weight selection and accepted host audit,
+  with Gemma generation skipped. The named reply failure/basic Copy acceptance
+  is closed; error-display, TalkBack/font/rotation/lifecycle, broader wording
+  and redacted visual gates remain open. No code changed after the 480-test gate.
+  Next bounded task: review the accumulated checkpoint for explicit commit/push
+  approval, retaining all broader acceptance gaps.
+
+- Member repeated all four broader-wording questions and reported success and
+  fast replies. Direct allowlisted monitoring confirmed MiniLM selections and
+  accepted audits for weight, today's nutrition, today's meal list and latest-
+  meal reads; all skipped Gemma generation and used fresh records. This closes
+  the named operation retry set on the installed 480-test build. It is not a
+  benchmark or proof of arbitrary English/typo coverage. Error-display,
+  accessibility/visual/lifecycle and previously open rejection gates remain.
+
+### Companion bundle installed for acceptance — 2026-10-12
+
+- Implemented the member-approved five-feature set: recorded estimates against
+  today's references, saved-dish recall, fresh date/metric follow-ups, explicit
+  allowlisted navigation, and member-selected saved-dish meal review. Contract,
+  scope and detailed open gates: [companion bundle](assistant-companion-bundle.md).
+- Independent review fixes prevent wrong draft provenance and stale slot/date;
+  tests caught a conflicting-day follow-up admission. Unknown portions remain
+  blank, catalog release is preserved, and final review/Save is the only write.
+  Monitoring adds fixed technical route reasons only.
+- Full Android gate passed with 498 tests, zero failures/errors/skips, debug
+  assembly and release compilation; diff check passed. APK hash is in the
+  bundle note. One authorized `install -r` succeeded on Samsung SM-S928B /
+  Android 16, preserving private storage; launch returned `Status: ok`.
+- Member unlock, all five feature comparisons, native selection regression and
+  relevant accessibility/visual/lifecycle gates remain pending. No physical pass
+  is claimed. Next bounded task: goal comparison and fresh follow-ups in Chat,
+  then recall/draft review and navigation; inspect content-free retained routes.
+
+- First sequence exposed a historical follow-up handoff defect: MiniLM selected
+  yesterday correctly, but the short question's selected metric did not reach
+  the record lookup, so validation rejected the response. Fixed the trusted
+  dated-read metric handoff and yesterday monitoring labels. Exact-sequence
+  regression, independent review and full 499-test gate passed with zero
+  failures/errors/skips plus debug/release compilation. Authorized in-place
+  update and launch succeeded with preservation rules. Member retry remains
+  pending; no historical phone acceptance is claimed.
+
+- Member confirmed the corrected yesterday answer matches. Retained safe
+  monitoring confirms both goal turns accepted and the yesterday dated read
+  accepted/audited via MiniLM, skipping Gemma generation. Named handoff retry
+  passed; other scope/lifecycle gates remain open. Continue with saved-dish
+  recall, member-selected review/discard, then navigation and Chat return.
+
+- Saved-dish test clarified recall stays in Chat and draft offers Review meal.
+  Member reported a correct recall and an empty draft lookup whose query
+  included a syntax word. Bounded wording extraction now handles optional
+  `dish` after `my saved` and a recall name before trailing `dish`; exact
+  host-query binding and member review remain enforced. Synthetic regressions,
+  parent review, diff check and full 500-test/debug/release gate passed. Approved
+  in-place update and launch succeeded with data preservation. Draft review,
+  discard and named acceptance remain pending; no new phone pass is claimed.
+
+- Member confirmed draft Review opens and discard returns to Chat with the
+  transient offer cleared, but an answer-validation error appeared. Safe events
+  confirm accepted selection/rejected reply. Deterministic wording now binds
+  each saved-record claim to returned names; the auditor is unchanged. Positive
+  generated-reply regressions plus malformed/fabricated-evidence rejection,
+  parent review and full 501-test/debug/release gate passed. Authorized in-place
+  update/launch succeeded with private storage preserved. Error-free retry and
+  draft food/portion comparison remain open, followed by navigation acceptance.
+
+- Member confirmed the corrected draft is error-free and matches saved foods/
+  portions, then discarded it. Safe monitoring confirms accepted MiniLM draft
+  selection and answer audit with Gemma generation skipped. Named review/
+  discard retry passed; ambiguity/empty, save/reopen and broader UI gates stay
+  open. Continue with explicit navigation and retained Chat transcript.
+
+- Navigation opened History and native copy worked, but the member clarified
+  both the Open question and opening reply were absent on return. Immediate
+  navigation raced reply insertion and cancelled the delayed conversation save.
+  Handoff now retains the full turn successfully before closing Chat, through
+  a serialized session writer with early snapshot tickets, clear/lock/new-turn
+  invalidation, acknowledged failure and stale-action checks. Independent
+  review and full 509-test/debug/release gate passed with zero failures/errors/
+  skips; diff check passed. Authorized in-place update/launch succeeded with
+  existing storage preserved. Member complete-transcript retry remains pending;
+  no navigation restoration acceptance is claimed. Details/hash in bundle note.
+
+- Member confirmed the corrected navigation/complete-turn return worked.
+  Safe events confirm MiniLM navigation selected. A contextual `weight hystory`
+  typo also missed scope and Gemma rejected an unsupported tool. Added the
+  bounded spelling alias with positive/polite and mixed/date/other-person/
+  selection/host-conflict regressions. Parent review, diff check and complete
+  510-test/debug/release gate passed with zero failures/errors/skips. Update
+  installation/launch succeeded with private storage preserved. Exact typo
+  acceptance remains pending. Broader spelling and
+  lifecycle/visual gates are not claimed.
+
+- Member confirmed the exact contextual navigation typo now works. Safe trace
+  confirms accepted MiniLM navigation and Gemma skipped for that turn. Named
+  History/complete-transcript/spelling acceptance is closed on the installed
+  510-test build. The development checkpoint is ready for explicit commit/push
+  approval, retaining all unexercised coverage/UI/lifecycle/write gates and
+  saved-recall MiniLM acceptance. No code changed after the successful gate.

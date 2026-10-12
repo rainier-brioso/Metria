@@ -1,17 +1,29 @@
 package app.metria
 
-import java.text.Normalizer
 import java.time.LocalDate
-import java.util.Locale
 
 /** Host-side, closed English grammars for optional local meal reads. */
 internal object MiniLmMealReadPolicy {
-    enum class FollowUpOperation { TODAY_NUTRITION, LATEST_MEAL }
-    data class FollowUpScope(val operation: FollowUpOperation, val referenceDate: LocalDate)
+    /** Uses a host-selected metric only on a native, date-frozen nutrition tool call. */
+    fun nativeNutritionMetric(call: PrivateCoachToolCall, submittedQuestion: String): String? {
+        val inferred = MetriaAgentGroundingPolicy.historicalNutritionMetric(submittedQuestion)
+        if (call.intent != "read_day_nutrition" || call.hostReadDate == null) return inferred
+        return call.hostMetric?.takeIf { it in setOf("calories", "protein") } ?: inferred
+    }
+
+    enum class FollowUpOperation { TODAY_NUTRITION, TODAY_MEALS, LATEST_MEAL, GOAL_REMAINING }
+    data class FollowUpScope(
+        val operation: FollowUpOperation,
+        val referenceDate: LocalDate,
+        val metric: String? = null,
+        val dayOffset: Int = 0,
+    )
     data class ResolvedRead(
         val requiredTool: RequiredAgentTool,
         val classifierText: String,
         val allowMiniLm: Boolean = true,
+        val classifierKey: String = requiredTool.name,
+        val companion: CompanionAssistantPolicy.Resolution? = null,
     )
 
     private val day = "(?:today|yesterday)"
@@ -24,6 +36,8 @@ internal object MiniLmMealReadPolicy {
         Regex("^(?:please )?(?:what|which) (?:meals?|foods?) (?:have i (?:logged|saved|recorded)|i (?:logged|saved|recorded)|are in my record) (?:for )?$day$"),
         Regex("^(?:please )?(?:what|which) meals? (?:are|were) (?:recorded|logged|saved) $day$"),
         Regex("^(?:please )?what did i (?:eat|have) $day$"),
+        Regex("^what have i (?:eaten|had) $day$"),
+        Regex("^remind me of (?:today's|yesterday's) meals$"),
         Regex("^(?:please )?what did i (?:log|record|save) for meals? $day$"),
         Regex("^(?:please )?(?:can you )?(?:please )?(?:show|list|display|view) (?:me )?(?:my )?meals? for $day$"),
     )
@@ -37,9 +51,15 @@ internal object MiniLmMealReadPolicy {
         Regex("^(?:please )?(?:(?:can|could|would) you (?:please )?)?(?:tell|show) me (?:the )?(?:calories|protein) (?:in|from) my (?:last|latest|most recent) meal$"),
         Regex("^(?:please )?(?:(?:can|could|would) you (?:please )?)?how many calories did my (?:last|latest|most recent) meal have$"),
         Regex("^(?:please )?(?:(?:can|could|would) you (?:please )?)?how much protein did my (?:last|latest|most recent) meal have$"),
+        Regex("^how many calories (?:in|from) my (?:last|latest|most recent) meal$"),
+        Regex("^how much protein (?:in|from) my (?:last|latest|most recent) meal$"),
+        Regex("^(?:(?:tell|show) me )?(?:what is|what's|what was) (?:the )?protein (?:in|from) my (?:last|latest|most recent) meal$"),
+        Regex("^(?:(?:tell|show) me )?(?:what is|what's|what was) (?:the )?calories (?:in|from) my (?:last|latest|most recent) meal$"),
     )
     private val todayNutritionPatterns = mapOf(
         "calories" to listOf(
+            Regex("^(?:what is|what's) (?:my )?today's calorie total$"),
+            Regex("^(?:tell|show) me my (?:recorded )?calorie total for today$"),
             Regex("^(?:please )?(?:(?:can|could|would) you (?:please )?)?(?:what is|what's) my (?:recorded )?calorie total (?:for )?today$"),
             Regex("^(?:please )?(?:(?:can|could|would) you (?:please )?)?(?:how many calories did i have|how many calories have i had) (?:for )?today$"),
             Regex("^(?:please )?(?:(?:can|could|would) you (?:please )?)?(?:remind me )?(?:how many calories (?:did i (?:eat|record|log|save)|have i (?:recorded|logged|saved)|i (?:recorded|logged|saved))|my (?:recorded|logged|saved) calories) (?:for )?today$"),
@@ -47,6 +67,8 @@ internal object MiniLmMealReadPolicy {
             Regex("^(?:please )?(?:(?:can|could|would) you (?:please )?)?(?:how many calories (?:did i (?:eat|record|log|save)|have i (?:recorded|logged|saved)|i (?:recorded|logged|saved))|show my (?:recorded|logged|saved) calories) (?:for )?today$"),
         ),
         "protein" to listOf(
+            Regex("^(?:what is|what's) (?:my )?today's protein total$"),
+            Regex("^(?:tell|show) me my (?:recorded )?protein total for today$"),
             Regex("^(?:please )?(?:(?:can|could|would) you (?:please )?)?(?:what is|what's) my (?:recorded )?protein total (?:for )?today$"),
             Regex("^(?:please )?(?:(?:can|could|would) you (?:please )?)?(?:how much protein did i have|how much protein have i had) (?:for )?today$"),
             Regex("^(?:please )?(?:(?:can|could|would) you (?:please )?)?(?:remind me )?(?:how much protein (?:did i (?:eat|record|log|save)|have i (?:recorded|logged|saved)|i (?:recorded|logged|saved))|my (?:recorded|logged|saved) protein) (?:for )?today$"),
@@ -66,9 +88,24 @@ internal object MiniLmMealReadPolicy {
     fun isInScope(text: String, toolName: String): Boolean = when (toolName) {
         "read_meals" -> isInScope(text)
         "read_latest_meal" -> isLatestMealInScope(text)
-        "read_day_nutrition" -> isTodayNutritionInScope(text)
+        "read_day_nutrition" -> isTodayNutritionInScope(text) || isHistoricalNutritionInScope(text)
+        "read_weight" -> MiniLmWeightReadPolicy.isInScope(text)
+        "goal_remaining", "saved_recall", "saved_draft", "navigation" ->
+            CompanionAssistantPolicy.resolve(null, text, null, LocalDate.now())?.classifierKey == toolName
         else -> false
     }
+
+    fun isHistoricalNutritionInScope(text: String): Boolean = validText(text) &&
+        historicalNutritionPatterns.values.flatten().any { it.matches(normalize(text)) }
+
+    private val historicalNutritionPatterns = mapOf(
+        "calories" to listOf(
+            Regex("^(?:how many calories did i have|how many calories have i had|how many calories did i log|how many calories have i logged) yesterday$"),
+        ),
+        "protein" to listOf(
+            Regex("^(?:how much protein did i have|how much protein have i had|how much protein did i log|how much protein have i logged) yesterday$"),
+        ),
+    )
 
     fun isLatestMealInScope(text: String): Boolean {
         if (text.isBlank() || text.length > MAX_TEXT_LENGTH || text.any { it.code < 0x20 && !it.isWhitespace() }) {
@@ -85,7 +122,8 @@ internal object MiniLmMealReadPolicy {
 
     /** Explicit read paraphrases eligible to bypass the transition write-word guard. */
     fun isAnyDirectReadInScope(text: String): Boolean =
-        isInScope(text) || isLatestMealInScope(text) || isTodayNutritionInScope(text)
+        isInScope(text) || isLatestMealInScope(text) || isTodayNutritionInScope(text) ||
+            MiniLmWeightReadPolicy.isInScope(text)
 
     fun followUpMetric(text: String): String? {
         if (!validText(text)) return null
@@ -96,6 +134,9 @@ internal object MiniLmMealReadPolicy {
         }
     }
 
+    fun isYesterdayFollowUp(text: String): Boolean = validText(text) &&
+        Regex("^(?:and yesterday|what about yesterday|how about yesterday)$").matches(normalize(text))
+
     /** Resolves one short follow-up only against a successful same-day read in this process. */
     fun resolveReadRequest(
         hostRequiredTool: RequiredAgentTool?,
@@ -104,30 +145,124 @@ internal object MiniLmMealReadPolicy {
         today: LocalDate,
         followUpScope: FollowUpScope? = null,
     ): ResolvedRead? {
+        CompanionAssistantPolicy.resolve(hostRequiredTool, text, selectedMealId, today)?.let { companion ->
+            val required = companion.requiredTool ?: RequiredAgentTool("host_navigation", query = companion.destination?.name)
+            return ResolvedRead(
+                requiredTool = required,
+                classifierText = companion.classifierText,
+                classifierKey = companion.classifierKey,
+                companion = companion,
+            )
+        }
+        MiniLmWeightReadPolicy.resolve(hostRequiredTool, text, selectedMealId, today)?.let {
+            return ResolvedRead(it.requiredTool, it.classifierText)
+        }
+        if (!selectedMealId.isNullOrBlank()) {
+            // Selection still disables the shortcut, but an explicit weight question must
+            // require its own fresh read on the normal path instead of ungrounded prose.
+            MiniLmWeightReadPolicy.resolve(hostRequiredTool, text, null, today)?.let {
+                return ResolvedRead(it.requiredTool, it.classifierText, allowMiniLm = false)
+            }
+        }
         val metric = followUpMetric(text)
+        if (isYesterdayFollowUp(text)) {
+            if (!selectedMealId.isNullOrBlank()) return null
+            val scope = followUpScope ?: return null
+            if (scope.referenceDate != today || scope.dayOffset != 0 || scope.operation == FollowUpOperation.LATEST_MEAL) return null
+            val resolved = when (scope.operation) {
+                FollowUpOperation.TODAY_MEALS -> RequiredAgentTool("read_meals", daysAgo = 1, targetDate = today.minusDays(1))
+                FollowUpOperation.TODAY_NUTRITION, FollowUpOperation.GOAL_REMAINING -> {
+                    val nutritionMetric = scope.metric ?: return null
+                    RequiredAgentTool(
+                        "read_day_nutrition", period = "historical_day", daysAgo = 1,
+                        metric = nutritionMetric, targetDate = today.minusDays(1),
+                    )
+                }
+                FollowUpOperation.LATEST_MEAL -> return null
+            }
+            val canonical = if (resolved.name == "read_meals") "Show the meals I recorded yesterday" else
+                if (resolved.metric == "protein") "How much protein have I logged yesterday" else "How many calories have I logged yesterday"
+            val compatible = hostRequiredTool == null || when (resolved.name) {
+                "read_meals" -> hostRequiredTool.name == "read_meals" && hostRequiredTool.period == null &&
+                    hostRequiredTool.query == null && hostRequiredTool.metric == null && hostRequiredTool.daysAgo == 1 &&
+                    hostRequiredTool.fromDaysAgo == null && hostRequiredTool.toDaysAgo == null &&
+                    (hostRequiredTool.targetDate == null || hostRequiredTool.targetDate == resolved.targetDate) &&
+                    hostRequiredTool.selectedMealId == null && hostRequiredTool.selectedMealQuestion == null
+                else -> hostRequiredTool.name == "read_day_nutrition" && hostRequiredTool.period == "historical_day" &&
+                    hostRequiredTool.daysAgo == 1 && hostRequiredTool.metric == resolved.metric &&
+                    hostRequiredTool.query == null && hostRequiredTool.fromDaysAgo == null &&
+                    hostRequiredTool.toDaysAgo == null &&
+                    (hostRequiredTool.targetDate == null || hostRequiredTool.targetDate == resolved.targetDate) &&
+                    hostRequiredTool.selectedMealId == null && hostRequiredTool.selectedMealQuestion == null
+            }
+            return ResolvedRead(resolved, canonical, allowMiniLm = compatible)
+        }
         if (metric != null) {
             if (!selectedMealId.isNullOrBlank()) return null
             val scope = followUpScope ?: return null
             if (scope.referenceDate != today) return null
             val canonical = when (scope.operation) {
-                FollowUpOperation.TODAY_NUTRITION -> if (metric == "protein") {
+                FollowUpOperation.TODAY_NUTRITION -> if (scope.dayOffset == 1) {
+                    if (metric == "protein") "How much protein have I logged yesterday" else "How many calories have I logged yesterday"
+                } else if (metric == "protein") {
                     "How much protein have I logged today"
                 } else "How many calories have I logged today"
+                FollowUpOperation.TODAY_MEALS -> return null
                 FollowUpOperation.LATEST_MEAL -> if (metric == "protein") {
                     "How much protein was in my latest meal"
                 } else "How many calories were in my latest meal"
+                FollowUpOperation.GOAL_REMAINING -> if (metric == "protein") {
+                    "How much protein do I have left today"
+                } else "How many calories do I have left today"
             }
-            val resolved = requiredReadTool(null, canonical, null, today) ?: return null
-            val hostCompatible = hostRequiredTool == null ||
-                requiredReadTool(hostRequiredTool, canonical, null, today) != null
-            return ResolvedRead(resolved, canonical, allowMiniLm = hostCompatible)
+            val companion = if (scope.operation == FollowUpOperation.GOAL_REMAINING) {
+                CompanionAssistantPolicy.resolve(null, canonical, null, today)
+            } else null
+            val resolved = companion?.requiredTool ?: (if (scope.operation == FollowUpOperation.TODAY_NUTRITION && scope.dayOffset == 1) {
+                RequiredAgentTool("read_day_nutrition", period = "historical_day", daysAgo = 1, metric = metric, targetDate = today.minusDays(1))
+            } else requiredReadTool(null, canonical, null, today)) ?: return null
+            val goalExpected = companion?.requiredTool
+            val goalHostCompatible = goalExpected != null && hostRequiredTool != null &&
+                hostRequiredTool.name == goalExpected.name && hostRequiredTool.period == goalExpected.period &&
+                hostRequiredTool.metric == metric && hostRequiredTool.query == null && hostRequiredTool.daysAgo == null &&
+                hostRequiredTool.fromDaysAgo == null && hostRequiredTool.toDaysAgo == null &&
+                (hostRequiredTool.targetDate == null || hostRequiredTool.targetDate == goalExpected.targetDate) &&
+                hostRequiredTool.selectedMealId == null && hostRequiredTool.selectedMealQuestion == null
+            val hostCompatible = hostRequiredTool == null || goalHostCompatible ||
+                requiredReadTool(hostRequiredTool, canonical, null, today) != null ||
+                (resolved.name == "read_day_nutrition" && hostRequiredTool.name == "read_day_nutrition" &&
+                    resolved.daysAgo == 1 &&
+                    hostRequiredTool.period == "historical_day" && hostRequiredTool.daysAgo == 1 &&
+                    hostRequiredTool.metric == resolved.metric && hostRequiredTool.fromDaysAgo == null &&
+                    hostRequiredTool.toDaysAgo == null && hostRequiredTool.query == null &&
+                    hostRequiredTool.selectedMealId == null && hostRequiredTool.selectedMealQuestion == null &&
+                    (hostRequiredTool.targetDate == null || hostRequiredTool.targetDate == resolved.targetDate))
+            return ResolvedRead(resolved, canonical, allowMiniLm = hostCompatible,
+                classifierKey = companion?.classifierKey ?: resolved.name, companion = companion)
+        }
+        CompanionAssistantPolicy.resolve(hostRequiredTool, text, selectedMealId, today)?.let { companion ->
+            val required = companion.requiredTool ?: return null
+            return ResolvedRead(required, companion.classifierText, classifierKey = companion.classifierKey, companion = companion)
         }
         val resolved = requiredReadTool(hostRequiredTool, text, selectedMealId, today) ?: return null
-        return ResolvedRead(resolved, text)
+        return ResolvedRead(resolved, normalize(text))
+    }
+
+    /** Fixed technical metadata only; never records wording, selection IDs or records. */
+    fun scopeRejectionReason(text: String, selectedMealId: String?): String = when {
+        !selectedMealId.isNullOrBlank() && (isAnyDirectReadInScope(text) || followUpMetric(text) != null) -> "scope_selected"
+        isAnyDirectReadInScope(text) -> "scope_host"
+        followUpMetric(text) != null -> "scope_context"
+        else -> "scope_text"
     }
 
     /** Keeps fallback turns tool-bound while dropping MiniLM's host-only date anchor for latest-meal. */
     fun gemmaFallbackRequiredTool(resolvedRead: ResolvedRead?, hostRequiredTool: RequiredAgentTool?): RequiredAgentTool? {
+        if (resolvedRead?.requiredTool?.name == "host_navigation") return null
+        MiniLmWeightReadPolicy.gemmaFallbackRequiredTool(
+            resolvedRead?.takeIf { it.requiredTool.metric in setOf("latest_weight", "last_weighed", "recent_weigh_ins") }
+                ?.let { MiniLmWeightReadPolicy.ResolvedRead(it.requiredTool, it.classifierText) },
+        )?.let { return it }
         val required = resolvedRead?.requiredTool ?: hostRequiredTool ?: return null
         return if (required.name == "read_latest_meal") required.copy(targetDate = null) else required
     }
@@ -256,6 +391,9 @@ internal object MiniLmMealReadPolicy {
         requiredTool: RequiredAgentTool,
         response: Map<String, Any?>,
     ): String? {
+        if (requiredTool.name == "read_weight") {
+            return MiniLmWeightReadPolicy.validatedReply(requiredTool, response)
+        }
         if (requiredTool.query != null || requiredTool.fromDaysAgo != null || requiredTool.toDaysAgo != null ||
             requiredTool.selectedMealId != null || requiredTool.selectedMealQuestion != null
         ) return null
@@ -263,7 +401,7 @@ internal object MiniLmMealReadPolicy {
             (requiredTool.period != null || requiredTool.metric != null)
         ) return null
         return when (requiredTool.name) {
-            "read_day_nutrition" -> todayNutritionReplyForFrozenRead(requiredTool, response)
+            "read_day_nutrition" -> historicalNutritionReplyForFrozenRead(requiredTool, response)
             "read_meals" -> {
                 val offset = requiredTool.daysAgo?.takeIf { it in 0..1 } ?: return null
                 val target = requiredTool.targetDate ?: return null
@@ -287,15 +425,23 @@ internal object MiniLmMealReadPolicy {
     fun todayNutritionReplyForFrozenRead(
         requiredTool: RequiredAgentTool,
         response: Map<String, Any?>,
+    ): String? = historicalNutritionReplyForFrozenRead(requiredTool, response)
+
+    /** Validates a fresh exact-day read against its captured as-of day and bounded day offset. */
+    fun historicalNutritionReplyForFrozenRead(
+        requiredTool: RequiredAgentTool,
+        response: Map<String, Any?>,
     ): String? {
-        val today = requiredTool.targetDate ?: return null
+        val targetDate = requiredTool.targetDate ?: return null
+        val dayOffset = requiredTool.daysAgo?.takeIf { it in 0..1 } ?: return null
+        val referenceDate = targetDate.plusDays(dayOffset.toLong())
         val metric = requiredTool.metric?.takeIf { it in setOf("calories", "protein") } ?: return null
-        if (requiredTool.name != "read_day_nutrition" || requiredTool.period != "historical_day" || requiredTool.daysAgo != 0 ||
+        if (requiredTool.name != "read_day_nutrition" || requiredTool.period != "historical_day" ||
             requiredTool.fromDaysAgo != null || requiredTool.toDaysAgo != null ||
             requiredTool.query != null || requiredTool.selectedMealId != null || requiredTool.selectedMealQuestion != null ||
-            response["source"] != "metria_local_vault" || response["as_of"] != today.toString() ||
-            response["from"] != today.toString() || response["to"] != today.toString() ||
-            response["period"] != "historical_day" || response["days_ago"] != 0 ||
+            response["source"] != "metria_local_vault" || response["as_of"] != referenceDate.toString() ||
+            response["from"] != targetDate.toString() || response["to"] != targetDate.toString() ||
+            response["period"] != "historical_day" || response["days_ago"] != dayOffset ||
             response["requested_metric"] != metric || response["interpretation"] != "recorded_meals_only_not_total_intake" ||
             response["reply_language"] != "English"
         ) return null
@@ -339,7 +485,11 @@ internal object MiniLmMealReadPolicy {
             requiredTool,
             response,
         ) ?: return null
-        val answerWithCoverage = "$answer Unrecorded meals are unknown."
+        val answerWithCoverage = buildString {
+            append(answer)
+            append(" Unrecorded meals are unknown.")
+            if (dayOffset == 1) append(" Historical goal comparison is not available.")
+        }
         return answerWithCoverage.takeIf {
             MetriaAgentFactAuditor.audit(
                 it,
@@ -362,13 +512,7 @@ internal object MiniLmMealReadPolicy {
         it.isFinite() && it >= 0.0
     } == true
 
-    private fun normalize(text: String): String =
-        Normalizer.normalize(text.lowercase(Locale.ROOT), Normalizer.Form.NFKC)
-            .replace("\u2019", "'")
-            .replace("\u2018", "'")
-            .trim()
-            .trimEnd('.', '?', '!', ' ')
-            .replace(Regex("\\s+"), " ")
+    private fun normalize(text: String): String = MiniLmReadTextNormalization.normalize(text)
 
     private const val MAX_TEXT_LENGTH = 500
     private const val MAX_VALIDATED_MEAL_COUNT = 1_000_000

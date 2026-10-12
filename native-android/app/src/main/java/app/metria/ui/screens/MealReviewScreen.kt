@@ -117,7 +117,7 @@ import java.time.LocalTime
 import java.time.ZoneId
 import java.util.UUID
 
-private data class MealReviewItemDraft(
+internal data class MealReviewItemDraft(
     val id: String,
     val dishId: String,
     val dishName: String,
@@ -234,6 +234,25 @@ private fun initialDrafts(items: List<MealProposalItem>): List<MealReviewItemDra
             preparation = item.preparation,
             role = item.role,
             evidence = item.evidence,
+        )
+    }
+}
+
+internal fun savedDishInitialDrafts(
+    prefill: app.metria.CompanionAssistantPolicy.SavedDishMealPrefill,
+): List<MealReviewItemDraft> {
+    val dishId = "dish-${UUID.randomUUID()}"
+    return prefill.items.take(12).map { item ->
+        MealReviewItemDraft(
+            id = UUID.randomUUID().toString(),
+            dishId = dishId,
+            dishName = prefill.title,
+            name = item.name,
+            description = item.description.orEmpty(),
+            grams = item.grams?.toString().orEmpty(),
+            preparation = item.preparation.orEmpty(),
+            role = item.role,
+            evidence = "seen",
         )
     }
 }
@@ -401,6 +420,7 @@ fun MetriaMealReviewSheet(
     manualEntry: Boolean = false,
     initialMealSlot: String? = null,
     initialRecordedDate: LocalDate? = null,
+    initialSavedDishPrefill: app.metria.CompanionAssistantPolicy.SavedDishMealPrefill? = null,
     catalog: OfflineFoodCatalog?,
     corrections: List<FoodCorrection>,
     referenceThumbnailBase64: String?,
@@ -415,55 +435,65 @@ fun MetriaMealReviewSheet(
     onDismiss: () -> Unit,
     onSave: (MealEntry, List<FoodCorrection>, List<PersonalDish>, MealCorrectionMemory?) -> String?,
 ) {
-    val proposalItems = remember(proposal, catalog) { reviewProposalItems(proposal, catalog) }
+    val draftKey = 31 * proposal.items.hashCode() + (initialSavedDishPrefill?.hashCode() ?: 0)
+    val proposalItems = remember(proposal, catalog, initialSavedDishPrefill) {
+        if (initialSavedDishPrefill == null) reviewProposalItems(proposal, catalog) else emptyList()
+    }
     // Keep the baseline IDs across configuration recreation; otherwise every
     // restored item would look removed and re-added to the learning diff.
-    val initialItems = rememberSaveable(proposal.items.hashCode(), saver = MealReviewItemsSaver) {
-        initialDrafts(proposalItems)
+    val initialItems = rememberSaveable(draftKey, saver = MealReviewItemsSaver) {
+        initialSavedDishPrefill?.let(::savedDishInitialDrafts) ?: initialDrafts(proposalItems)
     }
-    var items by rememberSaveable(proposal.items.hashCode(), stateSaver = MealReviewItemsSaver) {
+    var items by rememberSaveable(draftKey, stateSaver = MealReviewItemsSaver) {
         mutableStateOf(initialItems)
     }
-    val initialMatchIds = rememberSaveable(proposal.items.hashCode(), saver = MatchIdsSaver) {
-        initialItems.mapNotNull { item ->
-            if (FoodCatalog.isAmbiguousModelFood(item.name)) null
-            else catalog?.let { FoodCatalog.suggest(it, item.name, item.description, corrections) }?.let { item.id to it.fdcId }
+    val initialMatchIds = rememberSaveable(draftKey, saver = MatchIdsSaver) {
+        initialItems.mapIndexedNotNull { index, item ->
+            if (FoodCatalog.isAmbiguousModelFood(item.name)) null else {
+                val savedItem = initialSavedDishPrefill?.items?.getOrNull(index)
+                val savedId = savedItem?.catalogFoodId?.takeIf {
+                    savedItem.catalogRelease != null && savedItem.catalogRelease == catalog?.sourceRelease
+                }
+                val foodId = savedId?.takeIf { id -> catalog?.foods?.any { it.fdcId == id } == true }
+                    ?: catalog?.let { FoodCatalog.suggest(it, item.name, item.description, corrections)?.fdcId }
+                foodId?.let { item.id to it }
+            }
         }.toMap()
     }
-    var matchIds by rememberSaveable(proposal.items.hashCode(), stateSaver = MatchIdsSaver) {
+    var matchIds by rememberSaveable(draftKey, stateSaver = MatchIdsSaver) {
         mutableStateOf(initialMatchIds)
     }
-    var includedPossibleIds by rememberSaveable(proposal.items.hashCode(), stateSaver = StringSetSaver) {
+    var includedPossibleIds by rememberSaveable(draftKey, stateSaver = StringSetSaver) {
         mutableStateOf(emptySet())
     }
-    val captureTimeText = rememberSaveable(proposal.items.hashCode()) {
+    val captureTimeText = rememberSaveable(draftKey) {
         LocalTime.now().withSecond(0).withNano(0).toString()
     }
     val captureTime = remember(captureTimeText) { LocalTime.parse(captureTimeText) }
-    val initialDate = rememberSaveable(proposal.items.hashCode(), initialRecordedDate) { (initialRecordedDate ?: LocalDate.now()).toString() }
-    var date by rememberSaveable(proposal.items.hashCode(), initialRecordedDate) { mutableStateOf(initialDate) }
-    val initialTitle = rememberSaveable(proposal.items.hashCode()) {
-        MealIdentity.titleFor(proposalItems.map { MealEntryItem(it.name, null, null) })
+    val initialDate = rememberSaveable(draftKey, initialRecordedDate) { (initialRecordedDate ?: LocalDate.now()).toString() }
+    var date by rememberSaveable(draftKey, initialRecordedDate) { mutableStateOf(initialDate) }
+    val initialTitle = rememberSaveable(draftKey) {
+        initialSavedDishPrefill?.title ?: MealIdentity.titleFor(proposalItems.map { MealEntryItem(it.name, null, null) })
     }
-    var title by rememberSaveable(proposal.items.hashCode()) { mutableStateOf(initialTitle) }
-    var titleEdited by rememberSaveable(proposal.items.hashCode()) { mutableStateOf(false) }
-    var dishMemoryChoices by rememberSaveable(proposal.items.hashCode(), stateSaver = BooleanMapSaver) {
+    var title by rememberSaveable(draftKey) { mutableStateOf(initialTitle) }
+    var titleEdited by rememberSaveable(draftKey) { mutableStateOf(false) }
+    var dishMemoryChoices by rememberSaveable(draftKey, stateSaver = BooleanMapSaver) {
         mutableStateOf(emptyMap())
     }
-    var rejectedSuggestionIds by rememberSaveable(proposal.items.hashCode(), stateSaver = StringSetSaver) {
+    var rejectedSuggestionIds by rememberSaveable(draftKey, stateSaver = StringSetSaver) {
         mutableStateOf(emptySet())
     }
-    var acceptedDishIds by rememberSaveable(proposal.items.hashCode(), stateSaver = StringMapSaver) {
+    var acceptedDishIds by rememberSaveable(draftKey, stateSaver = StringMapSaver) {
         mutableStateOf(emptyMap())
     }
-    var mealSlot by rememberSaveable(proposal.items.hashCode()) { mutableStateOf(initialMealSlot?.takeIf { it in MealSlots.allowed }) }
-    var keepReference by rememberSaveable(proposal.items.hashCode()) { mutableStateOf(referenceThumbnailBase64 != null) }
-    var detailsExpanded by rememberSaveable(proposal.items.hashCode()) { mutableStateOf(false) }
-    var editingDishId by rememberSaveable(proposal.items.hashCode()) { mutableStateOf<String?>(null) }
-    var error by rememberSaveable(proposal.items.hashCode()) { mutableStateOf<String?>(null) }
-    var showLeaveConfirmation by rememberSaveable(proposal.items.hashCode()) { mutableStateOf(false) }
+    var mealSlot by rememberSaveable(draftKey) { mutableStateOf(initialMealSlot?.takeIf { it in MealSlots.allowed }) }
+    var keepReference by rememberSaveable(draftKey) { mutableStateOf(referenceThumbnailBase64 != null) }
+    var detailsExpanded by rememberSaveable(draftKey) { mutableStateOf(false) }
+    var editingDishId by rememberSaveable(draftKey) { mutableStateOf<String?>(null) }
+    var error by rememberSaveable(draftKey) { mutableStateOf<String?>(null) }
+    var showLeaveConfirmation by rememberSaveable(draftKey) { mutableStateOf(false) }
 
-    val initialExitState by rememberSaveable(proposal.items.hashCode(), initialRecordedDate, stateSaver = MealReviewDraftStateSaver) {
+    val initialExitState by rememberSaveable(draftKey, initialRecordedDate, stateSaver = MealReviewDraftStateSaver) {
         mutableStateOf(
             reviewExitState(
                 items = initialItems,

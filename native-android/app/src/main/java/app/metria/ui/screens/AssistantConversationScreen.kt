@@ -62,8 +62,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -78,6 +80,7 @@ import app.metria.ModelStatus
 import app.metria.SafeMarkdownText
 import app.metria.WeightEntry
 import app.metria.ui.theme.MetriaColors
+import app.metria.ui.components.SelectableChatText
 
 data class MetriaChatMessage(
     val text: String,
@@ -85,6 +88,13 @@ data class MetriaChatMessage(
     val localEvidence: Boolean = false,
     val savedMealId: String? = null,
     val savedMealAvailable: Boolean = false,
+)
+
+data class MetriaSavedDishChoice(
+    val id: String,
+    val name: String,
+    val foods: List<String>,
+    val exactNameMatch: Boolean = false,
 )
 
 @Composable
@@ -196,6 +206,7 @@ fun MetriaAssistantConversationScreen(
     coachDiagnostic: String?,
     savedWeight: WeightEntry?,
     mealProposal: MealProposal?,
+    savedDishChoices: List<MetriaSavedDishChoice> = emptyList(),
     recordingVoice: Boolean,
     preparingVoice: Boolean,
     voiceMessage: String?,
@@ -203,12 +214,13 @@ fun MetriaAssistantConversationScreen(
     selectedMealContextTitle: String? = null,
     onClearSelectedMealContext: () -> Unit = {},
     onBack: () -> Unit,
-    onNewConversation: () -> Unit,
+    onNewConversation: suspend () -> Boolean,
     onCancelAssistant: () -> Unit,
     onEditSavedWeight: (WeightEntry) -> Unit,
     onUndoSavedWeight: (WeightEntry) -> Unit,
     onReviewMeal: (MealProposal) -> Unit,
     onOpenSavedMeal: (String) -> Unit,
+    onReviewSavedDish: (String) -> Unit = {},
     onDiscardMealDraft: () -> Unit,
     onToggleVoice: () -> Unit,
     onSend: () -> Unit,
@@ -216,6 +228,7 @@ fun MetriaAssistantConversationScreen(
     BackHandler(onBack = onBack)
     val listState = rememberLazyListState()
     var confirmNewConversation by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     val transientCount = listOfNotNull(
         assistantThinking.takeIf { it },
         assistantStopping.takeIf { it },
@@ -223,10 +236,11 @@ fun MetriaAssistantConversationScreen(
         mealDraftThinking.takeIf { it },
         savedWeight,
         mealProposal,
+        savedDishChoices.takeIf { it.isNotEmpty() },
         assistantDiagnostic,
         coachDiagnostic,
     ).size
-    LaunchedEffect(messages.size, streamingReply, transientCount) {
+    LaunchedEffect(messages.size, streamingReply, transientCount, assistantDiagnostic, coachDiagnostic) {
         val lastIndex = messages.size + transientCount - 1
         if (lastIndex >= 0) listState.animateScrollToItem(lastIndex)
     }
@@ -280,8 +294,13 @@ fun MetriaAssistantConversationScreen(
                         MealDraftCard(proposal, onReviewMeal, onDiscardMealDraft)
                     }
                 }
-                assistantDiagnostic?.let { message -> item { ErrorMessage(message) } }
-                coachDiagnostic?.let { message -> item { ErrorMessage(message) } }
+                if (savedDishChoices.isNotEmpty()) {
+                    item {
+                        SavedDishChoicesCard(savedDishChoices, onReviewSavedDish)
+                    }
+                }
+                assistantDiagnostic?.let { message -> item { ErrorMessage(message, allowCopy = true) } }
+                coachDiagnostic?.let { message -> item { ErrorMessage(message, allowCopy = true) } }
             }
             selectedMealContextTitle?.let { title ->
                 Surface(color = MetriaColors.PrimarySoft, shape = MaterialTheme.shapes.medium) {
@@ -320,12 +339,40 @@ fun MetriaAssistantConversationScreen(
             text = { Text("This permanently removes the current private conversation from this phone.") },
             confirmButton = {
                 TextButton(onClick = {
-                    confirmNewConversation = false
-                    onNewConversation()
+                    scope.launch {
+                        if (onNewConversation()) confirmNewConversation = false
+                    }
                 }) { Text("Start new") }
             },
             dismissButton = { TextButton(onClick = { confirmNewConversation = false }) { Text("Keep conversation") } },
         )
+    }
+}
+
+@Composable
+private fun SavedDishChoicesCard(choices: List<MetriaSavedDishChoice>, onReview: (String) -> Unit) {
+    Card(colors = CardDefaults.cardColors(containerColor = MetriaColors.Surface)) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Saved dishes to review", style = MaterialTheme.typography.titleSmall)
+            Text(if (choices.all(MetriaSavedDishChoice::exactNameMatch)) {
+                "Review the saved foods and portions before adding. Nothing is saved yet."
+            } else {
+                "These are possible matches. Choose one to review. Nothing is saved yet."
+            },
+                color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall)
+            choices.forEach { choice ->
+                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(choice.name, style = MaterialTheme.typography.bodyLarge)
+                    Text(if (choice.exactNameMatch) "Exact name match" else "Possible match",
+                        color = MetriaColors.InkMuted, style = MaterialTheme.typography.labelSmall)
+                    if (choice.foods.isNotEmpty()) Text(choice.foods.joinToString(", "),
+                        color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall)
+                    FilledTonalButton(onClick = { onReview(choice.id) }, modifier = Modifier.heightIn(min = 48.dp)) {
+                        Text("Review meal")
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -380,34 +427,43 @@ private fun AssistantHeader(onBack: () -> Unit, onNewConversation: () -> Unit) {
 
 @Composable
 private fun ChatBubble(message: MetriaChatMessage, onOpenSavedMeal: (String) -> Unit) {
+    var evidenceExpanded by rememberSaveable(message.text) { mutableStateOf(false) }
     Box(
         Modifier.fillMaxWidth(),
         contentAlignment = if (message.fromMember) Alignment.CenterEnd else Alignment.CenterStart,
     ) {
         when {
-            message.localEvidence -> EvidenceCard(message.text)
-            message.fromMember -> Surface(
-                color = MetriaColors.Primary,
-                contentColor = Color.White,
-                shape = MaterialTheme.shapes.medium,
-                modifier = Modifier.widthIn(max = 320.dp),
-            ) {
-                Text(message.text, modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp))
+            message.localEvidence -> Column(Modifier.fillMaxWidth()) {
+                EvidenceCard(message.text, evidenceExpanded, onExpandedChange = { evidenceExpanded = it })
             }
-            else -> Surface(
-                color = MetriaColors.Surface,
-                shape = MaterialTheme.shapes.medium,
-                modifier = Modifier.widthIn(max = 340.dp),
-            ) {
-                Column(Modifier.padding(horizontal = 16.dp, vertical = 13.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SafeMarkdownText(message.text, MetriaColors.Ink)
-                    message.savedMealId?.let { id ->
-                        if (message.savedMealAvailable) {
-                            FilledTonalButton(onClick = { onOpenSavedMeal(id) }, modifier = Modifier.heightIn(min = 48.dp)) {
-                                Text("View meal")
+            message.fromMember -> Column(horizontalAlignment = Alignment.End) {
+                Surface(
+                    color = MetriaColors.Primary,
+                    contentColor = Color.White,
+                    shape = MaterialTheme.shapes.medium,
+                    modifier = Modifier.widthIn(max = 320.dp),
+                ) {
+                    SelectableChatText {
+                        Text(message.text, modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp))
+                    }
+                }
+            }
+            else -> Column(horizontalAlignment = Alignment.Start) {
+                Surface(
+                    color = MetriaColors.Surface,
+                    shape = MaterialTheme.shapes.medium,
+                    modifier = Modifier.widthIn(max = 340.dp),
+                ) {
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 13.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SelectableChatText { SafeMarkdownText(message.text, MetriaColors.Ink) }
+                        message.savedMealId?.let { id ->
+                            if (message.savedMealAvailable) {
+                                FilledTonalButton(onClick = { onOpenSavedMeal(id) }, modifier = Modifier.heightIn(min = 48.dp)) {
+                                    Text("View meal")
+                                }
+                            } else {
+                                Text("Meal no longer available", color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall)
                             }
-                        } else {
-                            Text("Meal no longer available", color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall)
                         }
                     }
                 }
@@ -417,18 +473,16 @@ private fun ChatBubble(message: MetriaChatMessage, onOpenSavedMeal: (String) -> 
 }
 
 @Composable
-private fun EvidenceCard(text: String) {
-    var expanded by rememberSaveable(text) { mutableStateOf(false) }
+private fun EvidenceCard(text: String, expanded: Boolean, onExpandedChange: (Boolean) -> Unit) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MetriaColors.Surface),
         modifier = Modifier
             .fillMaxWidth()
             .semantics { stateDescription = evidenceStateDescription(expanded) }
-            .clickable { expanded = !expanded },
     ) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(
-                Modifier.fillMaxWidth(),
+                Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { onExpandedChange(!expanded) },
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(7.dp),
             ) {
@@ -440,7 +494,7 @@ private fun EvidenceCard(text: String) {
                     tint = MetriaColors.InkMuted,
                 )
             }
-            if (expanded) SafeMarkdownText(text, MetriaColors.Ink)
+            if (expanded) SelectableChatText { SafeMarkdownText(text, MetriaColors.Ink) }
         }
     }
 }
@@ -538,9 +592,13 @@ private fun MealDraftCard(proposal: MealProposal, onReview: (MealProposal) -> Un
 }
 
 @Composable
-private fun ErrorMessage(message: String) {
-    Surface(color = MaterialTheme.colorScheme.errorContainer, shape = MaterialTheme.shapes.medium) {
-        Text(message, color = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.fillMaxWidth().padding(14.dp))
+private fun ErrorMessage(message: String, allowCopy: Boolean = false) {
+    Surface(color = MaterialTheme.colorScheme.errorContainer, shape = MaterialTheme.shapes.medium,
+        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) {
+        Column(Modifier.fillMaxWidth().padding(14.dp)) {
+            if (allowCopy) SelectableChatText { Text(message, color = MaterialTheme.colorScheme.onErrorContainer) }
+            else Text(message, color = MaterialTheme.colorScheme.onErrorContainer)
+        }
     }
 }
 

@@ -292,6 +292,16 @@ class MetriaAgentFactEvidence private constructor(
                 addNutritionFact(nutrition, selectedPeriod, "protein", "goal", "protein_goal_g")
                 addNutritionFact(progress, selectedPeriod, "calories", "progress", "calorie_goal_percent")
                 addNutritionFact(progress, selectedPeriod, "protein", "progress", "protein_goal_percent")
+                if (normalizedToolName == "read_goal_remaining_nutrition") {
+                    val asOf = responseAsOf ?: return@buildList
+                    val selectedMetric = requestedMetric ?: return@buildList
+                    val proof = GoalRemainingNutritionResult.proof(response, asOf, selectedMetric)
+                        ?: return@buildList
+                    proof.actual?.let { add(MetriaNutritionFact("today", proof.metric, "actual", numericCandidates(it.toPlainString()))) }
+                    proof.goal?.let { add(MetriaNutritionFact("today", proof.metric, "goal", numericCandidates(it.toPlainString()))) }
+                    proof.remaining?.let { add(MetriaNutritionFact("today", proof.metric, "remaining", numericCandidates(it.toPlainString()))) }
+                    proof.overBy?.let { add(MetriaNutritionFact("today", proof.metric, "over_by", numericCandidates(it.toPlainString()))) }
+                }
             }
             val counts = buildList {
                 val primaryCollection = when (normalizedToolName) {
@@ -824,7 +834,12 @@ object MetriaAgentFactAuditor {
         val after = clause.substring(match.range.last + 1, contextEnd + 1)
         val goalBefore = goalBeforeValue.containsMatchIn(before)
         val goalAfter = goalAfterValue.containsMatchIn(after)
-        val role = if (goalBefore || goalAfter) "goal" else "actual"
+        val role = when {
+            goalBefore || goalAfter -> "goal"
+            remainingAmountWords.containsMatchIn(localContext) -> "remaining"
+            overAmountWords.containsMatchIn(localContext) -> "over_by"
+            else -> "actual"
+        }
         val nutritionRole = when {
             goalBefore || goalAfter -> "goal"
             partialNutritionWords.containsMatchIn(localContext) -> "partial"
@@ -836,6 +851,8 @@ object MetriaAgentFactAuditor {
 
     private val partialNutritionWords = Regex("""\b(?:partial|parcial(?:es)?)\b""", RegexOption.IGNORE_CASE)
     private val completeNutritionWords = Regex("""\b(?:complete|complet[oa]s?)\b""", RegexOption.IGNORE_CASE)
+    private val remainingAmountWords = Regex("""\b(?:remain(?:s|ing)?|left|remaining)\b""", RegexOption.IGNORE_CASE)
+    private val overAmountWords = Regex("""\b(?:above|over|exceed(?:s|ed)?)\b""", RegexOption.IGNORE_CASE)
 
     private fun periodMatches(clause: String, evidencePeriod: String?): Boolean = when {
         evidencePeriod == null -> true
@@ -1000,6 +1017,7 @@ data class RequiredAgentTool(
         (daysAgo == null || (call.daysAgo == daysAgo && call.mealSlot == null)) &&
         (fromDaysAgo == null || call.fromDaysAgo == fromDaysAgo) &&
         (toDaysAgo == null || call.toDaysAgo == toDaysAgo) &&
+        (name != "search_saved_dishes" || query == call.query) &&
         (name != "read_selected_meal" || (call.intent == "read_selected_meal" && call.daysAgo == null && call.query == null))
 }
 
@@ -1132,6 +1150,8 @@ object MetriaAgentGroundingPolicy {
         selectedMealId?.takeIf { it.isNotBlank() && selectedMealQuestionIsInScope(memberText) }?.let {
             return RequiredAgentTool("read_selected_meal", selectedMealId = it, selectedMealQuestion = memberText.take(600))
         }
+        CompanionAssistantPolicy.resolve(null, memberText, selectedMealId, today)
+            ?.requiredTool?.let { return it.copy(targetDate = null) }
         savedDishQuestion.matchEntire(memberText)?.groupValues?.getOrNull(1)
             ?.trim()
             ?.takeIf { it.length in 2..120 }
