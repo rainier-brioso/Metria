@@ -2769,3 +2769,113 @@ target-phone interaction recheck pending.
   510-test build. The development checkpoint is ready for explicit commit/push
   approval, retaining all unexercised coverage/UI/lifecycle/write gates and
   saved-recall MiniLM acceptance. No code changed after the successful gate.
+
+### Fast today overview installed for acceptance
+
+- Member selected a fast “How am I doing today?” recap. A closed English
+  today-only route now uses a frozen fresh progress snapshot and strict
+  deterministic reply: recorded count, available calorie/protein estimates,
+  current confirmed goals and coverage. It ignores weight/freeform text, adds
+  no advice/judgment and does not seed an ambiguous overview follow-up scope.
+  Existing auditor and normal grounded weekly/bilingual fallback remain.
+- Independent review, diff check and full 521-test/debug/release gate passed
+  with zero failures/errors/skips. Details, hash and open gates:
+  [today overview](minilm-today-overview.md).
+- Authorized in-place install and launch succeeded on Samsung SM-S928B /
+  Android 16 with private data/model preservation. Member unlock, comparison
+  and safe monitoring acceptance remain pending; no phone pass is claimed.
+  Next bounded task: named today question, then paraphrase and existing read
+  regression. No commit/push is authorized for this new slice yet.
+
+- Member reported the named daily summary worked well on the installed
+  521-test build. Recorded the comparison acceptance; direct retained-route
+  verification remains open because ADB currently lists no connected phone.
+  Next: alternate overview wording and an existing meal read. Other physical
+  states remain open; no additional installation or code change was needed.
+
+### Shared read recognition decision
+
+- Member requested current-project research and approved shared typo-tolerant
+  recognition. Research, decision, alternatives and staged route are recorded in
+  [recognition decision](assistant-routing-recognition.md). The first slice
+  keeps exact routes and retries one unambiguous routing-word correction through
+  the complete existing read policy and competitive MiniLM check. No dependency,
+  general dictionary download, member-text rewrite or new permission is added.
+- Initial review identified height/weight meaning confusion and a blanket
+  previous-follow-up-scope exclusion. These are being addressed with negative
+  and conversational regressions before the complete gate and installation.
+  Independent UI inspection found no proven missing-error defect; actual rejected
+  turn feedback remains an open phone check, not a claimed UI repair.
+
+- Shared typo implementation and independent review completed. The full gate
+  passed all 524 tests with zero failures/errors/skips, debug assembly and
+  release compilation; diff check clean. Authorized in-place install/launch
+  succeeded on Samsung SM-S928B / Android 16, preserving existing private data
+  and models. APK hash and limitations are in the recognition decision.
+  Next bounded task: copied overview typo and a meal-read typo, then exact-route
+  regression and rejected-turn feedback. No commit/push is approved yet.
+
+- Member confirmed both shared-recognition phone questions returned matching
+  answers. Safe metadata confirms accepted MiniLM today overview and today meal
+  list, each with an accepted factual audit and Gemma generation skipped.
+  Named typo acceptance is recorded in the recognition decision; original-route
+  regression and the earlier rejected-turn feedback observation remain open.
+
+- Member confirmed the original overview and today-meal questions still match
+  after the shared typo update. The latest metadata verifies an additional
+  accepted MiniLM meal read/audit; no separate new overview event appeared in
+  that tail, so do not claim a new overview trace correlation. Named regression
+  comparisons are recorded; rejected-turn feedback and broader physical gates
+  remain open. The installed build still has 524 passing tests; no source change
+  or new installation was needed for these comparisons.
+
+### Completed Chat failure retention
+
+- Member continued work on the rejected-answer flow. The confirmed retention
+  gap is that diagnostic cards are transient while record evidence is saved.
+  The original immediate-disappearance cause is still not established. Current
+  terminal failures now become one host-authored assistant timeline message,
+  using the same encrypted representation and reply-consumption request gate.
+  Pending/stale/cancelled/tool/action results must not complete a failed turn.
+- Parent review caught duplicate transient-error rendering and a transient
+  TalkBack-announcement field affecting restored transcript equality. These are
+  being corrected before the full gate and in-place installation. UI semantics,
+  selection and normal conversation expiry remain; phone visibility/reopening
+  and broader accessibility/lifecycle acceptance are separate open gates.
+
+- Completed-failure retention passed independent review and the full gate:
+  531 tests, zero failures/errors/skips, debug assembly and release compilation.
+  Duplicate transient rendering is suppressed only for a consumed current
+  terminal failure. Announcement state is ephemeral session state, excluded
+  from transcript equality/serialization and cleared on Chat exit/new turn.
+  Physical rejection visibility, reopen/copy and TalkBack remain unverified;
+  the original disappearance cause is not claimed solved by automated checks.
+
+- Authorized 531-test build installed in place and launched successfully on
+  Samsung SM-S928B / Android 16 with existing data/models preserved. Next bounded
+  check: unsupported-field read with visible reply/error, then close/reopen;
+  safe trace must establish whether this exercised rejection. A normal generic
+  reply cannot establish rejected-message retention acceptance.
+
+- Member confirmed the unsupported-field turn displayed a message and kept it
+  after closing/reopening Chat. Safe trace confirms native Gemma followed by
+  `reply_rejected / unsupported_personal_fact`, without a record tool: this
+  verifies the rejection path. Named failure visibility/reopen acceptance is
+  closed on the 531-test build. TalkBack/new-error selection and broader
+  lifecycle/visual states remain open. No source edit or reinstall was required
+  for acceptance; no raw member reply or record was inspected.
+
+### Approved development checkpoint
+
+- On 2026-10-14 the member explicitly approved committing and pushing this
+  combined checkpoint: fast daily overview, shared bounded read typo recognition,
+  completed Chat failure retention, regressions and research/decision documents.
+  Independent review and the complete 531-test/debug/release gate passed, and
+  named phone checks are recorded above. No Android source changed after that
+  successful gate; final documentation alignment and diff check are complete.
+- This is a development checkpoint, not milestone/release completion. Preserve
+  unexercised TalkBack, error selection, broader goal/navigation, keyboard/font/
+  rotation, expiry and lock/process-restoration gates. Next bounded development
+  slice is flexible read intent/slot recognition as specified in the researched
+  route. The photo-context question was investigated only; the member deferred
+  changes, and none are included here.

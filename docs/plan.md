@@ -4,6 +4,11 @@ Current development state and preserved physical acceptance are summarized in
 [the October 11 checkpoint](checkpoint-2026-10-11.md). This does not close the
 milestone acceptance gates below.
 
+Current assistant recognition work and its researched development route are in
+[shared routing recognition](assistant-routing-recognition.md), with execution
+evidence in [M4 checkpoints](m4-assistant-checkpoints.md). Member approved a shared
+bounded typo fallback; broader intent/slot recognition remains a later slice.
+
 ## Goal
 
 Goal UI continuation is tracked in the

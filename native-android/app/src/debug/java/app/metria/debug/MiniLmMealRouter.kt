@@ -32,6 +32,7 @@ internal class MiniLmMealRouter(context: Context) : AutoCloseable {
     private val savedRecallPrototypes: List<FloatArray>
     private val savedDraftPrototypes: List<FloatArray>
     private val navigationPrototypes: List<FloatArray>
+    private val todayOverviewPrototypes: List<FloatArray>
     private val fallbackPrototypes: List<FloatArray>
     private var closed = false
 
@@ -55,7 +56,8 @@ internal class MiniLmMealRouter(context: Context) : AutoCloseable {
             validateSession(created)
             session = created
             val examples = MEAL_LIST_EXAMPLES + LATEST_MEAL_EXAMPLES + TODAY_NUTRITION_EXAMPLES + WEIGHT_EXAMPLES +
-                GOAL_REMAINING_EXAMPLES + SAVED_RECALL_EXAMPLES + SAVED_DRAFT_EXAMPLES + NAVIGATION_EXAMPLES + FALLBACK_EXAMPLES
+                GOAL_REMAINING_EXAMPLES + SAVED_RECALL_EXAMPLES + SAVED_DRAFT_EXAMPLES + NAVIGATION_EXAMPLES +
+                TODAY_OVERVIEW_EXAMPLES + FALLBACK_EXAMPLES
             val vectors = embed(examples)
             mealListPrototypes = vectors.take(MEAL_LIST_EXAMPLES.size)
             latestMealPrototypes = vectors.subList(
@@ -78,8 +80,10 @@ internal class MiniLmMealRouter(context: Context) : AutoCloseable {
             savedDraftPrototypes = vectors.subList(draftStart, draftStart + SAVED_DRAFT_EXAMPLES.size)
             val navigationStart = draftStart + SAVED_DRAFT_EXAMPLES.size
             navigationPrototypes = vectors.subList(navigationStart, navigationStart + NAVIGATION_EXAMPLES.size)
+            val todayOverviewStart = navigationStart + NAVIGATION_EXAMPLES.size
+            todayOverviewPrototypes = vectors.subList(todayOverviewStart, todayOverviewStart + TODAY_OVERVIEW_EXAMPLES.size)
             fallbackPrototypes = vectors.drop(
-                navigationStart + NAVIGATION_EXAMPLES.size,
+                todayOverviewStart + TODAY_OVERVIEW_EXAMPLES.size,
             )
         } catch (error: Throwable) {
             created.close()
@@ -110,6 +114,7 @@ internal class MiniLmMealRouter(context: Context) : AutoCloseable {
                 "saved_recall" to savedRecallPrototypes,
                 "saved_draft" to savedDraftPrototypes,
                 "navigation" to navigationPrototypes,
+                "today_overview" to todayOverviewPrototypes,
             )
             val positiveExamples = groups.singleOrNull { it.first == toolName }?.second
                 ?: return MiniLmRouteDecision(MiniLmRouteOutcome.SCOPE_REJECTED)
@@ -363,6 +368,13 @@ internal class MiniLmMealRouter(context: Context) : AutoCloseable {
             "Open today",
             "Show my meals for today",
             "Open privacy settings",
+        )
+        val TODAY_OVERVIEW_EXAMPLES = listOf(
+            "How am I doing today",
+            "How am I doing for today",
+            "Give me a summary of today",
+            "Show me an overview of today",
+            "Give me an overview of my day today",
         )
         val FALLBACK_EXAMPLES = listOf(
             "I just ate eggs and toast",

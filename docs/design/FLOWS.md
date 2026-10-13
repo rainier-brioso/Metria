@@ -1,5 +1,18 @@
 # Metria primary UX flows
 
+Approved shared read typo tolerance (2026-10-13) preserves the original Chat
+message while a transient candidate may select an existing validated read.
+Ambiguous requests keep normal handling. Loading, Stop, error feedback,
+selection and retention use the existing flow; no new member control is added.
+Research, scope and acceptance: `../assistant-routing-recognition.md`.
+
+Completed rejected Chat turns retain a concise failure explanation as an
+assistant message. It appears once after any local evidence, remains selectable
+and survives reopening within ordinary conversation retention. A subsequent
+question starts fresh processing; Stop, lock and newer requests cannot append a
+late failure from an obsolete turn. Pending failures remain transient until a
+current turn is terminal.
+
 These flows define member intent and state transitions. They do not prescribe a specific composable hierarchy.
 
 **Approved phase calories — 2026-10-08:** see
@@ -373,6 +386,15 @@ a recoverable error. Request identity, Stop and lock
 prevent stale navigation/draft actions. Success/empty/ambiguous/partial/error/
 cancelled/restored states retain existing review and conversation contracts.
 Detailed gates are in `../assistant-companion-bundle.md`.
+
+**Approved fast today overview:** an explicit “How am I doing today?” request
+may return a concise recorded-meal/nutrition recap immediately from a fresh
+local snapshot. Show available estimates, current confirmed daily goals and
+missing/partial coverage; no estimate or goal is guessed. The recap is neutral
+and does not add advice or a clinical interpretation. Existing Chat empty,
+error, cancellation, retention and selection behavior applies. Weekly/historical
+or advice questions retain their existing flow. Detailed scope and open gates
+are in `../minilm-today-overview.md`.
 
 **Approved message selection — 2026-10-12:** long-press completed message text
 to select a word or range with native handles and the floating Copy toolbar.

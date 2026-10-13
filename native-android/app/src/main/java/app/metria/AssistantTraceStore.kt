@@ -22,7 +22,7 @@ class AssistantTraceStore(
         private val allowedKinds = setOf("turn_started", "tool_required", "tool_continued", "reply_audited", "reply_fallback", "reply_rejected", "cancelled", "failed", "locked", "route_decision", "route_selected")
         private val allowedOperations = setOf("agent_turn", "agent_tool_result", "coach", "coach_intent", "coach_audio", "meal", "unknown")
         private val allowedOutcomes = setOf("started", "accepted", "rejected", "cancelled", "failed", "waiting", "cleared")
-        private val allowedReasons = setOf("none", "required_tool_missing", "unsupported_personal_fact", "reply_policy", "multiple_tools", "unsupported_tool", "timeout", "runtime_failure", "minilm_accepted", "goal_remaining", "saved_dish_recall", "saved_dish_draft", "navigation", "scope", "scope_text", "scope_selected", "scope_host", "scope_context", "similarity", "margin", "runtime", "inference", "interrupted", "native_gemma", "legacy_gemma", "host_reply")
+        private val allowedReasons = setOf("none", "required_tool_missing", "unsupported_personal_fact", "reply_policy", "multiple_tools", "unsupported_tool", "timeout", "runtime_failure", "minilm_accepted", "today_overview", "goal_remaining", "saved_dish_recall", "saved_dish_draft", "navigation", "scope", "scope_text", "scope_selected", "scope_host", "scope_context", "similarity", "margin", "runtime", "inference", "interrupted", "native_gemma", "legacy_gemma", "host_reply")
         private val allowedTools = setOf("none", "read_progress_overview", "read_nutrition_summary", "read_day_nutrition", "read_weight", "read_meals", "read_latest_meal", "search_saved_dishes")
         private val allowedPeriods = setOf("none", "today", "yesterday", "week")
     }

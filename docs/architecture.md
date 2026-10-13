@@ -1,6 +1,38 @@
 # Metria architecture
 
+## Shared routing recognition
+
+The approved recognition direction is recorded in
+`assistant-routing-recognition.md`, including project research and tradeoffs.
+The initial implementation retains exact read routes and adds a bounded offline
+typo-candidate retry before MiniLM scoring. Candidates must pass the full host
+policy; original Chat text and protected meaning stay intact. No dictionary
+download, new dependency or tool authority is added. Broader semantic intent/slot
+recognition is a later step, not a completed capability.
+
+## Fast today overview
+
+The member-approved today overview uses the existing `MemberProgressOverview`
+snapshot and `read_progress_overview` host operation. A closed English request,
+independent host binding and competitive MiniLM decision select the optional
+debug shortcut. The host carries a frozen local date into the fresh lookup.
+`TodayOverviewReply` verifies local source, exact date/tool/language, recorded
+coverage and displayed estimates/references, then applies the existing factual
+auditor. Its visible recap omits weight trends/values, percentages, advice and
+judgment; freeform summary text is ignored. Broad overview does not seed a
+singular metric/date follow-up scope. Weekly/bilingual fallback and release
+MiniLM abstention remain; monitoring adds only a fixed technical reason. Scope
+and physical gates: `minilm-today-overview.md`.
+
 ## Chat navigation persistence
+
+Completed current-turn Chat failures use a host-authored assistant message in
+the existing encrypted timeline, consumed once under the reply request gate.
+Retaining only a temporary diagnostic allowed the saved evidence card to outlive
+its failure explanation. No new conversation representation is introduced;
+existing 50-message/24-hour retention, archive exclusion, reset and lock rules
+apply. Pending, stale, cancelled and waiting-tool diagnostics cannot complete a
+turn. The original report's immediate-disappearance cause remains unproven.
 
 The companion navigation handoff belongs to the Chat/session coordinator.
 It records the current accepted opening reply once, then awaits successful

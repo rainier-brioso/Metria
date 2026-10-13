@@ -90,7 +90,7 @@ internal object MiniLmMealReadPolicy {
         "read_latest_meal" -> isLatestMealInScope(text)
         "read_day_nutrition" -> isTodayNutritionInScope(text) || isHistoricalNutritionInScope(text)
         "read_weight" -> MiniLmWeightReadPolicy.isInScope(text)
-        "goal_remaining", "saved_recall", "saved_draft", "navigation" ->
+        "today_overview", "goal_remaining", "saved_recall", "saved_draft", "navigation" ->
             CompanionAssistantPolicy.resolve(null, text, null, LocalDate.now())?.classifierKey == toolName
         else -> false
     }
@@ -123,7 +123,8 @@ internal object MiniLmMealReadPolicy {
     /** Explicit read paraphrases eligible to bypass the transition write-word guard. */
     fun isAnyDirectReadInScope(text: String): Boolean =
         isInScope(text) || isLatestMealInScope(text) || isTodayNutritionInScope(text) ||
-            MiniLmWeightReadPolicy.isInScope(text)
+            MiniLmWeightReadPolicy.isInScope(text) ||
+            CompanionAssistantPolicy.resolve(null, text, null, LocalDate.now())?.classifierKey == "today_overview"
 
     fun followUpMetric(text: String): String? {
         if (!validText(text)) return null
@@ -144,6 +145,24 @@ internal object MiniLmMealReadPolicy {
         selectedMealId: String?,
         today: LocalDate,
         followUpScope: FollowUpScope? = null,
+    ): ResolvedRead? {
+        resolveReadRequestExact(hostRequiredTool, text, selectedMealId, today, followUpScope)?.let { return it }
+        // Fuzzy candidates are a final assist for closed reads. Never rewrite text
+        // in selected-record or ephemeral follow-up contexts.
+        if (!selectedMealId.isNullOrBlank() || !validText(text)) return null
+        val normalized = normalize(text)
+        val corrected = MiniLmReadTypoCandidates.uniqueSingleCorrection(normalized) ?: return null
+        val candidate = resolveReadRequestExact(hostRequiredTool, corrected, null, today, null) ?: return null
+        if (!candidate.allowMiniLm || !isTypoEligibleRead(candidate)) return null
+        return candidate
+    }
+
+    private fun resolveReadRequestExact(
+        hostRequiredTool: RequiredAgentTool?,
+        text: String,
+        selectedMealId: String?,
+        today: LocalDate,
+        followUpScope: FollowUpScope?,
     ): ResolvedRead? {
         CompanionAssistantPolicy.resolve(hostRequiredTool, text, selectedMealId, today)?.let { companion ->
             val required = companion.requiredTool ?: RequiredAgentTool("host_navigation", query = companion.destination?.name)
@@ -246,6 +265,14 @@ internal object MiniLmMealReadPolicy {
         }
         val resolved = requiredReadTool(hostRequiredTool, text, selectedMealId, today) ?: return null
         return ResolvedRead(resolved, normalize(text))
+    }
+
+    private fun isTypoEligibleRead(resolved: ResolvedRead): Boolean = when {
+        resolved.requiredTool.name in setOf("read_meals", "read_latest_meal", "read_day_nutrition", "read_weight") ->
+            resolved.companion == null
+        resolved.companion?.kind == CompanionAssistantPolicy.IntentKind.TODAY_OVERVIEW ||
+            resolved.companion?.kind == CompanionAssistantPolicy.IntentKind.GOAL_REMAINING -> true
+        else -> false
     }
 
     /** Fixed technical metadata only; never records wording, selection IDs or records. */

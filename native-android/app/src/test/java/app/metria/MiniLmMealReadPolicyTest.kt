@@ -3,6 +3,7 @@ package app.metria
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -172,6 +173,146 @@ class MiniLmMealReadPolicyTest {
         assertNotNull(MiniLmMealReadPolicy.validatedFastReadReply(resolved.requiredTool, vaultResult))
         assertNull(MiniLmMealReadPolicy.nativeNutritionMetric(
             nativeCall.copy(hostReadDate = null), "And yesterday?",
+        ))
+    }
+
+    @Test
+    fun todayOverviewUsesRealTextAndNativeHostDateWithoutStealingNarrowReads() {
+        val today = LocalDate.parse("2026-10-12")
+        val phrase = "How am I doing today?"
+        val host = MetriaAgentGroundingPolicy.requiredTool(phrase, emptyList(), today)
+        val resolved = requireNotNull(MiniLmMealReadPolicy.resolveReadRequest(host, phrase, null, today))
+
+        assertTrue(resolved.allowMiniLm)
+        assertEquals("read_progress_overview", resolved.requiredTool.name)
+        assertEquals("today", resolved.requiredTool.period)
+        assertEquals(today, resolved.requiredTool.targetDate)
+        assertEquals("today_overview", resolved.classifierKey)
+        assertEquals("how am i doing today", resolved.classifierText)
+        assertTrue(MiniLmMealReadPolicy.isInScope(phrase, "today_overview"))
+
+        val nativeCall = PrivateCoachToolCall(
+            intent = resolved.requiredTool.name,
+            period = resolved.requiredTool.period,
+            hostReadDate = today,
+            hostCompanionKind = resolved.companion?.kind,
+        )
+        assertEquals(today, nativeCall.hostReadDate)
+        assertEquals(CompanionAssistantPolicy.IntentKind.TODAY_OVERVIEW, nativeCall.hostCompanionKind)
+
+        val frozenOverview = MemberProgressOverview.from(
+            entries = emptyList(),
+            meals = emptyList(),
+            targets = NutritionTargets(caloriesKcal = 2_000.0, proteinGrams = 100.0),
+            today = requireNotNull(nativeCall.hostReadDate),
+            period = "today",
+        )
+        val response = frozenOverview.toolResponse() + mapOf(
+            "as_of" to nativeCall.hostReadDate.toString(), "reply_language" to "English",
+        )
+        assertEquals(today.toString(), response["from"])
+        assertEquals(today.toString(), response["to"])
+        val fastReply = TodayOverviewReply.from(resolved.requiredTool, response)
+        assertNotNull(fastReply)
+        assertTrue(requireNotNull(fastReply).contains("Your daily calorie goal is 2000 kcal."))
+        assertTrue(fastReply.contains("Your daily protein goal is 100 g protein."))
+        assertFalse(fastReply.contains("kg"))
+
+        val narrowRead = MiniLmMealReadPolicy.resolveReadRequest(
+            MetriaAgentGroundingPolicy.requiredTool("How many calories did I eat today?", emptyList(), today),
+            "How many calories did I eat today?", null, today,
+        )
+        assertEquals("read_day_nutrition", narrowRead?.requiredTool?.name)
+        assertNotEquals("today_overview", narrowRead?.classifierKey)
+        assertFalse(MiniLmMealReadPolicy.isInScope("Should I eat more today?", "today_overview"))
+        assertFalse(MiniLmMealReadPolicy.isInScope("How am I doing this week?", "today_overview"))
+    }
+
+    @Test
+    fun oneUniqueRoutingTypoRetriesOnlyClosedReadGrammars() {
+        val today = LocalDate.parse("2026-10-12")
+        val accepted = listOf(
+            "show me an oberview of my day today" to
+                ("read_progress_overview" to "show me an overview of my day today"),
+            "show my recoreded meals today" to
+                ("read_meals" to "show my recorded meals today"),
+            "what is my calorie totall for today" to
+                ("read_day_nutrition" to "what is my calorie total for today"),
+            "what were the calories in my lates meal" to
+                ("read_latest_meal" to "what were the calories in my latest meal"),
+            "what is my latest weightt" to
+                ("read_weight" to "what is my latest weight"),
+            "how much protien do i have left today" to
+                ("read_nutrition_summary" to "how much protein do i have left today"),
+        )
+        accepted.forEach { (question, expected) ->
+            val host = MetriaAgentGroundingPolicy.requiredTool(question, emptyList(), today)
+            val resolved = requireNotNull(MiniLmMealReadPolicy.resolveReadRequest(host, question, null, today))
+            assertTrue(question, resolved.allowMiniLm)
+            assertEquals(question, expected.first, resolved.requiredTool.name)
+            assertEquals(question, expected.second, resolved.classifierText)
+        }
+
+        val compatibleOverview = MiniLmMealReadPolicy.resolveReadRequest(
+            RequiredAgentTool("read_progress_overview", period = "today"),
+            "show me an oberview of my day today", null, today,
+        )
+        assertEquals("show me an overview of my day today", compatibleOverview?.classifierText)
+        val incompatibleHosts = listOf(
+            RequiredAgentTool("read_progress_overview", period = "week"),
+            RequiredAgentTool("read_day_nutrition", period = "historical_day", daysAgo = 1, metric = "calories"),
+            RequiredAgentTool("read_meals", daysAgo = 1, targetDate = today.minusDays(1)),
+        )
+        incompatibleHosts.forEach { host ->
+            assertNull(host.toString(), MiniLmMealReadPolicy.resolveReadRequest(
+                host, "show me an oberview of my day today", null, today,
+            ))
+        }
+
+        listOf(
+            "show my meals for yesterdya",
+            "do not show my recoreded meals today",
+            "show my recoreded meals today and log lunch",
+            "show my caloriex today",
+            "show my recoreded mealx today",
+            "show my latest height",
+            "show my meats today",
+            "what are the calories in my lamest meal",
+            "show my meals for sunday",
+            "show Maria my latest weight",
+            "show my deals today",
+            "log my recoreded meals today",
+        ).forEach { question ->
+            assertNull(question, MiniLmMealReadPolicy.resolveReadRequest(null, question, null, today))
+        }
+        val savedDraftNameIsNeverRewritten = requireNotNull(MiniLmMealReadPolicy.resolveReadRequest(
+            null, "I had my saved dish weightt", null, today,
+        ))
+        assertEquals("saved_draft", savedDraftNameIsNeverRewritten.classifierKey)
+        assertEquals("i had my saved dish weightt", savedDraftNameIsNeverRewritten.classifierText)
+        assertEquals("weightt", savedDraftNameIsNeverRewritten.companion?.query)
+        assertNull(MiniLmMealReadPolicy.resolveReadRequest(
+            null, "show me an oberview of my day today", "selected-meal", today,
+        ))
+        val explicitAfterScopedRead = MiniLmMealReadPolicy.resolveReadRequest(
+            null, "what is my calorie totall for today", null, today,
+            MiniLmMealReadPolicy.FollowUpScope(
+                MiniLmMealReadPolicy.FollowUpOperation.TODAY_NUTRITION, today, metric = "protein",
+            ),
+        )
+        assertEquals("calories", explicitAfterScopedRead?.requiredTool?.metric)
+        assertEquals("what is my calorie total for today", explicitAfterScopedRead?.classifierText)
+        val preservedYesterday = MiniLmMealReadPolicy.resolveReadRequest(
+            null, "show my recoreded meals yesterday", null, today,
+        )
+        assertEquals(1, preservedYesterday?.requiredTool?.daysAgo)
+        assertEquals(today.minusDays(1), preservedYesterday?.requiredTool?.targetDate)
+        assertEquals("show my recorded meals yesterday", preservedYesterday?.classifierText)
+        assertNull(MiniLmMealReadPolicy.resolveReadRequest(
+            null, "And protien", null, today,
+            MiniLmMealReadPolicy.FollowUpScope(
+                MiniLmMealReadPolicy.FollowUpOperation.TODAY_NUTRITION, today, metric = "protein",
+            ),
         ))
     }
 

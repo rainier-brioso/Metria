@@ -609,6 +609,7 @@ class ModelLifecycle(
             val reply = requiredTool?.takeIf {
                 state == "loaded" && toolName == expectedName && pendingPrivateAgentToolName == expectedName
             }?.let { required -> when (companion?.kind) {
+                CompanionAssistantPolicy.IntentKind.TODAY_OVERVIEW -> TodayOverviewReply.from(required, response)
                 CompanionAssistantPolicy.IntentKind.GOAL_REMAINING -> companion.metric?.let { metric ->
                     GoalRemainingNutritionReply.from(response, required.targetDate ?: return@let null, metric)
                 }
@@ -657,6 +658,8 @@ class ModelLifecycle(
             } else null
             coachDiagnostic = when {
                 reply != null -> null
+                companion?.kind == CompanionAssistantPolicy.IntentKind.TODAY_OVERVIEW ->
+                    "Metria could not verify that progress summary against your latest local records. Try asking again."
                 expectedName == "read_weight" -> "Metria could not verify that weight answer against your local records. Please ask again."
                 expectedName == "read_meals" && expectedDate != null &&
                     (response["from"] != expectedDate || response["to"] != expectedDate) ->
@@ -669,6 +672,10 @@ class ModelLifecycle(
                 else "The member request was answered from a validated local result."
             if (BuildConfig.DEBUG) {
                 diagnostics = when {
+                    companion?.kind == CompanionAssistantPolicy.IntentKind.TODAY_OVERVIEW && reply != null ->
+                        "Assistant route: MiniLM today overview; Gemma generation skipped."
+                    companion?.kind == CompanionAssistantPolicy.IntentKind.TODAY_OVERVIEW ->
+                        "Assistant route: MiniLM today overview; host validation rejected the result."
                     companion?.kind == CompanionAssistantPolicy.IntentKind.GOAL_REMAINING && reply != null ->
                         "Assistant route: MiniLM goal-remaining read; Gemma generation skipped."
                     companion?.kind == CompanionAssistantPolicy.IntentKind.GOAL_REMAINING ->
@@ -702,8 +709,9 @@ class ModelLifecycle(
                 if (reply == null) "reply_rejected" else "reply_audited",
                 "agent_turn",
                 if (reply == null) "rejected" else "accepted",
-                tool = expectedName?.takeIf { it in setOf("read_meals", "read_latest_meal", "read_day_nutrition", "read_weight") } ?: "none",
+                tool = expectedName?.takeIf { it in setOf("read_progress_overview", "read_meals", "read_latest_meal", "read_day_nutrition", "read_weight") } ?: "none",
                 period = when {
+                    companion?.kind == CompanionAssistantPolicy.IntentKind.TODAY_OVERVIEW -> "today"
                     expectedName !in setOf("read_day_nutrition", "read_meals") -> "none"
                     dayOffset == 1 -> "yesterday"
                     dayOffset == 0 -> "today"
@@ -1559,6 +1567,7 @@ class ModelLifecycle(
                 if (engine !== loadedEngine || assistantRequestId != requestId) return
                 val acceptedCompanionReason = if (miniLmDecision.outcome == MiniLmRouteOutcome.ACCEPTED) {
                     when (resolvedMiniLmRead?.companion?.kind) {
+                        CompanionAssistantPolicy.IntentKind.TODAY_OVERVIEW -> "today_overview"
                         CompanionAssistantPolicy.IntentKind.GOAL_REMAINING -> "goal_remaining"
                         CompanionAssistantPolicy.IntentKind.SAVED_RECALL -> "saved_dish_recall"
                         CompanionAssistantPolicy.IntentKind.SAVED_DRAFT -> "saved_dish_draft"
@@ -1656,6 +1665,10 @@ class ModelLifecycle(
                             hostCompanionKind = companionIntent?.kind,
                             hostMetric = companionIntent?.metric,
                         )
+                        "read_progress_overview" -> PrivateCoachToolCall(
+                            intent = "read_progress_overview", period = "today", hostReadDate = queryToday,
+                            hostCompanionKind = companionIntent?.kind,
+                        )
                         "search_saved_dishes" -> PrivateCoachToolCall(
                             intent = "search_saved_dishes", query = miniLmMealReadTool.query,
                             hostReadDate = queryToday, hostCompanionKind = companionIntent?.kind,
@@ -1672,6 +1685,7 @@ class ModelLifecycle(
                     assistantOperation = "agent_waiting_tool"
                     coachDiagnostic = null
                     reason = when (companionIntent?.kind) {
+                        CompanionAssistantPolicy.IntentKind.TODAY_OVERVIEW -> "MiniLM selected a fresh local today progress overview."
                         CompanionAssistantPolicy.IntentKind.GOAL_REMAINING -> "MiniLM selected a fresh local goal-remaining comparison."
                         CompanionAssistantPolicy.IntentKind.SAVED_RECALL -> "MiniLM selected a bounded local saved-dish lookup."
                         CompanionAssistantPolicy.IntentKind.SAVED_DRAFT -> "MiniLM selected a saved-dish meal draft for member review."
@@ -1684,6 +1698,8 @@ class ModelLifecycle(
                     }
                     if (BuildConfig.DEBUG) {
                         diagnostics = when (companionIntent?.kind) {
+                            CompanionAssistantPolicy.IntentKind.TODAY_OVERVIEW ->
+                                "Assistant route: MiniLM today overview; Gemma generation skipped."
                             CompanionAssistantPolicy.IntentKind.GOAL_REMAINING ->
                                 "Assistant route: MiniLM goal-remaining read; Gemma generation skipped."
                             CompanionAssistantPolicy.IntentKind.SAVED_RECALL ->
@@ -1710,6 +1726,7 @@ class ModelLifecycle(
                         "tool_required", "agent_turn", "waiting",
                         tool = miniLmMealReadTool.name,
                         period = when {
+                            miniLmMealReadTool.name == "read_progress_overview" -> "today"
                             miniLmMealReadTool.name == "read_day_nutrition" && miniLmMealReadTool.daysAgo == 0 -> "today"
                             miniLmMealReadTool.name == "read_day_nutrition" && miniLmMealReadTool.daysAgo == 1 -> "yesterday"
                             miniLmMealReadTool.name == "read_meals" && miniLmMealReadTool.daysAgo == 0 -> "today"

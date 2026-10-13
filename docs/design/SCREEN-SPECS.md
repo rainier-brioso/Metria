@@ -1,5 +1,17 @@
 # Metria screen contracts
 
+Shared typo recognition (2026-10-13) must not visibly rewrite sent messages or
+change the existing Chat hierarchy. A local evidence card alone is not a
+completed answer: a rejected current turn must expose recoverable error feedback.
+The reported missing feedback remains a physical investigation gap; no UI fix
+is claimed from static inspection. See `../assistant-routing-recognition.md`.
+
+Approved completed-failure retention: current terminal rejected turns display
+one host-authored recovery message in the existing assistant timeline. Preserve
+text selection, normal auto-scroll and encrypted retention. Do not duplicate it
+with the transient diagnostic card or consume a pending tool/navigation action
+as a failed turn. Physical visibility/restoration acceptance is a separate gate.
+
 **Approved phase calories — 2026-10-08:**
 [phase calorie contract](phase-energy-contract-proposal.md). A focused review shows
 the explicitly selected maintenance reference and approximate range, signed
@@ -360,6 +372,14 @@ error. Late completion must not navigate after lock/Stop/new turn. Follow-up
 answers read fresh records and maintain the selected day/metric explicitly.
 Keyboard/font/TalkBack/rotation and visual gates remain required; the bundle's
 build does not close physical acceptance. See `../assistant-companion-bundle.md`.
+
+**Approved fast today overview:** use the existing assistant bubble for a short
+recap of today's recorded meals, available calorie/protein estimates and
+confirmed daily goals. Missing references/estimates and partial coverage stay
+explicit. Use neutral language with no intake-completeness or medical claim,
+judgment, recommendation or inferred weight trend. Preserve ordinary message
+selection, error announcements and conversation retention. This adds no new
+screen or action; acceptance is tracked in `../minilm-today-overview.md`.
 
 **Approved message selection — 2026-10-12:** completed message text supports
 long-press word/range selection, native selection handles and a floating Copy

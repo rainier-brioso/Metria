@@ -4,7 +4,7 @@ import java.time.LocalDate
 
 /** Closed, host-owned intents for the local companion shortcuts. */
 object CompanionAssistantPolicy {
-    enum class IntentKind { GOAL_REMAINING, SAVED_RECALL, SAVED_DRAFT, NAVIGATION }
+    enum class IntentKind { TODAY_OVERVIEW, GOAL_REMAINING, SAVED_RECALL, SAVED_DRAFT, NAVIGATION }
     enum class Destination { TODAY, HISTORY, PRIVACY }
 
     data class SavedDishItemPrefill(
@@ -41,6 +41,12 @@ object CompanionAssistantPolicy {
     private val goalRemainingAlternate = Regex(
         "^(?:what is|what's) (?:my )?(?:remaining|leftover) (?:protein|calories) for today$",
     )
+    private val todayOverview = listOf(
+        Regex("^how am i doing today$"),
+        Regex("^how am i doing for today$"),
+        Regex("^(?:give|show) me (?:(?:a )?summary|(?:an? )?overview) of today$"),
+        Regex("^(?:give|show) me (?:(?:a )?summary|(?:an? )?overview) of my day today$"),
+    )
     private val recallUsual = Regex("^(?:find|show|look up) my usual (breakfast|lunch|dinner|snack)$")
     private val recallNamed = Regex("^(?:find|show|look up) my saved (?:dish )?(.{2,100})$|^(?:find|show|look up) my (.{2,100}) dish$")
     private val draftUsual = Regex("^(?:i had|i ate) my usual (breakfast|lunch|dinner|snack)$")
@@ -59,6 +65,16 @@ object CompanionAssistantPolicy {
     ): Resolution? {
         if (!selectedMealId.isNullOrBlank() || !validText(text)) return null
         val normalized = normalize(text)
+        if (todayOverview.any { it.matches(normalized) }) {
+            val hostExpected = RequiredAgentTool("read_progress_overview", period = "today")
+            if (!compatible(hostRequiredTool, hostExpected)) return null
+            return Resolution(
+                IntentKind.TODAY_OVERVIEW,
+                hostExpected.copy(targetDate = today),
+                "today_overview",
+                normalized,
+            )
+        }
         val goal = goalRemaining.matchEntire(normalized)?.value
             ?: goalRemainingAlternate.matchEntire(normalized)?.value
         if (goal != null) {

@@ -37,6 +37,61 @@ class CompanionAssistantPolicyTest {
     }
 
     @Test
+    fun `today overview is a closed host-bound English intent`() {
+        listOf(
+            "How am I doing today?",
+            "How am I doing for today?",
+            "Give me a summary of today",
+            "Show me an overview of my day today",
+            "show me overview of today",
+        ).forEach { phrase ->
+            val result = requireNotNull(CompanionAssistantPolicy.resolve(null, phrase, null, today))
+            assertEquals(CompanionAssistantPolicy.IntentKind.TODAY_OVERVIEW, result.kind)
+            assertEquals("today_overview", result.classifierKey)
+            assertEquals(
+                MiniLmReadTextNormalization.normalize(phrase),
+                result.classifierText,
+            )
+            assertEquals("read_progress_overview", result.requiredTool?.name)
+            assertEquals("today", result.requiredTool?.period)
+            assertEquals(today, result.requiredTool?.targetDate)
+        }
+
+        val host = RequiredAgentTool("read_progress_overview", period = "today")
+        assertEquals("today_overview", CompanionAssistantPolicy.resolve(host, "How am I doing today?", null, today)?.classifierKey)
+        assertNull(CompanionAssistantPolicy.resolve(host, "show me an oberview of my day today", null, today))
+        listOf(
+            RequiredAgentTool("read_progress_overview", period = "week"),
+            RequiredAgentTool("read_day_nutrition", period = "historical_day", daysAgo = 0, metric = "calories"),
+        ).forEach { conflicting ->
+            assertNull(conflicting.toString(), CompanionAssistantPolicy.resolve(conflicting, "How am I doing today?", null, today))
+        }
+        listOf(
+            "How am I doing this week?",
+            "How was I doing yesterday?",
+            "Should I eat more today?",
+            "How am I doing today and log lunch?",
+            "How am I doing today? Show my meals too",
+            "show me an overview of yesterday",
+            "show me an overview of my day today and log lunch",
+            "show me an overview of my day today and show my meals",
+            "¿Cómo estoy hoy?",
+            "How many calories did I eat today?",
+        ).forEach { phrase ->
+            assertNull(phrase, CompanionAssistantPolicy.resolve(null, phrase, null, today))
+        }
+        assertNull(CompanionAssistantPolicy.resolve(null, "How am I doing today?", "selected-meal", today))
+        assertNull(CompanionAssistantPolicy.resolve(
+            RequiredAgentTool("read_progress_overview", period = "week"),
+            "show me an overview of my day today", null, today,
+        ))
+        assertNull(CompanionAssistantPolicy.resolve(
+            RequiredAgentTool("read_day_nutrition", period = "historical_day", daysAgo = 0, metric = "calories"),
+            "show me an overview of my day today", null, today,
+        ))
+    }
+
+    @Test
     fun `saved recall and draft retain actual normalized member wording`() {
         val recall = CompanionAssistantPolicy.resolve(null, "Find my usual breakfast", null, today)
         val draft = CompanionAssistantPolicy.resolve(null, "I ate my usual breakfast", null, today)

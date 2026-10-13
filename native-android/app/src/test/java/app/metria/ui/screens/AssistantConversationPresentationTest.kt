@@ -3,9 +3,12 @@ package app.metria.ui.screens
 import app.metria.shouldConsumeAssistantResult
 import app.metria.AssistantPendingSubmissionGate
 import app.metria.AssistantCancellationGate
+import app.metria.continuationFailureDiagnostic
+import app.metria.retainableAssistantFailure
 import app.metria.shouldPresentAssistantThinking
 import app.metria.shouldLatchAssistantDiagnostic
-import app.metria.continuationFailureDiagnostic
+import app.metria.shouldSuppressConsumedAssistantDiagnostic
+import app.metria.shouldAnnouncePrivateChatMessage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -18,12 +21,155 @@ import kotlinx.coroutines.runBlocking
 
 class AssistantConversationPresentationTest {
     @Test
+    fun `current completed rejection becomes one retained assistant message`() {
+        assertEquals("Metria could not verify that answer.", retainableFailure())
+        assertEquals("That local answer took too long.", retainableFailure(
+            operation = "agent_turn",
+            diagnostic = "That local answer took too long.",
+        ))
+        assertEquals("That local answer took too long.", retainableFailure(
+            operation = "agent_tool_result",
+            diagnostic = "That local answer took too long.",
+        ))
+    }
+
+    @Test
+    fun `retained rejection gate rejects duplicate pending waiting and successful results`() {
+        assertEquals(null, retainableFailure(handledRequestId = 42L))
+        assertEquals(null, retainableFailure(localPending = true))
+        assertEquals(null, retainableFailure(operation = "agent_waiting_tool"))
+        assertEquals(null, retainableFailure(hasReply = true))
+        assertEquals(null, retainableFailure(hasToolCall = true))
+        assertEquals(null, retainableFailure(hasProposal = true))
+        assertEquals(null, retainableFailure(hasNavigation = true))
+    }
+
+    @Test
+    fun `stale cancelled and locked rejections are not retained`() {
+        assertEquals(null, retainableFailure(activeRequestId = 41L))
+        assertEquals(null, retainableFailure(activeRequestId = null))
+        assertEquals(null, retainableFailure(stopping = true))
+        assertEquals(null, retainableFailure(unlocked = false))
+    }
+
+    @Test
+    fun `new turn makes the previous failure stale`() {
+        assertEquals(null, retainableAssistantFailure(
+            activeRequestId = 43L,
+            handledRequestId = null,
+            resultRequestId = 42L,
+            modelState = "loaded",
+            operation = "agent_reply",
+            diagnostic = "Old failure",
+            hasReply = false,
+            hasToolCall = false,
+            hasProposal = false,
+            localPending = false,
+            stopping = false,
+            unlocked = true,
+        ))
+    }
+
+    @Test
+    fun `blank diagnostic does not create a retained message`() {
+        assertEquals(null, retainableFailure(diagnostic = "  "))
+    }
+
+    @Test
+    fun `only a consumed terminal failure suppresses its transient diagnostic`() {
+        assertTrue(shouldSuppressFailureDiagnostic())
+        assertFalse(shouldSuppressFailureDiagnostic(hasReply = true))
+        assertFalse(shouldSuppressFailureDiagnostic(hasNavigation = true))
+        assertFalse(shouldSuppressFailureDiagnostic(activeRequestId = 43L))
+        assertFalse(shouldSuppressFailureDiagnostic(handledRequestId = null))
+    }
+
+    @Test
+    fun `polite announcement is limited to the newest retained failure message`() {
+        assertTrue(shouldAnnouncePrivateChatMessage(
+            failedRequestId = 42L, activeRequestId = 42L, isLast = true,
+            fromMember = false, localEvidence = false,
+        ))
+        assertFalse(shouldAnnouncePrivateChatMessage(
+            failedRequestId = 42L, activeRequestId = 42L, isLast = false,
+            fromMember = false, localEvidence = false,
+        ))
+        assertFalse(shouldAnnouncePrivateChatMessage(
+            failedRequestId = 41L, activeRequestId = 42L, isLast = true,
+            fromMember = false, localEvidence = false,
+        ))
+        assertFalse(shouldAnnouncePrivateChatMessage(
+            failedRequestId = 42L, activeRequestId = 42L, isLast = true,
+            fromMember = true, localEvidence = false,
+        ))
+        assertFalse(shouldAnnouncePrivateChatMessage(
+            failedRequestId = 42L, activeRequestId = 42L, isLast = true,
+            fromMember = false, localEvidence = true,
+        ))
+    }
+
+    @Test
     fun `current failed turn can keep its error visible after lifecycle status changes`() {
         assertTrue(shouldLatchAssistantDiagnostic(42L, 42L, "loaded", "Could not verify", false))
         assertFalse(shouldLatchAssistantDiagnostic(42L, 41L, "loaded", "Stale error", false))
         assertFalse(shouldLatchAssistantDiagnostic(42L, 42L, "thinking", "Early error", false))
         assertFalse(shouldLatchAssistantDiagnostic(42L, 42L, "loaded", "Previous error", true))
+        assertFalse(shouldLatchAssistantDiagnostic(42L, 42L, "loaded", "Handled", false, handledRequestId = 42L))
     }
+
+    private fun retainableFailure(
+        activeRequestId: Long? = 42L,
+        handledRequestId: Long? = null,
+        resultRequestId: Long? = 42L,
+        modelState: String = "loaded",
+        operation: String? = "agent_reply",
+        diagnostic: String? = "Metria could not verify that answer.",
+        hasReply: Boolean = false,
+        hasToolCall: Boolean = false,
+        hasProposal: Boolean = false,
+        hasNavigation: Boolean = false,
+        localPending: Boolean = false,
+        stopping: Boolean = false,
+        unlocked: Boolean = true,
+    ): String? = retainableAssistantFailure(
+        activeRequestId = activeRequestId,
+        handledRequestId = handledRequestId,
+        resultRequestId = resultRequestId,
+        modelState = modelState,
+        operation = operation,
+        diagnostic = diagnostic,
+        hasReply = hasReply,
+        hasToolCall = hasToolCall,
+        hasProposal = hasProposal,
+        hasNavigation = hasNavigation,
+        localPending = localPending,
+        stopping = stopping,
+        unlocked = unlocked,
+    )
+
+    private fun shouldSuppressFailureDiagnostic(
+        activeRequestId: Long? = 42L,
+        handledRequestId: Long? = 42L,
+        resultRequestId: Long? = 42L,
+        modelState: String = "loaded",
+        operation: String? = "agent_reply",
+        diagnostic: String? = "Metria could not verify that answer.",
+        hasReply: Boolean = false,
+        hasToolCall: Boolean = false,
+        hasProposal: Boolean = false,
+        hasNavigation: Boolean = false,
+    ): Boolean = shouldSuppressConsumedAssistantDiagnostic(
+        activeRequestId = activeRequestId,
+        handledRequestId = handledRequestId,
+        resultRequestId = resultRequestId,
+        modelState = modelState,
+        operation = operation,
+        diagnostic = diagnostic,
+        hasReply = hasReply,
+        hasToolCall = hasToolCall,
+        hasProposal = hasProposal,
+        hasNavigation = hasNavigation,
+    )
     @Test
     fun `assistant home uses calm member language`() {
         assertEquals("Ready when you are", assistantHomeTitle("loaded"))

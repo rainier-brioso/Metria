@@ -1,5 +1,18 @@
 # Metria local assistant agent
 
+Member-approved shared typo recognition (2026-10-13) is specified in
+`assistant-routing-recognition.md`. Exact routes retain priority; one bounded
+unambiguous routing-word candidate may be retried through the complete existing
+read policy and competitive MiniLM checks. Original member wording remains in
+Chat. The first slice excludes saved-dish, draft, navigation and fuzzy follow-up
+operations; it grants no new permission or arbitrary paraphrase understanding.
+
+The member-approved fast today overview is specified in
+`minilm-today-overview.md`: explicit English today questions may use a fresh,
+frozen-date progress read and deterministic audited recorded-nutrition recap
+with current confirmed references. No broad-summary metric follow-up scope,
+clinical interpretation, recommendation or automatic write is introduced.
+
 **Status:** Gate A passed on the target Android phone; Gates B–E remain open — 2026-08-28. See [M4 checkpoints](m4-assistant-checkpoints.md).
 
 ## Purpose and boundary

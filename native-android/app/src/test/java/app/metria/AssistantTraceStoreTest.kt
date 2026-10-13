@@ -28,7 +28,7 @@ class AssistantTraceStoreTest {
     @Test
     fun `companion route reasons persist as fixed metadata only`() {
         val root = Files.createTempDirectory("trace-test").toFile()
-        val reasons = listOf("goal_remaining", "saved_dish_recall", "saved_dish_draft", "navigation")
+        val reasons = listOf("today_overview", "goal_remaining", "saved_dish_recall", "saved_dish_draft", "navigation")
         AssistantTraceStore(root, true, { 1_000L }).use { trace ->
             trace.setEnabled(true)
             reasons.forEach { trace.record("route_decision", "agent_turn", "accepted", reason = it) }

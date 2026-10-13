@@ -1440,7 +1440,12 @@ private fun AssistantScreen(
 }
 
 /** UX decision: facts returned by a local tool remain visible, but secondary to Metria's answer. */
-private data class PrivateChatMessage(val text: String, val fromMember: Boolean, val localEvidence: Boolean = false, val savedMealId: String? = null)
+private data class PrivateChatMessage(
+    val text: String,
+    val fromMember: Boolean,
+    val localEvidence: Boolean = false,
+    val savedMealId: String? = null,
+)
 
 private fun initialPrivateChatMessages() = listOf(
     PrivateChatMessage("Ask about a meal, add a weight, or ask what you logged today. Any saved action stays visible and reversible.", false),
@@ -1586,6 +1591,7 @@ private class PrivateAssistantConversationSession(
     val activeRequestId = mutableStateOf(initialActiveRequestId)
     val handledToolRequestId = mutableStateOf(initialHandledToolRequestId)
     val handledReplyRequestId = mutableStateOf(initialHandledReplyRequestId)
+    val retainedFailureAnnouncementRequestId = mutableStateOf<Long?>(null)
     val savedWeightId = mutableStateOf(initialSavedWeightId)
     val voiceMessage = mutableStateOf(initialVoiceMessage)
     val messages = mutableStateOf(initialMessages)
@@ -1634,6 +1640,7 @@ private class PrivateAssistantConversationSession(
         activeRequestId.value = null
         handledToolRequestId.value = null
         handledReplyRequestId.value = null
+        retainedFailureAnnouncementRequestId.value = null
         pendingSubmissionGate.cancel()
         pendingSubmission.value = null
         pendingSubmissionJob?.cancel()
@@ -1646,6 +1653,7 @@ private class PrivateAssistantConversationSession(
     fun beginPendingSubmission(text: String, previousRequestId: Long?): PendingAssistantSubmission? {
         if (assistantCancellationGate.isInFlight()) return null
         val token = pendingSubmissionGate.begin() ?: return null
+        retainedFailureAnnouncementRequestId.value = null
         responseStopped.value = false
         return PendingAssistantSubmission(token, text, previousRequestId).also { pendingSubmission.value = it }
     }
@@ -1662,6 +1670,7 @@ private class PrivateAssistantConversationSession(
         activeRequestId.value = null
         handledToolRequestId.value = null
         handledReplyRequestId.value = null
+        retainedFailureAnnouncementRequestId.value = null
         recoverableDiagnostic.value = null
         responseStopped.value = false
         assistantStopping.value = true
@@ -1712,6 +1721,7 @@ private class PrivateAssistantConversationSession(
 
     fun beginPendingContinuation(): Long? {
         val token = pendingContinuationGate.begin() ?: return null
+        retainedFailureAnnouncementRequestId.value = null
         pendingContinuationToken = token
         pendingContinuation.value = true
         return token
@@ -1776,6 +1786,7 @@ private class PrivateAssistantConversationSession(
         activeRequestId.value = null
         handledToolRequestId.value = null
         handledReplyRequestId.value = null
+        retainedFailureAnnouncementRequestId.value = null
         savedWeightId.value = null
         voiceMessage.value = null
         recoverableDiagnostic.value = null
@@ -1810,6 +1821,7 @@ private class PrivateAssistantConversationSession(
             PrivateChatMessage(message.text, message.fromMember, message.localEvidence, message.savedMealId)
         }
         if (!hydrated || (restored != null && restored != messages.value)) {
+            retainedFailureAnnouncementRequestId.value = null
             input.value = ""
             submittedQuestion.value = ""
             submittedContext.value = ""
@@ -1894,6 +1906,9 @@ private fun PrivateAssistantChat(
     var messages by conversationSession.messages
     var savedDishChoices by remember { mutableStateOf<List<MetriaSavedDishChoice>>(emptyList()) }
     val assistantScope = rememberCoroutineScope()
+    DisposableEffect(conversationSession) {
+        onDispose { conversationSession.retainedFailureAnnouncementRequestId.value = null }
+    }
     LaunchedEffect(messages) {
         val writeTicket = conversationSession.captureConversationWriteTicket()
         if (writeTicket != null && messages.any(PrivateChatMessage::fromMember)) {
@@ -2071,17 +2086,33 @@ private fun PrivateAssistantChat(
             }
             is AssistantAction.QueryProgressOverview -> {
                 val replyLanguage = coachReplyLanguage(submittedQuestion, submittedConversationContext)
+                val frozenTodayOverviewDate = call.hostReadDate.takeIf {
+                    nativeAgentTool && call.intent == "read_progress_overview" &&
+                        call.hostCompanionKind == CompanionAssistantPolicy.IntentKind.TODAY_OVERVIEW &&
+                        action.period == "today"
+                }
                 val overview = MemberProgressOverview.from(
                     entries = entries,
                     meals = meals,
                     targets = nutritionTargets,
-                    today = today,
+                    today = frozenTodayOverviewDate ?: today,
                     period = action.period,
                 )
-                messages = messages + PrivateChatMessage(overview.localEvidence(), false, localEvidence = true)
                 if (nativeAgentTool) {
-                    trackNativeRequest { continueAgentTool(call.intent, overview.toolResponse() + ("reply_language" to replyLanguage)) }
+                    val overviewResponse = overview.toolResponse()
+                    val response = if (frozenTodayOverviewDate != null) {
+                        overviewResponse + mapOf(
+                            "as_of" to frozenTodayOverviewDate.toString(), "reply_language" to replyLanguage,
+                        )
+                    } else {
+                        overviewResponse + ("reply_language" to replyLanguage)
+                    }
+                    if (frozenTodayOverviewDate == null) {
+                        messages = messages + PrivateChatMessage(overview.localEvidence(), false, localEvidence = true)
+                    }
+                    trackNativeRequest { continueAgentTool(call.intent, response) }
                 } else {
+                    messages = messages + PrivateChatMessage(overview.localEvidence(), false, localEvidence = true)
                     trackRequest(askCoach(
                         """MEMBER_LANGUAGE: ${coachReplyLanguage(submittedQuestion, submittedConversationContext)}
                             MEMBER_QUESTION: $submittedQuestion
@@ -2439,11 +2470,54 @@ private fun PrivateAssistantChat(
             conversationSession.recoverableDiagnostic.value = null
         }
     }
+    LaunchedEffect(
+        modelStatus.assistantRequestId,
+        modelStatus.state,
+        modelStatus.assistantOperation,
+        modelStatus.coachDiagnostic,
+        modelStatus.coachReply,
+        modelStatus.coachToolCall,
+        modelStatus.assistantProposal,
+        modelStatus.companionNavigation?.requestId,
+        activeAssistantRequestId,
+        handledReplyRequestId,
+        conversationSession.pendingSubmission.value,
+        conversationSession.pendingContinuation.value,
+        conversationSession.assistantStopping.value,
+    ) {
+        val requestId = modelStatus.assistantRequestId ?: return@LaunchedEffect
+        val failure = retainableAssistantFailure(
+            activeRequestId = activeAssistantRequestId,
+            handledRequestId = handledReplyRequestId,
+            resultRequestId = requestId,
+            modelState = modelStatus.state,
+            operation = modelStatus.assistantOperation,
+            diagnostic = modelStatus.coachDiagnostic,
+            hasReply = modelStatus.coachReply != null,
+            hasToolCall = modelStatus.coachToolCall != null,
+            hasProposal = modelStatus.assistantProposal != null,
+            hasNavigation = modelStatus.companionNavigation != null,
+            localPending = conversationSession.pendingSubmission.value != null ||
+                conversationSession.pendingContinuation.value,
+            stopping = conversationSession.assistantStopping.value,
+            unlocked = isVaultUnlocked(),
+        ) ?: return@LaunchedEffect
+
+        // Consume before mutating the transcript so status polling or recomposition cannot
+        // append the same terminal explanation twice. The ordinary message is persisted by
+        // the existing encrypted conversation writer.
+        handledReplyRequestId = requestId
+        messages = messages + PrivateChatMessage(failure, false)
+        conversationSession.retainedFailureAnnouncementRequestId.value = requestId
+        conversationSession.recoverableDiagnostic.value = null
+    }
     LaunchedEffect(modelStatus.assistantRequestId, modelStatus.coachDiagnostic, activeAssistantRequestId,
-        conversationSession.pendingSubmission.value, conversationSession.pendingContinuation.value) {
+        handledReplyRequestId, conversationSession.pendingSubmission.value,
+        conversationSession.pendingContinuation.value) {
         if (shouldLatchAssistantDiagnostic(
                 activeRequestId = activeAssistantRequestId,
                 resultRequestId = modelStatus.assistantRequestId,
+                handledRequestId = handledReplyRequestId,
                 modelState = modelStatus.state,
                 diagnostic = modelStatus.coachDiagnostic,
                 localPending = conversationSession.pendingSubmission.value != null ||
@@ -2560,8 +2634,20 @@ private fun PrivateAssistantChat(
     }
 
     MetriaAssistantConversationScreen(
-        messages = messages.map { MetriaChatMessage(it.text, it.fromMember, it.localEvidence,
-            it.savedMealId, meals.any { meal -> meal.id == it.savedMealId }) },
+        messages = messages.mapIndexed { index, message -> MetriaChatMessage(
+            text = message.text,
+            fromMember = message.fromMember,
+            localEvidence = message.localEvidence,
+            savedMealId = message.savedMealId,
+            savedMealAvailable = meals.any { meal -> meal.id == message.savedMealId },
+            announcePolitely = shouldAnnouncePrivateChatMessage(
+                failedRequestId = conversationSession.retainedFailureAnnouncementRequestId.value,
+                activeRequestId = activeAssistantRequestId,
+                isLast = index == messages.lastIndex,
+                fromMember = message.fromMember,
+                localEvidence = message.localEvidence,
+            ),
+        ) },
         input = input,
         onInputChange = { input = it },
         assistantThinking = shouldPresentAssistantThinking(
@@ -2580,7 +2666,20 @@ private fun PrivateAssistantChat(
         coachDiagnostic = if (conversationSession.pendingSubmission.value != null ||
             conversationSession.pendingContinuation.value) null
             else conversationSession.recoverableDiagnostic.value
-                ?: modelStatus.coachDiagnostic.takeIf { modelResultIsCurrent },
+                ?: modelStatus.coachDiagnostic.takeIf {
+                    modelResultIsCurrent && !shouldSuppressConsumedAssistantDiagnostic(
+                        activeRequestId = activeAssistantRequestId,
+                        handledRequestId = handledReplyRequestId,
+                        resultRequestId = modelStatus.assistantRequestId,
+                        modelState = modelStatus.state,
+                        operation = modelStatus.assistantOperation,
+                        diagnostic = it,
+                        hasReply = modelStatus.coachReply != null,
+                        hasToolCall = modelStatus.coachToolCall != null,
+                        hasProposal = modelStatus.assistantProposal != null,
+                        hasNavigation = modelStatus.companionNavigation != null,
+                    )
+                },
         savedWeight = savedWeight,
         mealProposal = modelStatus.assistantProposal.takeIf { modelResultIsCurrent },
         savedDishChoices = savedDishChoices,
@@ -2631,8 +2730,60 @@ internal fun shouldConsumeAssistantResult(activeRequestId: Long?, handledRequest
 internal fun shouldLatchAssistantDiagnostic(
     activeRequestId: Long?, resultRequestId: Long?, modelState: String,
     diagnostic: String?, localPending: Boolean,
+    handledRequestId: Long? = null,
 ): Boolean = !localPending && diagnostic != null && modelState == "loaded" &&
-    resultRequestId != null && resultRequestId == activeRequestId
+    resultRequestId != null && resultRequestId == activeRequestId && resultRequestId != handledRequestId
+
+internal fun retainableAssistantFailure(
+    activeRequestId: Long?,
+    handledRequestId: Long?,
+    resultRequestId: Long?,
+    modelState: String,
+    operation: String?,
+    diagnostic: String?,
+    hasReply: Boolean,
+    hasToolCall: Boolean,
+    hasProposal: Boolean,
+    localPending: Boolean,
+    stopping: Boolean,
+    unlocked: Boolean,
+    hasNavigation: Boolean = false,
+): String? {
+    if (!unlocked || stopping || localPending || hasReply || hasToolCall || hasProposal || hasNavigation) return null
+    if (modelState != "loaded" || operation !in setOf(
+            "agent_reply", "coach_reply", "agent_turn", "agent_tool_result",
+        )) return null
+    if (!shouldConsumeAssistantResult(activeRequestId, handledRequestId, resultRequestId)) return null
+    return diagnostic?.takeIf(String::isNotBlank)
+}
+
+internal fun shouldSuppressConsumedAssistantDiagnostic(
+    activeRequestId: Long?,
+    handledRequestId: Long?,
+    resultRequestId: Long?,
+    modelState: String,
+    operation: String?,
+    diagnostic: String?,
+    hasReply: Boolean,
+    hasToolCall: Boolean,
+    hasProposal: Boolean,
+    hasNavigation: Boolean,
+): Boolean {
+    if (diagnostic.isNullOrBlank() || hasReply || hasToolCall || hasProposal || hasNavigation) return false
+    if (modelState != "loaded" || operation !in setOf(
+            "agent_reply", "coach_reply", "agent_turn", "agent_tool_result",
+        )) return false
+    return resultRequestId != null && resultRequestId == activeRequestId && resultRequestId == handledRequestId
+}
+
+internal fun shouldAnnouncePrivateChatMessage(
+    failedRequestId: Long?,
+    activeRequestId: Long?,
+    isLast: Boolean,
+    fromMember: Boolean,
+    localEvidence: Boolean,
+): Boolean = failedRequestId != null && failedRequestId == activeRequestId && isLast &&
+    !fromMember && !localEvidence
 
 internal fun continuationFailureDiagnostic(modelDiagnostic: String?): String =
     modelDiagnostic?.takeIf(String::isNotBlank)

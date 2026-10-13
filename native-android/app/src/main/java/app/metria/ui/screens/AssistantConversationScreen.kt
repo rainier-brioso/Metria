@@ -88,6 +88,7 @@ data class MetriaChatMessage(
     val localEvidence: Boolean = false,
     val savedMealId: String? = null,
     val savedMealAvailable: Boolean = false,
+    val announcePolitely: Boolean = false,
 )
 
 data class MetriaSavedDishChoice(
@@ -452,7 +453,11 @@ private fun ChatBubble(message: MetriaChatMessage, onOpenSavedMeal: (String) -> 
                 Surface(
                     color = MetriaColors.Surface,
                     shape = MaterialTheme.shapes.medium,
-                    modifier = Modifier.widthIn(max = 340.dp),
+                    modifier = Modifier.widthIn(max = 340.dp).then(
+                        if (message.announcePolitely) {
+                            Modifier.semantics { liveRegion = LiveRegionMode.Polite }
+                        } else Modifier
+                    ),
                 ) {
                     Column(Modifier.padding(horizontal = 16.dp, vertical = 13.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         SelectableChatText { SafeMarkdownText(message.text, MetriaColors.Ink) }
