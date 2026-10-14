@@ -1,5 +1,32 @@
 # Metria local assistant agent
 
+Chat correction revision (member approved 2026-10-15): the shared planner may
+combine up to three locally corrected or contextually abbreviated words, checking
+at most 64 complete candidates against original host/date/read constraints.
+Broader corrections may check up to three isolated words with the system service
+under one 400 ms deadline. Distinct valid operations require host clarification;
+no full question/records enter the service. This supersedes the one-word limit
+below. Scope, privacy and acceptance: `assistant-routing-recognition.md`.
+
+Production Android spelling (member approved 2026-10-14) is defined in
+`assistant-routing-recognition.md`: after existing recognition misses, one locally
+identified possible misspelled routing token may be checked by the selected
+English system spell checker. Only a unique compatible suggestion that passes
+the complete existing read and original host constraints can affect routing.
+Original Chat/Gemma wording remains; no whole question, record or history enters
+that service. Unavailability, ambiguity, timeout and cancellation retain fallback.
+This extends the documented OS-service boundary, not Metria cloud processing.
+The implementation applies to both build variants; release MiniLM activation
+and physical/provider-offline acceptance remain separate gates.
+
+Member-approved compositional read phrasing (2026-10-14) is specified in
+`assistant-routing-recognition.md`. After existing exact routes, a complete
+message parser may nominate the existing day-wide meal, single-metric nutrition
+or bounded weight read with explicit supported slots. Original normalized
+wording is still scored by MiniLM; host compatibility, fresh records and factual
+audits remain required. Unknown filters, mixed requests and ambiguous slots
+abstain. Implementation and phone acceptance are separate from approval.
+
 Member-approved shared typo recognition (2026-10-13) is specified in
 `assistant-routing-recognition.md`. Exact routes retain priority; one bounded
 unambiguous routing-word candidate may be retried through the complete existing

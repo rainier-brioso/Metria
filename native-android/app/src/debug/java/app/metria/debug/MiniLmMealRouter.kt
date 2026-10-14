@@ -96,7 +96,7 @@ internal class MiniLmMealRouter(context: Context) : AutoCloseable {
     fun routeMealRead(text: String, toolName: String): MiniLmRouteDecision {
         if (closed) return MiniLmRouteDecision(MiniLmRouteOutcome.RUNTIME_UNAVAILABLE)
         if (Thread.currentThread().isInterrupted) return MiniLmRouteDecision(MiniLmRouteOutcome.INTERRUPTED)
-        if (!MiniLmMealReadPolicy.isInScope(text, toolName)) {
+        if (!MiniLmMealReadPolicy.isMiniLmRouterInputInScope(text, toolName)) {
             if (toolName != "read_day_nutrition" ||
                 (!MiniLmMealReadPolicy.isTodayNutritionInScope(text) && !MiniLmMealReadPolicy.isHistoricalNutritionInScope(text))) {
                 return MiniLmRouteDecision(MiniLmRouteOutcome.SCOPE_REJECTED)

@@ -14,6 +14,35 @@ revised first.
 
 ## Data boundary
 
+**Chat correction revision - 2026-10-15:** member approved combining multiple
+spelling corrections and contextual abbreviations for natural Chat. Up to three
+candidate words may be checked individually with the selected Android service
+under one shared 400 ms deadline. Full questions, history and records remain
+excluded. Complete-candidate validation, original host/date meaning, ambiguity
+clarification and unchanged original text are required; no action/save authority
+is added. Privacy details state the new word maximum. This supersedes the
+single-word limit in the original decision below, not its provider safeguards.
+
+**Production Android spelling decision - 2026-10-14:** the member explicitly
+approved production integration of the Android Spell Checker Framework after
+discussion of provider, availability and offline limitations. A local policy
+first identifies one possible routing-word correction that could satisfy a
+complete existing read contract; only that single token may be submitted to the
+selected Android provider for English suggestions. No full question, history,
+record values, photos or tool result is supplied. This is a system-service
+boundary outside Metria's app process, not an enabled Metria cloud assistant.
+The framework does not establish provider network behavior; do not claim the
+provider is offline from its presence or successful suggestions. Privacy and
+assistant details explain that spelling help follows the provider's system
+privacy settings. Metria adds no network request or private-content telemetry.
+Known dates/numbers/write terms are not rewritten, suggestions remain untrusted,
+and only an unambiguous full validated read may use a correction. The original
+Chat text remains encrypted under its normal policy; tokens and suggestions are
+not separately stored. Missing/disabled service and timeout preserve normal
+handling. Physical behavior, offline-provider validation and release acceptance
+remain separate gates. This deliberately extends the prior app-only processing
+description for this narrow OS text-service use.
+
 **Local photo performance metadata decision - 2026-10-11:** member approved
 persisting first-output and stage timing plus start/end Android thermal severity
 in the existing bounded encrypted image-analysis audit. These technical fields

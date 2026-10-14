@@ -321,7 +321,6 @@ class MiniLmMealReadPolicyTest {
         val today = LocalDate.parse("2026-10-12")
         listOf(
             "Please show my weight and meals, please",
-            "What is my protein total yesterday?",
             "What is my calorie total tomorrow?",
             "What is my calorie goal today?",
             "Add my meal today, please",
@@ -335,6 +334,12 @@ class MiniLmMealReadPolicyTest {
             assertFalse(phrase, MiniLmMealReadPolicy.isAnyDirectReadInScope(phrase))
             assertNull(phrase, MiniLmMealReadPolicy.resolveReadRequest(null, phrase, null, today))
         }
+        val flexibleYesterdayProtein = requireNotNull(MiniLmMealReadPolicy.resolveReadRequest(
+            null, "What is my protein total yesterday?", null, today,
+        ))
+        assertEquals("read_day_nutrition", flexibleYesterdayProtein.requiredTool.name)
+        assertEquals("protein", flexibleYesterdayProtein.requiredTool.metric)
+        assertEquals(1, flexibleYesterdayProtein.requiredTool.daysAgo)
     }
 
     @Test

@@ -2,6 +2,21 @@
 
 ## Shared routing recognition
 
+Production Chat correction revision (2026-10-15): after exact recognition misses,
+a bounded local planner may combine up to three corrections/abbreviations for an
+existing read, validating at most 64 complete candidates. Broader corrections
+can check up to three words individually with Android's selected English spell
+checker under one 400 ms deadline. The question, history, vault, photos and tool
+results are never supplied. Compatible suggestions are revalidated against the
+original host constraints and complete read grammar. Distinct valid operations
+require clarification. The member's Chat text stays unchanged. Sessions have a
+bounded worker-thread wait, close on completion/cancellation and ignore late callbacks.
+Absent, disabled, unsupported, failed or timed-out services preserve fallback.
+The service adapter is production code in all build variants; release MiniLM
+abstention remains a separate existing feature boundary. Provider behavior is
+not an offline guarantee from the Android framework. See the full decision in
+`assistant-routing-recognition.md` and the revised system-service data boundary.
+
 The approved recognition direction is recorded in
 `assistant-routing-recognition.md`, including project research and tradeoffs.
 The initial implementation retains exact read routes and adds a bounded offline

@@ -1546,7 +1546,10 @@ object MetriaAgentMigrationPolicy {
     )
 
     fun useLegacyWriteRoute(memberText: String): Boolean {
-        if (MiniLmMealReadPolicy.isAnyDirectReadInScope(memberText)) return false
+        if (MiniLmMealReadPolicy.isAnyDirectReadInScope(memberText) ||
+            MiniLmMealReadPolicy.isFlexibleReadInScope(memberText) ||
+            MiniLmSpellCorrectionPolicy.hasUniqueEligibleCandidate(memberText)
+        ) return false
         val words = memberText.lowercase()
             .replace(Regex("[^\\p{L}\\p{N}.,]+"), " ")
             .split(' ')

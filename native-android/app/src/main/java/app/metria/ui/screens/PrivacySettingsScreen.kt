@@ -503,9 +503,10 @@ private fun PrivacyDetailsDialog(onDismiss: () -> Unit) {
         onDismissRequest = onDismiss,
         title = { Text("Your privacy in Metria") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 PrivacyDetail("Encrypted records", "Weights, meals, goals, cycle context, and saved dishes stay in your protected vault.")
-                PrivacyDetail("Local assistance", "Meal photos and prompts are processed on this phone. Temporary originals are deleted after processing.")
+                PrivacyDetail("Local assistance", "The assistant model processes meal photos and prompts on this phone. Temporary originals are deleted after processing.")
+                PrivacyDetail("Spelling help", "Metria may check up to three possible misspelled words individually with your phone's selected spell checker. That service follows its own privacy settings. Your full question and saved records are not provided to it.")
                 PrivacyDetail("Member-controlled recovery", "Nothing syncs automatically. Only an encrypted archive you create can restore your records elsewhere.")
                 PrivacyDetail("Biometric protection", "Android tells Metria only whether unlock succeeded. Metria never receives or stores your fingerprint.")
             }
@@ -528,9 +529,10 @@ private fun AssistantDetailsDialog(status: ModelStatus, onDismiss: () -> Unit) {
         onDismissRequest = onDismiss,
         title = { Text("Local assistant") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(assistantStatusSummary(status.state), style = MaterialTheme.typography.titleSmall)
-                Text("The assistant is stored inside Metria and works without sending your prompts, photos, or records to a server.", color = MetriaColors.InkMuted)
+                Text("The assistant model runs on this phone. Metria does not send your prompts, photos, or records to its servers.", color = MetriaColors.InkMuted)
+                Text("Spelling help may check up to three possible misspelled words individually with your phone's selected spell checker, following that service's privacy settings. Your full question and saved records are not provided to it.", color = MetriaColors.InkMuted)
                 Text("Model storage: ${formatStorage(status.expectedBytes)}", color = MetriaColors.InkMuted)
                 Text("Removing the app removes both the model and your local vault unless you first create a recovery archive.", color = MetriaColors.InkMuted)
             }

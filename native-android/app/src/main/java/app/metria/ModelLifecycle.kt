@@ -35,6 +35,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
 import java.time.Instant
+import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
@@ -120,6 +121,7 @@ class ModelLifecycle(
     private val assistantTraceStore: AssistantTraceStore? = null,
     private val debugImageCaptureStore: DebugImageCaptureStore? = null,
 ) : AutoCloseable {
+    private val androidSpellChecker by lazy(LazyThreadSafetyMode.SYNCHRONIZED) { AndroidEnglishSpellChecker(appContext) }
     private val metriaSystemPrompt = """You are Metria, a private on-device health and nutrition assistant.
         Tone: warm, motivating, clear, concise, and never judgmental. Respond in the member's language.
         Use only facts returned by Metria's approved tools when stating the member's personal records.
@@ -734,6 +736,10 @@ class ModelLifecycle(
                 (requiredTool.selectedMealId.isNullOrBlank() || response["record_id"] != requiredTool.selectedMealId)) ||
             (expectedDate != null && (response["from"] != expectedDate || response["to"] != expectedDate))
         ) {
+            assistantTraceStore?.record(
+                "failed", "agent_tool_result", "rejected", reason = "continuation_expired",
+                tool = traceToolName(toolName), requestId = assistantRequestId,
+            )
             coachDiagnostic = if (expectedDate != null &&
                 (response["from"] != expectedDate || response["to"] != expectedDate)
             ) "The selected day changed before Metria could verify it. Please ask again."
@@ -1525,7 +1531,7 @@ class ModelLifecycle(
             }
             val navigationIntent = CompanionAssistantPolicy.resolve(hostRequiredTool, memberText, selectedMealId, queryToday)
                 ?.takeIf { it.kind == CompanionAssistantPolicy.IntentKind.NAVIGATION }
-            val resolvedMiniLmRead = MiniLmMealReadPolicy.resolveReadRequest(
+            var resolvedMiniLmRead = MiniLmMealReadPolicy.resolveReadRequest(
                 hostRequiredTool = hostRequiredTool,
                 text = memberText,
                 selectedMealId = selectedMealId,
@@ -1538,6 +1544,61 @@ class ModelLifecycle(
                     classifierKey = intent.classifierKey,
                     companion = intent,
                 )
+            }
+            if (resolvedMiniLmRead == null && selectedMealId.isNullOrBlank()) {
+                val workerThread = Thread.currentThread()
+                val spellResolution = MiniLmSpellCorrectionPolicy.resolve(
+                    hostRequiredTool = hostRequiredTool,
+                    originalText = memberText,
+                    selectedMealId = selectedMealId,
+                    today = queryToday,
+                    checker = androidSpellChecker,
+                    isActive = {
+                        !workerThread.isInterrupted && synchronized(this) {
+                            engine === loadedEngine && assistantRequestId == requestId
+                        }
+                    },
+                )
+                if (workerThread.isInterrupted || synchronized(this) {
+                        engine !== loadedEngine || assistantRequestId != requestId
+                    }
+                ) return
+                if (spellResolution.providerAttempted) {
+                    val accepted = spellResolution.reason == SpellCheckReason.ACCEPTED
+                    val cancelled = spellResolution.reason == SpellCheckReason.INTERRUPTED
+                    val failed = spellResolution.reason in setOf(
+                        SpellCheckReason.UNAVAILABLE, SpellCheckReason.TIMEOUT,
+                        SpellCheckReason.RUNTIME_FAILURE,
+                    )
+                    assistantTraceStore?.record(
+                        kind = "spell_check", operation = "agent_turn",
+                        outcome = when { accepted -> "accepted"; cancelled -> "cancelled"; failed -> "failed"; else -> "rejected" },
+                        reason = spellResolution.reason.name.lowercase(Locale.ROOT), requestId = requestId,
+                    )
+                }
+                if (spellResolution.reason == SpellCheckReason.AMBIGUOUS) {
+                    synchronized(this) {
+                        if (engine !== loadedEngine || assistantRequestId != requestId) return
+                        clearPrivateAgentConversationLocked()
+                        state = "loaded"
+                        coachStreamingReply = null
+                        coachToolCall = null
+                        coachReply = "I’m not sure which records you mean. Please spell out the metric and day, or ask about one record at a time."
+                        coachDiagnostic = null
+                        assistantOperation = "agent_reply"
+                        reason = "A locally ambiguous read request was clarified."
+                        assistantTraceStore?.record(
+                            "route_selected", "agent_turn", "accepted", reason = "host_reply", requestId = requestId,
+                        )
+                        assistantTraceStore?.record(
+                            "reply_audited", "agent_turn", "accepted", reason = "ambiguous", requestId = requestId,
+                        )
+                    }
+                    return
+                }
+                if (spellResolution.reason == SpellCheckReason.ACCEPTED) {
+                    resolvedMiniLmRead = spellResolution.resolvedRead
+                }
             }
             val miniLmMealReadTool = resolvedMiniLmRead?.takeIf { it.allowMiniLm }?.requiredTool
             // A captured follow-up scope also constrains Gemma if MiniLM abstains: the same

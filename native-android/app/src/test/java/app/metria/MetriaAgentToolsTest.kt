@@ -592,6 +592,12 @@ class MetriaAgentToolsTest {
         assertTrue(MetriaAgentMigrationPolicy.useLegacyWriteRoute("Save this meal"))
         assertFalse(MetriaAgentMigrationPolicy.useLegacyWriteRoute("¿Cómo va mi semana?"))
         assertFalse(MetriaAgentMigrationPolicy.useLegacyWriteRoute("Sí, me gustaría"))
+        assertFalse(MetriaAgentMigrationPolicy.useLegacyWriteRoute("How much protein did I log tday?"))
+        assertFalse(MetriaAgentMigrationPolicy.useLegacyWriteRoute("How much proteiin did I log today?"))
+        assertFalse(MetriaAgentMigrationPolicy.useLegacyWriteRoute("Show my food log tday"))
+        assertFalse(MetriaAgentMigrationPolicy.useLegacyWriteRoute("give me my recored protein tot for today?"))
+        assertTrue(MetriaAgentMigrationPolicy.useLegacyWriteRoute("How much protein did I log today and add a snack"))
+        assertTrue(MetriaAgentMigrationPolicy.useLegacyWriteRoute("record my protein total today"))
     }
 
     @Test

@@ -19,10 +19,13 @@ class AssistantTraceStore(
         private const val maxEvents = 100
         private const val maxBytes = 64 * 1024L
         private const val retentionMillis = 24 * 60 * 60 * 1000L
-        private val allowedKinds = setOf("turn_started", "tool_required", "tool_continued", "reply_audited", "reply_fallback", "reply_rejected", "cancelled", "failed", "locked", "route_decision", "route_selected")
+        private val allowedKinds = setOf("turn_started", "tool_required", "tool_continued", "reply_audited", "reply_fallback", "reply_rejected", "reply_delivery", "cancelled", "failed", "locked", "route_decision", "route_selected", "spell_check")
         private val allowedOperations = setOf("agent_turn", "agent_tool_result", "coach", "coach_intent", "coach_audio", "meal", "unknown")
         private val allowedOutcomes = setOf("started", "accepted", "rejected", "cancelled", "failed", "waiting", "cleared")
-        private val allowedReasons = setOf("none", "required_tool_missing", "unsupported_personal_fact", "reply_policy", "multiple_tools", "unsupported_tool", "timeout", "runtime_failure", "minilm_accepted", "today_overview", "goal_remaining", "saved_dish_recall", "saved_dish_draft", "navigation", "scope", "scope_text", "scope_selected", "scope_host", "scope_context", "similarity", "margin", "runtime", "inference", "interrupted", "native_gemma", "legacy_gemma", "host_reply")
+        private val allowedReasons = setOf("none", "required_tool_missing", "unsupported_personal_fact", "reply_policy", "multiple_tools", "unsupported_tool", "timeout", "runtime_failure", "continuation_expired", "minilm_accepted", "today_overview", "goal_remaining", "saved_dish_recall", "saved_dish_draft", "navigation", "scope", "scope_text", "scope_selected", "scope_host", "scope_context", "similarity", "margin", "runtime", "inference", "interrupted", "native_gemma", "legacy_gemma", "host_reply", "accepted", "no_candidate", "unavailable", "disabled", "no_suggestions", "ambiguous") + setOf(
+            "empty_response", "segment_mismatch", "request_mismatch", "dictionary_word", "unmarked_typo", "no_match",
+            "lifecycle_ready", "chat_consumed", "active_request_mismatch", "already_handled",
+        )
         private val allowedTools = setOf("none", "read_progress_overview", "read_nutrition_summary", "read_day_nutrition", "read_weight", "read_meals", "read_latest_meal", "search_saved_dishes")
         private val allowedPeriods = setOf("none", "today", "yesterday", "week")
     }
@@ -36,6 +39,7 @@ class AssistantTraceStore(
     @Volatile private var snapshot = Status(false, 0, 0)
     @Volatile private var closed = false
     private var mutationGeneration = 0L
+    private val replyDeliveryObservations = LinkedHashSet<Pair<Long, String>>()
 
     init {
         if (debugBuild) writer.execute {
@@ -59,6 +63,7 @@ class AssistantTraceStore(
 
     fun setEnabled(value: Boolean) {
         if (!debugBuild) return
+        if (!value) synchronized(this) { replyDeliveryObservations.clear() }
         val generation = synchronized(this) { mutationGeneration += 1L; mutationGeneration }
         enabled = value
         snapshot = Status(value, if (value) snapshot.eventCount else 0, if (value) snapshot.bytes else 0)
@@ -80,6 +85,29 @@ class AssistantTraceStore(
                 snapshot = Status(value, if (value) snapshot.eventCount else 0, if (value) snapshot.bytes else 0)
             }
         } }.onFailure { if (it !is RejectedExecutionException) throw it }
+    }
+
+    /** Records each fixed Chat delivery stage once per request, without retaining reply content. */
+    fun recordReplyDelivery(requestId: Long, reason: String) {
+        if (!debugBuild || requestId !in 1..9_999_999 || reason !in setOf(
+                "lifecycle_ready", "chat_consumed", "active_request_mismatch", "already_handled",
+            )) return
+        val shouldRecord = synchronized(this) {
+            if (!enabled || closed || !replyDeliveryObservations.add(requestId to reason)) return@synchronized false
+            while (replyDeliveryObservations.size > maxEvents) {
+                replyDeliveryObservations.remove(replyDeliveryObservations.first())
+            }
+            true
+        }
+        if (shouldRecord) {
+            record(
+                kind = "reply_delivery",
+                operation = "agent_turn",
+                outcome = if (reason in setOf("lifecycle_ready", "chat_consumed")) "accepted" else "rejected",
+                reason = reason,
+                requestId = requestId,
+            )
+        }
     }
 
     fun record(
@@ -122,14 +150,21 @@ class AssistantTraceStore(
 
     fun clear() {
         if (!debugBuild) return
-        val generation = synchronized(this) { mutationGeneration += 1L; mutationGeneration }
+        val generation = synchronized(this) {
+            replyDeliveryObservations.clear()
+            mutationGeneration += 1L
+            mutationGeneration
+        }
         snapshot = Status(enabled, 0, 0)
         runCatching { writer.execute { synchronized(this) { file.delete(); if (generation == mutationGeneration) snapshot = Status(enabled, 0, 0) } } }
     }
 
     fun delete() {
         if (!debugBuild) return
-        synchronized(this) { mutationGeneration += 1L }
+        synchronized(this) {
+            replyDeliveryObservations.clear()
+            mutationGeneration += 1L
+        }
         enabled = false
         snapshot = Status(false, 0, 0)
         runCatching { writer.execute { synchronized(this) { file.delete(); marker.delete() } } }

@@ -126,6 +126,20 @@ internal object MiniLmMealReadPolicy {
             MiniLmWeightReadPolicy.isInScope(text) ||
             CompanionAssistantPolicy.resolve(null, text, null, LocalDate.now())?.classifierKey == "today_overview"
 
+    /** Flexible parser scope used only by the fast router and migration guard. */
+    fun isFlexibleReadInScope(text: String, toolName: String? = null): Boolean {
+        if (!validText(text)) return false
+        val normalized = normalize(text)
+        val candidate = MiniLmFlexibleReadPolicy.parse(text)
+            ?: MiniLmReadTypoCandidates.uniqueSingleCorrection(normalized)?.let(MiniLmFlexibleReadPolicy::parse)
+            ?: return false
+        return toolName == null || MiniLmFlexibleReadPolicy.classifierKey(candidate.kind) == toolName
+    }
+
+    /** Debug classifier recheck: preserve legacy scope helpers while admitting typed flexible candidates. */
+    fun isMiniLmRouterInputInScope(text: String, toolName: String): Boolean =
+        isInScope(text, toolName) || isFlexibleReadInScope(text, toolName)
+
     fun followUpMetric(text: String): String? {
         if (!validText(text)) return null
         return when (normalize(text)) {
@@ -146,15 +160,71 @@ internal object MiniLmMealReadPolicy {
         today: LocalDate,
         followUpScope: FollowUpScope? = null,
     ): ResolvedRead? {
-        resolveReadRequestExact(hostRequiredTool, text, selectedMealId, today, followUpScope)?.let { return it }
+        resolveReadRequestWithoutTypo(hostRequiredTool, text, selectedMealId, today, followUpScope)?.let { return it }
         // Fuzzy candidates are a final assist for closed reads. Never rewrite text
         // in selected-record or ephemeral follow-up contexts.
         if (!selectedMealId.isNullOrBlank() || !validText(text)) return null
         val normalized = normalize(text)
         val corrected = MiniLmReadTypoCandidates.uniqueSingleCorrection(normalized) ?: return null
-        val candidate = resolveReadRequestExact(hostRequiredTool, corrected, null, today, null) ?: return null
+        val candidate = resolveReadRequestExact(hostRequiredTool, corrected, null, today, null)
+            ?: resolveFlexibleRead(hostRequiredTool, corrected, null, today)
+            ?: return null
         if (!candidate.allowMiniLm || !isTypoEligibleRead(candidate)) return null
         return candidate
+    }
+
+    /** Exact and compositional resolution only; used when validating an OS-confirmed correction. */
+    internal fun resolveReadRequestWithoutTypo(
+        hostRequiredTool: RequiredAgentTool?,
+        text: String,
+        selectedMealId: String?,
+        today: LocalDate,
+        followUpScope: FollowUpScope? = null,
+    ): ResolvedRead? = resolveReadRequestExact(hostRequiredTool, text, selectedMealId, today, followUpScope)
+        ?: resolveFlexibleRead(hostRequiredTool, text, selectedMealId, today)
+
+    private fun resolveFlexibleRead(
+        hostRequiredTool: RequiredAgentTool?,
+        text: String,
+        selectedMealId: String?,
+        today: LocalDate,
+    ): ResolvedRead? {
+        if (!selectedMealId.isNullOrBlank()) return null
+        val candidate = MiniLmFlexibleReadPolicy.parse(text) ?: return null
+        val normalizedOriginal = normalize(text)
+        val required = if (candidate.kind in setOf(
+                MiniLmFlexibleReadPolicy.Kind.YESTERDAY_CALORIES,
+                MiniLmFlexibleReadPolicy.Kind.YESTERDAY_PROTEIN,
+            )
+        ) {
+            val metric = if (candidate.kind == MiniLmFlexibleReadPolicy.Kind.YESTERDAY_PROTEIN) "protein" else "calories"
+            val target = today.minusDays(1)
+            val compatible = hostRequiredTool == null || (
+                hostRequiredTool.name == "read_day_nutrition" && hostRequiredTool.period == "historical_day" &&
+                    hostRequiredTool.daysAgo == 1 && hostRequiredTool.metric == metric &&
+                    hostRequiredTool.fromDaysAgo == null && hostRequiredTool.toDaysAgo == null &&
+                    hostRequiredTool.query == null && hostRequiredTool.selectedMealId == null &&
+                    hostRequiredTool.selectedMealQuestion == null &&
+                    (hostRequiredTool.targetDate == null || hostRequiredTool.targetDate == target)
+                )
+            if (!compatible) return null
+            RequiredAgentTool(
+                "read_day_nutrition", period = "historical_day", daysAgo = 1,
+                metric = metric, targetDate = target,
+            )
+        } else {
+            val resolved = resolveReadRequestExact(null, candidate.canonicalText, null, today, null) ?: return null
+            if (!resolved.allowMiniLm || resolved.companion != null) return null
+            val hostResolved = hostRequiredTool?.let {
+                resolveReadRequestExact(it, candidate.canonicalText, null, today, null)
+            }
+            val hostCompatible = hostRequiredTool == null ||
+                (hostResolved?.allowMiniLm == true && hostResolved.requiredTool == resolved.requiredTool)
+            if (!hostCompatible) return null
+            resolved.requiredTool
+        }
+        if (required.name != MiniLmFlexibleReadPolicy.classifierKey(candidate.kind)) return null
+        return ResolvedRead(required, normalizedOriginal)
     }
 
     private fun resolveReadRequestExact(
@@ -277,8 +347,8 @@ internal object MiniLmMealReadPolicy {
 
     /** Fixed technical metadata only; never records wording, selection IDs or records. */
     fun scopeRejectionReason(text: String, selectedMealId: String?): String = when {
-        !selectedMealId.isNullOrBlank() && (isAnyDirectReadInScope(text) || followUpMetric(text) != null) -> "scope_selected"
-        isAnyDirectReadInScope(text) -> "scope_host"
+        !selectedMealId.isNullOrBlank() && (isAnyDirectReadInScope(text) || isFlexibleReadInScope(text) || followUpMetric(text) != null) -> "scope_selected"
+        isAnyDirectReadInScope(text) || isFlexibleReadInScope(text) -> "scope_host"
         followUpMetric(text) != null -> "scope_context"
         else -> "scope_text"
     }

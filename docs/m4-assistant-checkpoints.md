@@ -2879,3 +2879,353 @@ target-phone interaction recheck pending.
   slice is flexible read intent/slot recognition as specified in the researched
   route. The photo-context question was investigated only; the member deferred
   changes, and none are included here.
+
+### Compositional read phrasing in development
+
+- Member approved the next flexible-read slice after checkpoint `21a7296`.
+  Read-only discovery identified the existing resolver as the integration seam:
+  keep exact routes first, parse reusable read/date/metric components next and
+  reuse existing host compatibility before scoring original wording with MiniLM.
+  The scope and exclusions are in [recognition decision](assistant-routing-recognition.md).
+- No meal-slot filtering is added. A breakfast-only request must not become an
+  all-day answer. No new dependency, training, automatic write or photo change.
+  One reviewed build is intended for the existing authorized in-place test cycle;
+  automated and phone acceptance remain open. Current ADB preflight shows no
+  connected phone; reconnect requested while development continues.
+- Next bounded task: implement/review the parser and adversarial regressions,
+  complete the Android gate, install once and compare one new phrasing per read
+  family plus existing-route and ambiguous/unsupported-request behavior. No new
+  commit or push is authorized by this development continuation.
+
+- Implementation and independent review completed. Parent review tightened full
+  ordered phrase consumption, weight-kind semantics and input bounds. Complete
+  gate passed 539 tests with zero failures/errors/skips, debug assembly and
+  release Kotlin compilation; diff check clean. Exact routes, thresholds, fresh
+  record validation and factual audits remain. No new model/dependency or photo
+  change. APK hash, known internal possessive-date coverage limit and named phone
+  batch are in the recognition decision.
+- Final ADB preflight still lists no device. Installation, comparisons and safe
+  routing-event verification remain pending; the member has been asked to reconnect.
+  Do not repeat implementation or claim previous phone checks cover this build.
+  Next bounded task is install-r/launch on the freshly selected phone, member
+  unlock, then named language checks and metadata-only route inspection.
+
+- Member reconnected through wireless debugging and explicitly requested
+  connection and installation. The checksum-matched 539-test APK installed with
+  `install -r` (Success) on Samsung SM-S928B / Android 16; force-stop and cold
+  launch returned `Status: ok`. Existing app storage was preserved. No raw
+  records/screenshots, biometric interaction or destructive action was used.
+  Next bounded task: member unlock and first meal/nutrition phrasing batch, then
+  metadata-only route verification. Named physical acceptance is still open.
+
+- First installed language batch is not accepted: member reported a failed turn
+  with Gemma loading and no answer. Retained content-free events show one
+  yesterday meal read accepted by MiniLM and audited (positive 0.7578, competing
+  0.6301, fallback 0.6503). Two surrounding turns rejected before inference with
+  `scope_text`; the earlier Gemma turn completed a latest-meal read/audit, while
+  the final turn stopped at `tool_required / read_nutrition_summary / today`
+  with no retained continuation or completion. Monitoring omits question text,
+  so exact failed wording has been requested. Do not attribute this to a known
+  grammar bug or mark all batch answers compared correctly. Next bounded task:
+  copied-question reproduction plus read-only tool-handoff investigation, then
+  a reviewed fix and complete gate if evidence establishes a defect.
+
+- Member supplied the copied protein-total wording: initial `tday`, then `today`
+  with trailing spaces. Added real-host/history/whitespace/selection regressions;
+  the correct request resolves and the date typo intentionally abstains. No
+  parser change or date alias is justified. Installed APK hash was verified
+  against the reviewed artifact. Trace has no later turn-start event, so a
+  blocked retry is consistent with the unfinished prior tool; it is not evidence
+  of a second parser rejection for the corrected wording.
+- A concrete tool-effect dependency gap was found: dispatch checked the active
+  request ID without keying the effect to it. Added that dependency so late
+  reconciliation retries dispatch, keeping duplicate/stale-request guards.
+  This fixes a code ordering hazard but does not prove the observed failure's
+  cause. An expired native continuation now records one fixed technical failure
+  reason in the existing safe trace, without extending content capture. Full
+  gate/review and named phone checks remain open for these follow-up changes.
+
+- Follow-up independent review found no new stale/cancel or duplicate-dispatch
+  issue. Complete gate passed all 542 tests, zero failures/errors/skips, debug
+  assembly and release Kotlin compilation. Corrected-wording/history regressions
+  and closed metadata persistence passed. Actual Compose scheduling and reaching
+  the expired continuation guard are not covered by instrumentation. APK hash is
+  in the recognition decision. In-place installation and corrected-request-first
+  phone acceptance are next; no physical repair is claimed from code review.
+
+- The reviewed 542-test follow-up APK installed in place (Success) and cold
+  launched (`Status: ok`) on Samsung SM-S928B / Android 16, preserving existing
+  app storage. Next: member unlock, send the corrected protein-total question
+  first and inspect content-free routing; only afterward check the independent
+  date-typo/Gemma handoff. No member records or screenshots were inspected.
+
+### Production Android spelling extension in development
+
+- Member explicitly requested production implementation of Android's selected
+  spell checker after discussing provider/availability/offline limitations.
+  This supersedes the proposed debug-only pilot restriction. Implementation will
+  run only after existing recognition misses, on Send, with a bounded session and
+  safe normal fallback. Only one locally identified possible misspelled routing
+  word is passed; full questions, saved records and history remain excluded.
+- Scope, authority checks, date-typo handling, privacy disclosure, API references
+  and acceptance are in the recognition decision. Adapter belongs to main source;
+  existing release MiniLM abstention is unchanged. No dependency or dictionary
+  download. Parent owns docs and concise disclosure text/scrolling; worker owns
+  the pure policy, service adapter, lifecycle integration and tests.
+- Current 542-test build is installed, but its corrected-protein and handoff phone
+  checks remain open. New spelling code requires its own independent review and
+  complete gate before one in-place install. Do not attribute a future spelling
+  success to the earlier unverified handoff repair or claim offline provider
+  behavior from API availability. No commit/push is authorized.
+
+- Production spelling implementation and independent review completed. Parent
+  review tightened callback segment validation, exception-safe cancel/close,
+  no-double-correction validation and explicit-request/migration behavior. The
+  complete gate passed 550 tests, zero failures/errors/skips, debug assembly and
+  release APK assembly with vital lint. The production adapter is main-source;
+  release MiniLM remains separately disabled. Hash, command and named framework/
+  provider/legacy/physical gaps are in the recognition decision. No dependencies
+  or signing keys changed. In-place installation is proceeding under the existing
+  authorized cycle; no real-provider result is claimed from fake-provider tests.
+
+- The checksum-matched 550-test build installed in place (Success) and cold
+  launched (`Status: ok`) on Samsung SM-S928B / Android 16. Existing vault/model
+  storage was preserved; only debug APK was installed for existing safe route
+  inspection, while both variants include the production adapter. Next: member
+  unlock, correct protein-total question then `tday` variant in the same Chat,
+  followed by metadata correlation. Provider behavior, actual framework session,
+  failed-turn repair and disclosure/large-font/Stop/lock gates remain open.
+
+- Member confirmed both named protein-total answers match on the 550-test build.
+  Safe events show one MiniLM exact-day nutrition acceptance/audit and one
+  `spell_check / rejected / no_suggestions` followed by native Gemma nutrition
+  tool, continuation and accepted audit. Thus named functional comparison and
+  observed fallback handoff pass; actual Samsung correction does not yet pass.
+  The trace stores no text, and `no_suggestions` also covers unusable provider
+  results, so do not claim a zero-alternative response or question-order mapping.
+  Next bounded check is the copied `protteen` routing-word typo; no new build or
+  installation is needed. Provider/offline, UI disclosure and broader lifecycle
+  gates remain open. No raw records or outputs were inspected.
+
+- The member confirmed the ordinary `protteen` test answered and matched.
+  Safe trace again shows no usable spelling result and Gemma selection/audit;
+  no fresh record-tool event is present for this turn. Provider correction is
+  still unaccepted. Primary API/source inspection identified an API 31+ builder
+  omission: default supported-attribute mask is zero, while our policy requires
+  typo metadata. Added the same dictionary/typo/recommendation attribute mask
+  supplied by the legacy overload. Independent review found no blocker; no
+  acceptance rule or service input was widened. Full test/debug/release gate is
+  running before a new in-place install and one copied typo check. Details and
+  source references are in the recognition decision. No raw provider results or
+  member values were captured.
+
+- Attribute-mask repair passed independent review and the complete 550-test,
+  debug/release APK and release vital-lint gate, with zero failures/errors/skips.
+  No correction/privacy/host guard was relaxed. Hash is in the recognition
+  decision. Authorized in-place installation is underway, then one repeat of the
+  same ordinary word typo will distinguish successful provider correction from
+  another accepted Gemma fallback. No new code changed after the passing gate.
+
+- Checksum-matched attribute repair installed in place (Success) and cold launched
+  (`Status: ok`) on Samsung SM-S928B / Android 16, preserving existing app storage.
+  Next bounded task: member unlock and same copied `protteen` Chat request,
+  followed by fixed spelling/route/audit event inspection. Provider acceptance
+  remains open; no raw prompts, responses, records or suggestions were inspected.
+
+- Attribute repair did not close provider acceptance: the copied `protteen`
+  request still reports no usable spelling result and uses Gemma. User-tested
+  `prottein` instead uses MiniLM with accepted audit and no system-spelling event,
+  proving the local one-edit path only. Filtered OS service metadata advertises
+  English; it does not prove useful corrections. Do not present this as Android
+  correction success or weaken validation based on the similar words.
+- Added only fixed spelling rejection categories to separate empty response,
+  malformed segment, cookie/sequence mismatch, dictionary word, missing typo flag
+  and no matching suggestion. No correction guard, service payload or privacy
+  boundary changed. Independent review found no blocker. Policy/restart privacy
+  tests added; complete Android unit/debug/release gate is running. Next task is
+  one authorized install and repeated `protteen` turn to identify the failed check.
+
+- Detailed safe spelling reasons passed independent review and the complete
+  552-test/debug/release APK/release vital-lint gate, zero failures/errors/skips;
+  diff check clean. Hash is in the recognition decision. Installation is underway
+  under the active in-place test authorization. No matching safeguard, service
+  payload or model threshold changed. Repeat `protteen` only after member unlock
+  to identify the rejection stage; avoid further spelling patches without evidence.
+
+- 2026-10-15 continuation: confirmed the diagnostic APK installation completed
+  before interruption. On member-reconnected Samsung, installed SHA-256 matches
+  the reviewed 552-test artifact; safe trace has no new diagnostic turn yet.
+  Force-stop and cold launch returned `Status: ok`. No reinstall or code change,
+  clearing, biometric automation or private-content capture occurred. Next
+  bounded task is member unlock and copied `protteen` question to collect the
+  detailed fixed rejection reason. Actual system correction remains unaccepted.
+
+- 2026-10-15 repeated diagnostic check: Samsung returns `dictionary_word` after
+  request/segment validation. Dictionary-word rejection remains unchanged.
+  Gemma selection and accepted reply audit have no fresh record-tool event;
+  member reports no answer bubble. Visible fallback therefore failed and is
+  being investigated separately. Member approved temporary Gboard comparison;
+  selected spell-checker change was read back successfully, with original
+  Samsung selection retained transiently for restoration. Keyboard, installed
+  552-test APK, vault and models remain unchanged. Await the same copied typo
+  test and safe metadata inspection. No private records/replies/suggestions
+  captured, dependency added, build repeated or commit/push performed.
+
+- Gboard comparison completed on the unchanged 552-test APK. Member reports a
+  visible matching answer; content-free trace shows a 400 ms spelling timeout,
+  Gemma selection and accepted audit with no fresh record tool. This does not
+  validate system correction or MiniLM acceleration. Samsung selection restored
+  and verified; keyboard unchanged. No rebuild/install, content capture or guard
+  relaxation. Missing-bubble investigation remains open independently.
+
+- Added content-free reply-delivery monitoring under the existing opt-in debug
+  trace: lifecycle reply observed, current transcript append, or fixed
+  current/handled-request rejection. `chat_consumed` means transcript state was
+  assigned; it does not prove frame rendering, scrolling or persisted storage.
+  Per-request stages use bounded in-memory dedup, reset by clear/disable/delete;
+  writes reuse the existing asynchronous writer. Original delivery/route gates
+  remain unchanged. Independent review found no blocker. Initial compile caught
+  a missing callback parameter; explicit callback wiring was corrected before
+  installation. Full Android unit/debug/release gate is running. No root-cause
+  fix or physical pass is claimed; next task is one same-question reproduction.
+
+- Delivery-monitoring slice passed the full 554-test/debug/release APK and
+  release vital-lint gate (zero failures/errors/skips), independent review and
+  clean diff check. APK hash is in the recognition decision. Authorized in-place
+  installation is underway; no spelling matching, deadline or reply gate changed.
+
+- Reviewed 554-test APK installed in place (`Success`) on Samsung SM-S928B /
+  Android 16 and cold launched (`Status: ok`); existing storage preserved.
+  Samsung system spell checker was restored before this installation. Await
+  member unlock and one copied `protteen` request, then inspect fixed delivery
+  stages. No biometric automation, private-content capture or commit/push.
+
+- Member confirms the 554-test Gemma repeat answered correctly. Safe events
+  include accepted audit, `lifecycle_ready` and `chat_consumed`, confirming the
+  transcript append for that attempt. A subsequent MiniLM day-nutrition turn
+  also has accepted audit and transcript append. Later stale-request observations
+  do not undo those completed deliveries. The earlier intermittent missing
+  bubble is not reproduced or proved fixed. Member requested a realistic typo
+  outside existing local handling; next copied request uses `proteen`, a vowel
+  substitution outside the local nearby-key rule, with the same supported full
+  question. No alias, build, install or provider setting change for this test.
+
+- Realistic-typo follow-up: member reports `proteen` used Gemma and a subsequent
+  `gime...` question appeared to use MiniLM. Latest two retained turns instead
+  both select native Gemma, pass reply audit and append to Chat. The first has
+  `spell_check / rejected / dictionary_word`; the second has no spelling event.
+  Monitoring contains no text, so exact question-to-turn attribution remains
+  conditional on the member's reported order. Code inspection finds `give` is
+  absent from both correction vocabularies; `gime` cannot itself trigger the
+  system-candidate path. Requested copied question only to resolve wording and
+  route discrepancy. No successful OS correction claimed, no new alias or code
+  change. This exposes candidate coverage limits, not a general provider verdict.
+
+- Member's next `recored` question felt faster. Newest retained turn confirms
+  MiniLM exact-day nutrition, accepted audit and Chat transcript append, with no
+  system-spelling event. Turn start to transcript assignment is about 284 ms.
+  `recored` to `recorded` is a single deletion handled by the existing local
+  candidate rule; this is useful local robustness evidence, not OS correction.
+
+- Member requested returning to Gboard for further tests and reported `tot`
+  instead of `total` used Gemma. Latest retained turn has native Gemma, accepted
+  audit and transcript append, with no system-spelling attempt. Exact copied
+  full question requested before attributing the candidate rejection. Gboard
+  spell-checker selection changed and verified under explicit authorization;
+  keyboard, app binary and storage unchanged. Pending same `proteen` request
+  twice (first/warm comparison) then `tday`, using existing 554-test APK and safe
+  metadata. Gboard remains selected during this active comparison; original
+  Samsung selection is available for restoration. No provider success claimed.
+
+- Gboard follow-up: selected component is still Gboard. Two latest spelling
+  attempts returned fixed `dictionary_word`, then native Gemma. One accepted
+  audited reply was observed by Chat but rejected by `active_request_mismatch`
+  with no transcript append; the following attempt has `chat_consumed`.
+  This localizes the intermittent missing bubble to the active-request handoff
+  for that turn, without proving why identity changed. Read-only investigation
+  resumed; do not bypass the stale-result guard. Member supplied the complete
+  older question `give me my recored protein tot for today?`: two independently
+  misspelled words exceed the current one-token correction policy, explaining
+  why that example cannot exercise the provider path. No APK reinstall is needed
+  to switch the already-installed system provider; app uses the selected service
+  at session creation. No provider/record content was inspected.
+
+- Read-only follow-up bounds the missing-bubble investigation: vault refresh/
+  resume synchronization can clear active request identity when stored and live
+  transcripts differ, but Stop/reset/new requests are other sources. Current
+  trace proves mismatch, not the invalidation source. Regional English versus
+  requested `en` is a separate untested spelling-provider variable; no locale
+  cause is established. Next bounded engineering task is fixed invalidation
+  reason evidence plus session-sync regression coverage before changing delivery
+  behavior. No new implementation, build or install in this follow-up. Gboard
+  remains selected for the member-requested test cycle.
+
+- 2026-10-15 member authorized replacing the restrictive one-word correction
+  policy for natural Chat. Implementing a shared bounded planner: up to three
+  changed words, 64 complete combinations, local conservative edits/contextual
+  abbreviations and provider-confirmed broader edits under one shared 400 ms
+  deadline. All complete candidates retain original host/date/read constraints;
+  distinct valid meanings require clarification. Privacy disclosure revised to
+  up to three individually checked words. No full question/records, new dependency,
+  locale/threshold change, saved-write authority or delivery-ID bypass. Parent
+  owns docs/disclosure; worker owns planner/integration/tests. Review, full gate,
+  in-place install and phone acceptance pending; no commit/push authorized.
+
+- Multi-word revision implemented and independently reviewed with no blocker.
+  Parent review corrected protected-source/target handling, changed-word bounds,
+  equivalent prefix grouping and valid-word preservation before the gate.
+  Tests include the exact copied question and three-change/equivalent-prefix
+  cases, two isolated provider corrections, command candidates, meaning/host
+  constraints, four-word rejection and deterministic shared-deadline expiry.
+  Full gate passed 562 tests (zero failures/errors/skips), debug/release APKs
+  and release vital lint; diff check clean. Initial calorie-test expectation
+  error was corrected, with production behavior unchanged. Hash and command in
+  recognition decision. Authorized installation underway; no provider success
+  or missing-bubble repair is claimed. No commit/push.
+
+- Checksum-identified 562-test APK installed in place (`Success`) on Samsung
+  SM-S928B / Android 16 and cold launched (`Status: ok`), preserving existing
+  vault, records and models. Gboard selection remains as previously authorized;
+  no new system setting change. Await member unlock and exact two-/three-error
+  protein-total questions, then content-free route/delivery inspection. Broader
+  provider, ambiguity and disclosure/font/TalkBack gates remain open; the known
+  intermittent active-request mismatch is not claimed fixed. No private content
+  capture, biometric automation, commit or push.
+
+- Named multi-word phone acceptance passed on the installed 562-test build:
+  member confirms both exact two-/three-error protein questions appear and
+  match saved records. Two new safe traces each show accepted MiniLM
+  `read_day_nutrition / today`, required fresh read, accepted factual audit and
+  Chat transcript append. Neither turn has a system-spelling event or Gemma
+  selection; this validates the local compositional correction/abbreviation
+  path, not Android-provider correction. Both have positive 0.8988, competing
+  0.7497, fallback 0.4739. Later stale-result observation does not undo the
+  completed append. Recorded only technical metadata, no question/answer/record
+  capture. Original-question regression, actual OS suggestions, ambiguity UI,
+  disclosure/font/TalkBack and known intermittent request-ID gap remain open.
+
+- Checkpoint review/commit scope (2026-10-15): member requested reviewing the
+  complete pending diff for gaps, then committing and pushing. This explicitly
+  authorizes commit/push after review; no additional permission prompt is needed.
+  Member explicitly deferred the missing-answer investigation; retain its
+  observed request-ID mismatch and unknown invalidation source as open evidence,
+  without speculative fix or stale-result bypass. Gboard remains selected per
+  member preference; named local correction successes do not prove Gboard use.
+  Independent recognition and runtime/privacy reviews are in progress. Current
+  full gate remains 562 passing tests/debug/release and clean diff check; no
+  Android code has changed since the accepted phone build at review start.
+
+- Full pre-commit review completed: independent recognition/authority and
+  Android-runtime/privacy reviewers found no actionable blocking defects in the
+  complete diff, including new untracked source/tests. Parent corrected stale
+  current-status and disclosure notes; no Android implementation changed during
+  this review. Reconfirmed 562 tests with zero failures/errors/skips and matching
+  accepted debug APK SHA-256; existing complete debug/release/vital-lint gate
+  remains applicable without another identical run. Diff check clean. Remote
+  main matched local base before commit. User-authorized commit/push proceeding.
+  This is a checkpoint, not M4/release acceptance: actual OS correction, direct
+  Android adapter callback/cleanup tests, pre-31, Stop/lock/late-callback physical
+  checks, ordinary-question regression and disclosure/accessibility gates remain
+  open. Missing-answer request-ID investigation explicitly deferred. Next bounded
+  task when resumed: choose provider/session acceptance or another approved
+  feature; do not silently resume deferred delivery work or enable release MiniLM.

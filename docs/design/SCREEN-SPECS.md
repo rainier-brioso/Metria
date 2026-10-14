@@ -1,5 +1,12 @@
 # Metria screen contracts
 
+Chat correction revision (2026-10-15): preserve the original message and existing
+Chat hierarchy while validating up to three corrections/abbreviations together.
+Distinct valid meanings show a concise host clarification in the ordinary reply
+bubble, with selection/retention and no automatic record operation. Privacy and
+assistant detail dialogs disclose up to three individually checked words, never
+the full question or records. Existing scroll/font/TalkBack checks remain open.
+
 Shared typo recognition (2026-10-13) must not visibly rewrite sent messages or
 change the existing Chat hierarchy. A local evidence card alone is not a
 completed answer: a rejected current turn must expose recoverable error feedback.
@@ -461,6 +468,15 @@ accepted and must not silently change the existing local conversation.
 **Conversation continuity:** typed conversation uses one native LiteRT `Conversation` while the vault session is unlocked. It is rebuilt from a token-bounded window of encrypted visible turns after restart or context rollover; local evidence and hidden reasoning are not replayed as model memory. The active timeline is encrypted in the vault, shared by all Chat entry points, capped at 50 visible messages, and retained for 24 hours after its latest visible activity. It survives biometric relock and process restart, but is excluded from recovery archives. Locking clears in-memory model context. Assistant prose may resolve conversational references but cannot become record evidence; every personal factual answer executes the matching approved local read tool. Model results carry request IDs and are displayed only when they match the active request and have not already been consumed.
 
 ## Privacy and settings
+
+Production system-spelling disclosure (revised 2026-10-15): Privacy details and
+Local assistant details explain that spelling help may check up to three possible
+misspelled words individually with Android's selected spell checker, following that provider's privacy
+settings. Keep the existing Done dismissal and make the detail text scrollable
+at large font sizes. No new development terminology, primary action, settings
+toggle or consent dialog is introduced by this approved integration. Provider
+offline behavior is not asserted. Chat retains original text and existing
+loading/Stop/selection/restoration states.
 
 **Purpose:** manage private data, assistant storage, preferences, and recovery.
 

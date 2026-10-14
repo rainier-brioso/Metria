@@ -1,13 +1,33 @@
 # Metria product plan
 
+Member-approved Chat correction revision (2026-10-15) passed review and the
+562-test/debug/release gate: bounded
+multi-word corrections and contextual abbreviations, complete-request validation,
+ambiguity clarification and one shared system-service deadline. It supersedes
+the one-word policy below. The existing reply-ID mismatch remains a separate gap.
+Installed in place; named two-/three-error phone checks pass with fresh MiniLM
+reads, accepted audits and visible matching answers. Provider correction and
+broader regression/accessibility gates remain open. Scope and
+evidence: `assistant-routing-recognition.md` and M4 checkpoints.
+
 Current development state and preserved physical acceptance are summarized in
 [the October 11 checkpoint](checkpoint-2026-10-11.md). This does not close the
 milestone acceptance gates below.
 
 Current assistant recognition work and its researched development route are in
 [shared routing recognition](assistant-routing-recognition.md), with execution
-evidence in [M4 checkpoints](m4-assistant-checkpoints.md). Member approved a shared
-bounded typo fallback; broader intent/slot recognition remains a later slice.
+evidence in [M4 checkpoints](m4-assistant-checkpoints.md). The installed checkpoint
+passed 562 tests, debug/release APK builds and independent review. Local MiniLM
+reads and single-edit correction have named phone successes. Production Android
+spelling is implemented, but usable provider correction remains unaccepted.
+Gboard is selected under the member-authorized comparison; recent callbacks
+reported dictionary words. Delivery monitoring caught an audited Gemma reply
+skipped by Chat's current-request gate. Why identity changed remains unproven;
+do not bypass stale-result checks. The member explicitly deferred this delivery
+investigation and authorized a full checkpoint review followed by commit/push.
+Named multi-word phone acceptance is recorded above; remaining provider,
+regression and accessibility gates are not marked passed. Full checkpoint
+recognition/runtime/privacy reviews found no blockers; commit/push is authorized.
 
 ## Goal
 

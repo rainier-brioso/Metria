@@ -5,13 +5,13 @@ package app.metria
  * grammars. This is a routing vocabulary, not a general-purpose spellchecker.
  */
 internal object MiniLmReadTypoCandidates {
-    private val vocabulary = setOf(
+    internal val vocabulary = setOf(
         "overview", "summary", "meals", "meal", "recorded", "logged", "calories",
         "calorie", "protein", "weight", "weigh", "history", "latest", "recent",
         "total", "remaining",
     )
     // Valid English words close to routing terms must never be rewritten as typos.
-    private val protectedWords = setOf("height", "heights", "meat", "meats", "protean", "lodged", "lamest")
+    internal val protectedWords = setOf("height", "heights", "meat", "meats", "protean", "lodged", "lamest")
     private val tokenPattern = Regex("(?<![a-z])([a-z]+)(?![a-z])")
 
     /** Returns a corrected phrase only when exactly one token has one nearest candidate. */
@@ -21,7 +21,7 @@ internal object MiniLmReadTypoCandidates {
         for (token in tokens) {
             val word = token.groupValues[1]
             if (word.length < MIN_TOKEN_LENGTH || word in vocabulary || word in protectedWords) continue
-            val nearest = vocabulary.filter { optimalStringAlignmentDistanceAtMostOne(word, it) }
+            val nearest = localCorrectionsFor(word)
             if (nearest.isEmpty()) continue
             if (nearest.size != 1 || correction != null) return null
             correction = token.groups[1]!!.range to nearest.single()
@@ -33,6 +33,10 @@ internal object MiniLmReadTypoCandidates {
             append(normalizedText, range.last + 1, normalizedText.length)
         }
     }
+
+    /** Conservative one-edit local alternatives, exposed so bounded multiword plans can compose them. */
+    fun localCorrectionsFor(word: String): Set<String> = if (word.length < MIN_TOKEN_LENGTH) emptySet() else vocabulary
+        .filterTo(linkedSetOf()) { optimalStringAlignmentDistanceAtMostOne(word, it) }
 
     /** One insertion, deletion, adjacent transposition, or nearby-key substitution. */
     private fun optimalStringAlignmentDistanceAtMostOne(left: String, right: String): Boolean {

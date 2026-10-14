@@ -366,6 +366,26 @@ is introduced. All history retains its separate date-grouped view.
 
 ## 6. Ask Metria
 
+**Chat correction revision - 2026-10-15:** after exact recognition misses, a
+bounded pass may combine up to three corrections/contextual abbreviations while
+preserving the sent message. Multiple valid meanings receive a concise request
+to spell out the intended record/metric/day. Loading, Stop and selection remain
+unchanged. Broader corrections can check up to three words individually with the
+selected English system service under one shared 400 ms deadline; complete
+questions and records are excluded. This supersedes the one-word limit below.
+Timeout/unavailable results retain normal handling; corrections cannot save.
+
+**Production Android spelling - 2026-10-14:** on Send, after existing recognition
+misses, a bounded English system-spelling request may check one locally identified
+routing word. The original message stays unchanged; no live keystroke processing
+or new confirmation is added. A compatible suggestion must pass the complete
+read/host checks. Loading remains cancellable; missing/disabled service, timeout,
+error or ambiguous suggestions use normal handling. Lock/Stop and obsolete
+requests discard late results. Privacy/Local assistant details disclose the
+selected system provider's independent processing/settings. No record or whole
+question is provided to that service. Specification and acceptance are in
+`../assistant-routing-recognition.md`.
+
 **Approved companion bundle — 2026-10-12:** implement the complete local set
 before one installation, then test each feature. Goal questions compare fresh
 today estimates with current confirmed references, disclose partial/missing

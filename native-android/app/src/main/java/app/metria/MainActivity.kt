@@ -178,6 +178,9 @@ class MainActivity : FragmentActivity() {
 
     fun assistantTraceStatus(): AssistantTraceStore.Status = assistantTraceStore.status()
 
+    fun recordAssistantReplyDelivery(requestId: Long, reason: String) =
+        assistantTraceStore.recordReplyDelivery(requestId, reason)
+
     fun debugImageCaptureStatus(): DebugImageCaptureStore.Status = debugImageCaptureStore.status()
 
     fun setDebugImageCaptureEnabled(enabled: Boolean): Boolean = debugImageCaptureStore.setEnabled(enabled)

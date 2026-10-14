@@ -8,6 +8,28 @@ import org.junit.Test
 
 class AssistantTraceStoreTest {
     @Test
+    fun `expired tool continuation records only fixed technical metadata`() {
+        val root = Files.createTempDirectory("trace-test").toFile()
+        AssistantTraceStore(root, true, { 1_000L }).use { trace ->
+            trace.setEnabled(true)
+            trace.record(
+                "failed", "agent_tool_result", "rejected", "continuation_expired",
+                "read_nutrition_summary", requestId = 5L,
+            )
+            trace.flush()
+        }
+        AssistantTraceStore(root, true, { 1_001L }).use { trace ->
+            trace.flush()
+            assertEquals(1, trace.status().eventCount)
+            val fields = root.resolve(AssistantTraceStore.relativePath).readLines().single().split('\t')
+            assertEquals(listOf(
+                "1000", "failed", "agent_tool_result", "rejected", "continuation_expired",
+                "read_nutrition_summary", "none", "5",
+            ), fields)
+        }
+    }
+
+    @Test
     fun `scope reasons survive restart without private context`() {
         val root = Files.createTempDirectory("trace-test").toFile()
         val reasons = listOf("scope_text", "scope_selected", "scope_host", "scope_context")
@@ -38,6 +60,78 @@ class AssistantTraceStoreTest {
             trace.flush()
             assertEquals(reasons, root.resolve(AssistantTraceStore.relativePath).readLines().map { it.split('\t')[4] })
             assertEquals(reasons.size, trace.status().eventCount)
+        }
+    }
+
+    @Test
+    fun `spell check trace stores only fixed outcome and reason values`() {
+        val root = Files.createTempDirectory("trace-test").toFile()
+        AssistantTraceStore(root, true, { 1_000L }).use { trace ->
+            trace.setEnabled(true)
+            trace.record("spell_check", "agent_turn", "accepted", "accepted", requestId = 7L)
+            trace.flush()
+            val row = root.resolve(AssistantTraceStore.relativePath).readLines().single().split('\t')
+            assertEquals(listOf("1000", "spell_check", "agent_turn", "accepted", "accepted", "none", "none", "7"), row)
+        }
+    }
+
+    @Test
+    fun `reply delivery stages are fixed deduplicated and reset by clear disable and delete`() {
+        val root = Files.createTempDirectory("trace-test").toFile()
+        AssistantTraceStore(root, true, { 1_000L }).use { trace ->
+            trace.setEnabled(true)
+            trace.recordReplyDelivery(12L, "lifecycle_ready")
+            trace.recordReplyDelivery(12L, "lifecycle_ready")
+            trace.recordReplyDelivery(12L, "chat_consumed")
+            trace.recordReplyDelivery(12L, "active_request_mismatch")
+            trace.recordReplyDelivery(12L, "chat_consumed")
+            trace.recordReplyDelivery(13L, "reply=private")
+            trace.flush()
+
+            val rows = root.resolve(AssistantTraceStore.relativePath).readLines().map { it.split('\t') }
+            assertEquals(listOf("lifecycle_ready", "chat_consumed", "active_request_mismatch"), rows.map { it[4] })
+            assertEquals(listOf("accepted", "accepted", "rejected"), rows.map { it[3] })
+            assertTrue(rows.all { it.size == 8 && it[1] == "reply_delivery" && it[7] == "12" })
+
+            trace.clear()
+            trace.recordReplyDelivery(12L, "lifecycle_ready")
+            trace.flush()
+            assertEquals("lifecycle_ready", root.resolve(AssistantTraceStore.relativePath).readLines().single().split('\t')[4])
+
+            trace.setEnabled(false)
+            trace.flush()
+            trace.setEnabled(true)
+            trace.recordReplyDelivery(12L, "lifecycle_ready")
+            trace.flush()
+            assertEquals("lifecycle_ready", root.resolve(AssistantTraceStore.relativePath).readLines().single().split('\t')[4])
+
+            trace.delete()
+            trace.flush()
+            trace.setEnabled(true)
+            trace.recordReplyDelivery(12L, "lifecycle_ready")
+            trace.flush()
+            assertEquals("lifecycle_ready", root.resolve(AssistantTraceStore.relativePath).readLines().single().split('\t')[4])
+        }
+    }
+
+    @Test
+    fun `detailed spelling reasons survive restart without suggestion fields`() {
+        val root = Files.createTempDirectory("trace-test").toFile()
+        val reasons = listOf(
+            "empty_response", "segment_mismatch", "request_mismatch", "dictionary_word", "unmarked_typo", "no_match",
+        )
+        AssistantTraceStore(root, true, { 1_000L }).use { trace ->
+            trace.setEnabled(true)
+            reasons.forEach { trace.record("spell_check", "agent_turn", "rejected", it, requestId = 7L) }
+            trace.record("spell_check", "agent_turn", "rejected", "suggestion=private", requestId = 7L)
+            trace.flush()
+        }
+        AssistantTraceStore(root, true, { 1_001L }).use { trace ->
+            trace.flush()
+            val rows = root.resolve(AssistantTraceStore.relativePath).readLines().map { it.split('\t') }
+            assertEquals(reasons + "none", rows.map { it[4] })
+            assertTrue(rows.all { it.size == 8 })
+            assertFalse(root.resolve(AssistantTraceStore.relativePath).readText().contains("private"))
         }
     }
     @Test

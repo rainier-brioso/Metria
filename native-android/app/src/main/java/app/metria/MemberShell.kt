@@ -631,6 +631,7 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                             cleared == ConversationPersistenceResult.SAVED
                         },
                         modelStatus = modelStatus,
+                        recordReplyDelivery = activity::recordAssistantReplyDelivery,
                         entries = vaultStatus.entries,
                         meals = vaultStatus.meals,
                         personalDishes = vaultStatus.personalDishes,
@@ -1858,6 +1859,7 @@ private fun PrivateAssistantChat(
     onConversationChanged: suspend (List<PrivateConversationMessage>) -> Boolean,
     onNewConversation: suspend () -> Boolean,
     modelStatus: ModelStatus,
+    recordReplyDelivery: (Long, String) -> Unit,
     entries: List<WeightEntry>,
     meals: List<MealEntry>,
     personalDishes: List<PersonalDish>,
@@ -2035,7 +2037,7 @@ private fun PrivateAssistantChat(
             }
         }
     }
-    LaunchedEffect(modelStatus.assistantRequestId, modelStatus.coachToolCall, submittedQuestion) {
+    LaunchedEffect(modelStatus.assistantRequestId, modelStatus.coachToolCall, submittedQuestion, activeAssistantRequestId) {
         val requestId = modelStatus.assistantRequestId ?: return@LaunchedEffect
         val call = modelStatus.coachToolCall ?: return@LaunchedEffect
         if (!shouldConsumeAssistantResult(activeAssistantRequestId, handledToolRequestId, requestId)) return@LaunchedEffect
@@ -2437,10 +2439,21 @@ private fun PrivateAssistantChat(
         val requestId = modelStatus.assistantRequestId ?: return@LaunchedEffect
         val reply = modelStatus.coachReply
         var transcript = messages
-        if (reply != null && shouldConsumeAssistantResult(activeAssistantRequestId, handledReplyRequestId, requestId)) {
-            handledReplyRequestId = requestId
-            transcript = transcript + PrivateChatMessage(reply, false)
-            messages = transcript
+        if (reply != null) {
+            recordReplyDelivery(requestId, "lifecycle_ready")
+            when (assistantReplyDeliveryGate(activeAssistantRequestId, handledReplyRequestId, requestId)) {
+                AssistantReplyDeliveryGate.CONSUME -> {
+                    handledReplyRequestId = requestId
+                    transcript = transcript + PrivateChatMessage(reply, false)
+                    messages = transcript
+                    recordReplyDelivery(requestId, "chat_consumed")
+                }
+                AssistantReplyDeliveryGate.ACTIVE_REQUEST_MISMATCH ->
+                    recordReplyDelivery(requestId, "active_request_mismatch")
+                AssistantReplyDeliveryGate.ALREADY_HANDLED ->
+                    recordReplyDelivery(requestId, "already_handled")
+                null -> Unit
+            }
         }
         val navigation = modelStatus.companionNavigation?.takeIf { it.requestId == requestId }
             ?: return@LaunchedEffect
@@ -2724,8 +2737,25 @@ private fun privateConversationContext(messages: List<PrivateChatMessage>): Stri
         )
     })
 
+internal enum class AssistantReplyDeliveryGate {
+    CONSUME,
+    ACTIVE_REQUEST_MISMATCH,
+    ALREADY_HANDLED,
+}
+
+internal fun assistantReplyDeliveryGate(
+    activeRequestId: Long?,
+    handledRequestId: Long?,
+    resultRequestId: Long?,
+): AssistantReplyDeliveryGate? {
+    if (resultRequestId == null) return null
+    if (resultRequestId != activeRequestId) return AssistantReplyDeliveryGate.ACTIVE_REQUEST_MISMATCH
+    if (resultRequestId == handledRequestId) return AssistantReplyDeliveryGate.ALREADY_HANDLED
+    return AssistantReplyDeliveryGate.CONSUME
+}
+
 internal fun shouldConsumeAssistantResult(activeRequestId: Long?, handledRequestId: Long?, resultRequestId: Long?): Boolean =
-    resultRequestId != null && resultRequestId == activeRequestId && resultRequestId != handledRequestId
+    assistantReplyDeliveryGate(activeRequestId, handledRequestId, resultRequestId) == AssistantReplyDeliveryGate.CONSUME
 
 internal fun shouldLatchAssistantDiagnostic(
     activeRequestId: Long?, resultRequestId: Long?, modelState: String,

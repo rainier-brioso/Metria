@@ -1,6 +1,8 @@
 package app.metria.ui.screens
 
 import app.metria.shouldConsumeAssistantResult
+import app.metria.assistantReplyDeliveryGate
+import app.metria.AssistantReplyDeliveryGate
 import app.metria.AssistantPendingSubmissionGate
 import app.metria.AssistantCancellationGate
 import app.metria.continuationFailureDiagnostic
@@ -191,6 +193,15 @@ class AssistantConversationPresentationTest {
     fun `stale lifecycle result is ignored by a fresh conversation`() {
         assertFalse(shouldConsumeAssistantResult(activeRequestId = null, handledRequestId = null, resultRequestId = 41L))
         assertFalse(shouldConsumeAssistantResult(activeRequestId = 42L, handledRequestId = null, resultRequestId = 41L))
+    }
+
+    @Test
+    fun `reply delivery reports active and already handled gate outcomes`() {
+        assertEquals(AssistantReplyDeliveryGate.CONSUME, assistantReplyDeliveryGate(42L, null, 42L))
+        assertEquals(AssistantReplyDeliveryGate.ACTIVE_REQUEST_MISMATCH, assistantReplyDeliveryGate(null, null, 42L))
+        assertEquals(AssistantReplyDeliveryGate.ACTIVE_REQUEST_MISMATCH, assistantReplyDeliveryGate(43L, null, 42L))
+        assertEquals(AssistantReplyDeliveryGate.ALREADY_HANDLED, assistantReplyDeliveryGate(42L, 42L, 42L))
+        assertEquals(null, assistantReplyDeliveryGate(42L, null, null))
     }
 
     @Test
