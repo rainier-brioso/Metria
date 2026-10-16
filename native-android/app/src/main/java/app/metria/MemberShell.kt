@@ -696,9 +696,14 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                             }
                         },
                         isVaultUnlocked = { status is EncryptedVault.Status.Unlocked },
-                        onReviewSavedDish = { id ->
+                        isSavedDishCurrent = { expected ->
                             val unlocked = vault.status() as? EncryptedVault.Status.Unlocked
-                            val dish = unlocked?.personalDishes?.firstOrNull { it.id == id }
+                            unlocked?.personalDishes?.singleOrNull { it.id == expected.id } == expected
+                        },
+                        onReviewSavedDish = { expected ->
+                            val unlocked = vault.status() as? EncryptedVault.Status.Unlocked
+                            val dish = unlocked?.personalDishes?.singleOrNull { it.id == expected.id }
+                                ?.takeIf { it == expected }
                             val prefill = dish?.let(CompanionAssistantPolicy::savedDishPrefill)
                             if (prefill != null) {
                                 savedDishPrefill = prefill
@@ -712,6 +717,9 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                                 mealReviewIsTextEntry = true
                                 mealReviewIsPhotoEntry = false
                                 quickAssistantOpen = false
+                                true
+                            } else {
+                                false
                             }
                         },
                         understandCoach = { question, conversationContext -> activity.understandPrivateCoach(question, conversationContext).also { modelStatus = it } },
@@ -1603,6 +1611,7 @@ private class PrivateAssistantConversationSession(
     val activeRequestId = mutableStateOf(initialActiveRequestId)
     val handledToolRequestId = mutableStateOf(initialHandledToolRequestId)
     val handledReplyRequestId = mutableStateOf(initialHandledReplyRequestId)
+    val conversationGeneration = mutableStateOf(0L)
     val retainedFailureAnnouncementRequestId = mutableStateOf<Long?>(null)
     val savedWeightId = mutableStateOf(initialSavedWeightId)
     val voiceMessage = mutableStateOf(initialVoiceMessage)
@@ -1649,6 +1658,7 @@ private class PrivateAssistantConversationSession(
         activeRequestId.value == requestId && handledReplyRequestId.value == requestId
 
     fun invalidateForConversationClear() {
+        conversationGeneration.value += 1
         persistence.invalidatePendingWrites()
         activeRequestId.value = null
         handledToolRequestId.value = null
@@ -1789,6 +1799,7 @@ private class PrivateAssistantConversationSession(
     }
 
     fun reset() {
+        conversationGeneration.value += 1
         persistence.invalidatePendingWrites()
         assistantCancellationGate.reset()
         assistantStopping.value = assistantCancellationGate.isInFlight()
@@ -1841,7 +1852,9 @@ private class PrivateAssistantConversationSession(
             loadedConversationRecord = record
             return
         }
-        AssistantConversationHydrationDecision.RESTORE_PERSISTED -> Unit
+        AssistantConversationHydrationDecision.RESTORE_PERSISTED -> {
+            conversationGeneration.value += 1
+        }
         }
         val restored = record?.messages?.map { message ->
             PrivateChatMessage(message.text, message.fromMember, message.localEvidence, message.savedMealId)
@@ -1922,7 +1935,8 @@ private fun PrivateAssistantChat(
     readSelectedMeal: (String) -> Map<String, Any?>?,
     completeCompanionNavigation: (Long) -> Boolean,
     isVaultUnlocked: () -> Boolean,
-    onReviewSavedDish: (String) -> Unit,
+    isSavedDishCurrent: (PersonalDish) -> Boolean,
+    onReviewSavedDish: (PersonalDish) -> Boolean,
 ) {
     val context = LocalContext.current
     var input by conversationSession.input
@@ -1938,10 +1952,14 @@ private fun PrivateAssistantChat(
     var voiceCaptureGeneration by remember { mutableStateOf(0L) }
     var voiceMessage by conversationSession.voiceMessage
     var messages by conversationSession.messages
-    var savedDishChoices by remember { mutableStateOf<List<MetriaSavedDishChoice>>(emptyList()) }
+    var pendingSavedDishChoices by remember { mutableStateOf<PendingSavedDishChoices?>(null) }
+    var savedDishChoiceSelectionInFlight by remember { mutableStateOf(false) }
     val assistantScope = rememberCoroutineScope()
     DisposableEffect(conversationSession) {
-        onDispose { conversationSession.retainedFailureAnnouncementRequestId.value = null }
+        onDispose {
+            conversationSession.retainedFailureAnnouncementRequestId.value = null
+            pendingSavedDishChoices = null
+        }
     }
     LaunchedEffect(messages) {
         val writeTicket = conversationSession.captureConversationWriteTicket()
@@ -1957,8 +1975,27 @@ private fun PrivateAssistantChat(
     val today = LocalDate.now()
     val snapshot = remember(entries, meals, nutritionTargets, today) { PrivateCoachSnapshot.from(entries, meals, nutritionTargets, today) }
     val savedWeight = savedWeightId?.let { id -> entries.firstOrNull { it.id == id } }
-    fun trackRequest(result: ModelStatus) {
+    fun trackRequest(result: ModelStatus, onReconciled: (Long?) -> Unit = {}) {
         activeAssistantRequestId = result.assistantRequestId
+        onReconciled(activeAssistantRequestId)
+    }
+    fun bindSavedDishChoices(requestId: Long?, candidates: List<SavedDishChoiceCandidate>) {
+        if (requestId == null || candidates.isEmpty()) {
+            pendingSavedDishChoices = null
+            return
+        }
+        pendingSavedDishChoices = PendingSavedDishChoices(
+            requestId = requestId,
+            conversationGeneration = conversationSession.conversationGeneration.value,
+            candidates = candidates.map { candidate ->
+                // Copy nested collections so the transient offer is an immutable comparison
+                // snapshot even if a caller later reuses a mutable list instance.
+                candidate.copy(dish = candidate.dish.copy(
+                    aliases = candidate.dish.aliases.toList(),
+                    items = candidate.dish.items.toList(),
+                ))
+            },
+        )
     }
     fun trackPendingRequest(token: Long, result: ModelStatus) {
         activeAssistantRequestId = conversationSession.reconcilePendingSubmission(token, result)
@@ -1966,7 +2003,7 @@ private fun PrivateAssistantChat(
             recordReplyDelivery(it, if (activeAssistantRequestId == it) "submission_reconciled" else "submission_rejected")
         }
     }
-    fun trackNativeRequest(block: () -> ModelStatus) {
+    fun trackNativeRequest(onReconciled: (Long?) -> Unit = {}, block: () -> ModelStatus) {
         val previousRequestId = activeAssistantRequestId
         val token = conversationSession.beginPendingContinuation() ?: return
         // The tool-call effect is keyed to polled ModelStatus fields. Keep the handoff in the
@@ -1977,10 +2014,11 @@ private fun PrivateAssistantChat(
                 val result = conversationSession.withAssistantModelOperation {
                     if (!conversationSession.isPendingContinuation(token)) return@withAssistantModelOperation null
                     withContext(Dispatchers.Default) { block() }
-                } ?: return@launch
+                } ?: run { onReconciled(null); return@launch }
                 val stillPending = conversationSession.isPendingContinuation(token)
                 if (!stillPending) {
                     result.assistantRequestId?.let { recordReplyDelivery(it, "continuation_cancelled") }
+                    onReconciled(null)
                     return@launch
                 }
                 val requestId = conversationSession.reconcilePendingContinuation(
@@ -1989,6 +2027,7 @@ private fun PrivateAssistantChat(
                     result,
                 )
                 activeAssistantRequestId = requestId
+                onReconciled(requestId)
                 result.assistantRequestId?.let {
                     recordReplyDelivery(it, if (requestId == it) "continuation_reconciled" else "continuation_rejected")
                 }
@@ -2008,7 +2047,8 @@ private fun PrivateAssistantChat(
         }
     }
     fun stopAssistant(showConfirmation: Boolean = true) {
-        savedDishChoices = emptyList()
+        pendingSavedDishChoices = null
+        savedDishChoiceSelectionInFlight = false
         val token = conversationSession.beginAssistantCancellation() ?: return
         assistantScope.launch(start = CoroutineStart.UNDISPATCHED) {
             try {
@@ -2403,7 +2443,7 @@ private fun PrivateAssistantChat(
                 if (consumptionProbe && CompanionAssistantPolicy.savedDishProbeDisposition(action.query, matches) ==
                     CompanionAssistantPolicy.SavedDishProbeDisposition.NORMAL_INTENT
                 ) {
-                    savedDishChoices = emptyList()
+                    pendingSavedDishChoices = null
                     val requestId = modelStatus.assistantRequestId ?: return@LaunchedEffect
                     val originalQuestion = submittedQuestion
                     trackNativeRequest {
@@ -2417,18 +2457,22 @@ private fun PrivateAssistantChat(
                         MetriaAgentGroundingPolicy.requiredTool(submittedQuestion, emptyList(), today),
                         submittedQuestion, null, today,
                     )?.kind == CompanionAssistantPolicy.IntentKind.SAVED_DRAFT
-                if (draftIntent) {
+                val choiceCandidates = if (draftIntent) {
                     val draftChoice = CompanionAssistantPolicy.savedDishDraftChoice(action.query, matches)
                     val candidates = draftChoice.exactCandidateId?.let { id -> matches.filter { it.dish.id == id } }
                         ?: draftChoice.candidates
-                    savedDishChoices = candidates.map { match ->
-                        MetriaSavedDishChoice(
-                            id = match.dish.id,
-                            name = match.dish.name,
-                            foods = PersonalDishStructure.componentItems(match.dish).map { it.name },
+                    candidates.map { match ->
+                        SavedDishChoiceCandidate(
+                            dish = match.dish,
                             exactNameMatch = draftChoice.exactCandidateId == match.dish.id,
                         )
                     }
+                } else emptyList()
+                val onSavedChoicesReconciled: (Long?) -> Unit = { finalRequestId ->
+                    bindSavedDishChoices(finalRequestId, choiceCandidates)
+                }
+                if (draftIntent) {
+                    pendingSavedDishChoices = null
                 }
                 val facts = if (matches.isEmpty()) {
                     "No saved private dish matched '${action.query}'."
@@ -2439,7 +2483,7 @@ private fun PrivateAssistantChat(
                 }
                 messages = messages + PrivateChatMessage(facts, false, localEvidence = true)
                 if (nativeAgentTool) {
-                    trackNativeRequest { continueAgentTool(call.intent, mapOf(
+                    trackNativeRequest(onReconciled = onSavedChoicesReconciled) { continueAgentTool(call.intent, mapOf(
                         "source" to "metria_local_vault",
                         "reply_language" to replyLanguage,
                         "query" to action.query,
@@ -2460,7 +2504,7 @@ private fun PrivateAssistantChat(
                         [LOCAL_FACTS]
                         $facts
                         [/LOCAL_FACTS]
-                        Answer only from these bounded saved-dish results. Say that the member can review or remove saved dishes in Privacy when useful.""".trimIndent(), snapshot, submittedConversationContext))
+                        Answer only from these bounded saved-dish results. Say that the member can review or remove saved dishes in Privacy when useful.""".trimIndent(), snapshot, submittedConversationContext), onSavedChoicesReconciled)
                 }
             }
             is AssistantAction.DraftWeight -> {
@@ -2606,8 +2650,96 @@ private fun PrivateAssistantChat(
     LaunchedEffect(modelStatus.assistantRequestId, modelStatus.state) {
         conversationSession.observePendingLifecycle(modelStatus.assistantRequestId, modelStatus.state)
     }
+    fun isSavedDishChoiceBound(state: PendingSavedDishChoices): Boolean =
+        SavedDishChoicePolicy.isCurrent(
+            pending = state,
+            activeRequestId = conversationSession.activeRequestId.value,
+            handledReplyRequestId = conversationSession.handledReplyRequestId.value,
+            conversationGeneration = conversationSession.conversationGeneration.value,
+            unlocked = isVaultUnlocked(),
+            stopping = conversationSession.assistantStopping.value,
+            currentDishes = personalDishes,
+        ) && state.candidates.all { isSavedDishCurrent(it.dish) }
+
+    fun canSelectSavedDishChoice(state: PendingSavedDishChoices): Boolean =
+        isSavedDishChoiceBound(state) && modelStatus.assistantRequestId == state.requestId &&
+            modelStatus.state == "loaded" && conversationSession.pendingSubmission.value == null &&
+            !conversationSession.pendingContinuation.value &&
+            !savedDishChoiceSelectionInFlight
+
+    fun selectSavedDishChoice(candidateId: String, memberReply: String? = null) {
+        val original = pendingSavedDishChoices ?: return
+        if (!canSelectSavedDishChoice(original) || !SavedDishChoicePolicy.canRetrySelection(original, candidateId)) {
+            if (!isSavedDishChoiceBound(original)) pendingSavedDishChoices = null
+            return
+        }
+        val candidate = original.candidates.singleOrNull { it.dish.id == candidateId } ?: return
+        if (!isSavedDishCurrent(candidate.dish)) {
+            pendingSavedDishChoices = null
+            return
+        }
+        val firstSelection = original.selectedCandidateId == null
+        val selected = original.copy(selectedCandidateId = candidateId)
+        pendingSavedDishChoices = selected
+        savedDishChoiceSelectionInFlight = true
+        if (memberReply != null) {
+            val additions = buildList {
+                add(PrivateChatMessage(memberReply, true))
+                if (firstSelection) add(PrivateChatMessage(SavedDishChoicePolicy.acknowledgement(candidate.dish.name), false))
+            }
+            messages = messages + additions
+            input = ""
+        }
+        val transcript = messages.map { message ->
+            PrivateConversationMessage(message.text, message.fromMember, message.localEvidence, message.savedMealId)
+        }
+        assistantScope.launch {
+            try {
+                val result = conversationSession.persistBeforeNavigation(
+                    requestId = selected.requestId,
+                    transcript = transcript,
+                    isCurrent = {
+                        pendingSavedDishChoices == selected && isSavedDishChoiceBound(selected) &&
+                            conversationSession.pendingSubmission.value == null &&
+                            !conversationSession.pendingContinuation.value &&
+                            conversationSession.isCurrentNavigationRequest(selected.requestId) &&
+                            isSavedDishCurrent(candidate.dish)
+                    },
+                    save = onConversationChanged,
+                    navigate = {
+                        if (pendingSavedDishChoices != selected || !isSavedDishCurrent(candidate.dish)) false
+                        else if (onReviewSavedDish(candidate.dish)) {
+                            pendingSavedDishChoices = null
+                            true
+                        } else false
+                    },
+                )
+                when (result) {
+                    ConversationNavigationResult.COMPLETED -> Unit
+                    ConversationNavigationResult.SAVE_FAILED -> {
+                        conversationSession.recoverableDiagnostic.value =
+                            "Chat could not be saved, so Metria stayed here. Tap Review meal to try again."
+                    }
+                    ConversationNavigationResult.STALE -> {
+                        if (pendingSavedDishChoices == selected && !isSavedDishChoiceBound(selected)) {
+                            pendingSavedDishChoices = null
+                        }
+                    }
+                    ConversationNavigationResult.DUPLICATE -> Unit
+                }
+            } catch (_: CancellationException) {
+                // Lock, disposal or cancellation invalidates this transient choice with the session.
+            } catch (_: Exception) {
+                conversationSession.recoverableDiagnostic.value =
+                    "Chat could not be saved, so Metria stayed here. Tap Review meal to try again."
+            } finally {
+                savedDishChoiceSelectionInFlight = false
+            }
+        }
+    }
     fun submitText() {
         val text = input.trim()
+        if (text.isBlank()) return
         val modelBusy = shouldPresentAssistantThinking(
             localPending = conversationSession.pendingSubmission.value != null ||
                 conversationSession.pendingContinuation.value,
@@ -2616,11 +2748,42 @@ private fun PrivateAssistantChat(
             modelState = modelStatus.state,
             operation = modelStatus.assistantOperation,
         )
+        val choices = pendingSavedDishChoices
+        if (choices != null && !modelBusy && canSelectSavedDishChoice(choices)) {
+            val selectedId = SavedDishChoicePolicy.resolveReply(text, choices.candidates)
+            if (selectedId != null && SavedDishChoicePolicy.canRetrySelection(choices, selectedId)) {
+                selectSavedDishChoice(selectedId, text)
+                return
+            }
+            if (SavedDishChoicePolicy.isDeclineReply(text)) {
+                pendingSavedDishChoices = null
+                savedDishChoiceSelectionInFlight = false
+                input = ""
+                messages = messages + listOf(
+                    PrivateChatMessage(text, true),
+                    PrivateChatMessage(SavedDishChoicePolicy.declineAcknowledgement(), false),
+                )
+                return
+            }
+            if (selectedId != null || SavedDishChoicePolicy.isChoiceAttempt(text, choices.candidates)) {
+                input = ""
+                messages = messages + listOf(
+                    PrivateChatMessage(text, true),
+                    PrivateChatMessage(
+                        "That reply did not identify one saved dish, so I did not select or save anything.",
+                        false,
+                    ),
+                )
+                return
+            }
+        }
+        // A different question retires the transient choice before starting model work.
+        pendingSavedDishChoices = null
+        savedDishChoiceSelectionInFlight = false
         val pending = if (text.isBlank() || modelBusy) null else {
             conversationSession.beginPendingSubmission(text, activeAssistantRequestId)
         }
         if (pending == null) return
-        savedDishChoices = emptyList()
         conversationSession.recoverableDiagnostic.value = null
         val messageSnapshot = messages
         messages = messages + PrivateChatMessage(text, true)
@@ -2670,6 +2833,22 @@ private fun PrivateAssistantChat(
     }
     val modelResultIsCurrent = modelStatus.assistantRequestId != null &&
         modelStatus.assistantRequestId == activeAssistantRequestId
+    val visibleSavedDishChoices = pendingSavedDishChoices
+        ?.takeIf(::canSelectSavedDishChoice)
+        ?.let { pending ->
+            pending.candidates.mapIndexedNotNull { index, candidate ->
+                if (pending.selectedCandidateId != null && candidate.dish.id != pending.selectedCandidateId) null
+                else MetriaSavedDishChoice(
+                    id = candidate.dish.id,
+                    name = candidate.dish.name,
+                    foods = PersonalDishStructure.componentItems(candidate.dish).map { it.name },
+                    exactNameMatch = candidate.exactNameMatch,
+                    number = index + 1,
+                    enabled = !savedDishChoiceSelectionInFlight,
+                    retryOnly = pending.selectedCandidateId != null,
+                )
+            }
+        }.orEmpty()
 
     if (voiceEntryOpen) {
         app.metria.ui.screens.VoiceEntrySheet(
@@ -2759,7 +2938,7 @@ private fun PrivateAssistantChat(
                 },
         savedWeight = savedWeight,
         mealProposal = modelStatus.assistantProposal.takeIf { modelResultIsCurrent },
-        savedDishChoices = savedDishChoices,
+        savedDishChoices = visibleSavedDishChoices,
         recordingVoice = recordingVoice,
         preparingVoice = startVoiceImmediately && !recordingVoice,
         voiceMessage = voiceMessage,
@@ -2819,7 +2998,7 @@ private fun PrivateAssistantChat(
             }
         },
         onOpenSavedMeal = openSavedMeal,
-        onReviewSavedDish = { id -> if (savedDishChoices.any { it.id == id }) onReviewSavedDish(id) },
+        onReviewSavedDish = { id -> selectSavedDishChoice(id) },
         onDiscardMealDraft = discardMealDraft,
         onToggleVoice = ::toggleVoice,
         onSend = ::submitText,

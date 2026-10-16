@@ -1,5 +1,17 @@
 # Metria product plan
 
+Active slice (2026-10-16): bounded saved-dish Chat clarification, accepting
+explicit ordinal/name replies to current ambiguous consumption choices before
+existing review. Scope and pending gates: `assistant-companion-bundle.md`.
+Baseline `05b72e3` Stop/next-read and lock/reopen/next-read phone checks pass;
+force-stop/recreation and forced timeout remain open. Implementation/review and
+the final 588-test/debug/release/lint gate pass (2026-10-17). Named phone gates
+pass for ordinal/full-name selection, Review/Discard, retained messages,
+decline, invalid-choice rejection and clearing pending choices on lock. Broader
+multiple-candidate, lifecycle, failed-save and accessibility gates remain open.
+Member approved committing and pushing this reviewed checkpoint to main on
+2026-10-17. Earlier pending-approval notes below are historical.
+
 Current checkpoint approved for commit and push to `main` (2026-10-16): natural
 saved-dish requests, normal-intent fallback and timed drafting, retained draft
 acknowledgements, request diagnostics and canonical conversation refresh.

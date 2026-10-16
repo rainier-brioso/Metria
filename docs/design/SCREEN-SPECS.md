@@ -365,6 +365,15 @@ lock/background and the existing response lifecycle invalidate the details.
 
 ## Assistant overlay and conversation
 
+Saved-dish clarification (2026-10-16) reuses the selectable Chat timeline and
+existing candidate card, with consistent numbered candidates and a concise
+question in the transient card, without retaining obsolete choice instructions
+in history. A current explicit typed selection may open the same review as its
+button after transcript retention and fresh record validation. No transient
+choice authority survives lock, Stop, unrelated input or conversation reset.
+An invalid/ambiguous selection must not silently choose a dish; failed saves
+remain recoverable in Chat. Final meal Save remains a separate member action.
+
 An equivalent bounded vault snapshot must not remove loading or a live response
 by resetting Chat request identity. Compare the same normalized transcript
 representation; preserve existing invalidation for changed/expired/cleared

@@ -3487,3 +3487,86 @@ target-phone interaction recheck pending.
   plus debug/release APKs and release vital lint; independent review and named
   phone checks pass. Broader acceptance gaps remain documented, not closed by
   authorization. No unrelated files or private device artifacts are included.
+
+- Post-checkpoint cancellation acceptance (2026-10-16, `05b72e3`, Samsung
+  SM-S928B / Android 16, unchanged installed 583-test build): member stopped
+  the fictional ordinary-meal request during loading, then asked for the latest
+  recorded meal's calories and waited about a minute. Member confirms the new
+  answer matched and no cancelled draft/reply appeared. Content-free trace
+  confirms saved probe request 5 -> normal Gemma continuation 6 -> cancelled,
+  followed by fresh MiniLM latest-meal request 7 -> audited/consumed result 8.
+  No late delivery for cancelled request 6 appears in the retained sequence.
+  This closes the named Stop/next-read gate only; lock/reopen, process recreation,
+  forced timeout and broader lifecycle checks remain open. No new APK installed,
+  raw member content inspected, meal saved, commit or push performed.
+
+- Lock/reopen acceptance on the same baseline: member locked the phone during
+  ordinary meal loading, then unlocked Metria with biometrics and reopened Chat.
+  Sent question remained, fresh today-meals answer matched and no interrupted
+  draft returned. Trace shows request 10 cleared by lock, then fresh MiniLM
+  request 11 and audited/consumed result 12, with no late result from 10.
+  Named lock/interrupted-request/next-read gate passed; force-stop/recreation,
+  forced timeout and other broader states remain open. Begin bounded saved-dish
+  typed clarification per companion specification; no new installation yet.
+
+- Saved-dish typed clarification implementation (2026-10-17): host-owned
+  candidate snapshots, completed-request/session-generation binding and fresh
+  full-dish equality checks protect ordinal/full-name replies and existing
+  buttons. Both persist Chat before review; failed writes keep same-choice
+  retry without renumbering. Declines clear locally and invalid choices do not
+  delegate selection to Gemma. New pure policy tests cover bounded matching,
+  duplicate names/IDs, changed/removed dishes, stale/locked sessions and retries.
+  First gate exposed a test setup that changed both pending and active IDs;
+  corrected the setup to retain the original current ID, without weakening
+  production checks. Intermediate 588-test/debug/release gate passed.
+  Independent review found an imperative prompt could outlive transient choices;
+  removed its transcript insertion. Choice instructions stay in the live card,
+  and invalid-choice history is a non-imperative outcome statement. Parent
+  checked the follow-up wording fix; final gate/install/phone acceptance pending.
+  No new dependency, persistence format, private-data capture, commit or push.
+
+- Final clarification gate (2026-10-17) passes: 588 tests, zero
+  failures/errors/skips, debug/release APK builds, release vital lint and clean
+  diff check. Hash in companion specification. Active-cycle `adb install -r`
+  succeeded on Samsung SM-S928B / Android 16, followed by cold launch `Status:
+  ok`; existing app identity/vault/models preserved, with no clear/uninstall.
+  Member biometric unlock and ordinal selection -> Review/Discard -> retained
+  selection/acknowledgement are pending. Name selection, decline, ambiguity,
+  stale-choice/lifecycle, failed-write retry, accessibility and visual gates
+  remain open. No private content captured, commit or push performed.
+
+- Clarification ordinal acceptance (2026-10-17, same 588-test APK/hash and
+  Samsung): member confirms the saved San Jacobo offer followed by "the first
+  one" opens the correct editable review, and selection/acknowledgement remain
+  after Discard and returning to Chat. No meal saved. This named phone gate is
+  passed from member observation; no new selection trace event is implemented.
+  Full-name selection, decline, multiple-candidate/invalid choice and broader
+  lifecycle/failed-write/accessibility states remain open. No source change,
+  new install, private content inspection, commit or push.
+
+- Clarification full-name/decline acceptance (2026-10-17, unchanged 588-test
+  build/hash and Samsung): member confirms "san jacobo" selects the correct
+  review from its current offer, then Discard. On a fresh offer "no thanks"
+  clears choices without opening review or creating a meal. Named full-name
+  and decline gates pass. Invalid choice, pending-choice lock, multiple-candidate
+  and broader lifecycle/failed-write/accessibility gates remain open. No code,
+  build or installation change; no private device content inspected, commit
+  or push performed.
+
+- Clarification invalid-choice/lock acceptance (2026-10-17, unchanged 588-test
+  APK/hash and Samsung): member confirms "the fourth one" is rejected without
+  Review while the current choice remains available. Lock/biometric unlock and
+  Chat reopen clear the card while preserving history. Named gates pass.
+  Independent review corrections and final full gate remain valid; only docs
+  changed after installation. Multiple-candidate selection on phone, changed/
+  deleted-dish handling, failed-save retry, force-stop/recreation, forced
+  timeout, accessibility and visual gates remain open. Ready for checkpoint
+  approval; no new commit/push authorization and neither action performed.
+
+- Member explicitly approved committing and pushing the reviewed clarification
+  checkpoint to `main` on 2026-10-17. Scope: bounded ordinal/full-name saved-dish
+  replies, shared guarded Review handoff, decline, policy tests and documentation.
+  Final evidence remains 588 passing tests, debug/release builds, release vital
+  lint, clean diff check and named phone passes. Broader acceptance gaps above
+  remain open. No new installation or private-device capture is part of this
+  commit/push action.

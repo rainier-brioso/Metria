@@ -96,6 +96,9 @@ data class MetriaSavedDishChoice(
     val name: String,
     val foods: List<String>,
     val exactNameMatch: Boolean = false,
+    val number: Int = 1,
+    val enabled: Boolean = true,
+    val retryOnly: Boolean = false,
 )
 
 @Composable
@@ -354,21 +357,31 @@ fun MetriaAssistantConversationScreen(
 private fun SavedDishChoicesCard(choices: List<MetriaSavedDishChoice>, onReview: (String) -> Unit) {
     Card(colors = CardDefaults.cardColors(containerColor = MetriaColors.Surface)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Saved dishes to review", style = MaterialTheme.typography.titleSmall)
+            Text("Which saved dish did you mean?", style = MaterialTheme.typography.titleSmall)
             Text(if (choices.all(MetriaSavedDishChoice::exactNameMatch)) {
                 "Review the saved foods and portions before adding. Nothing is saved yet."
             } else {
                 "These are possible matches. Choose one to review. Nothing is saved yet."
             },
                 color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall)
+            Text(if (choices.any(MetriaSavedDishChoice::retryOnly)) {
+                "The chat could not be saved. Tap Review meal to retry."
+            } else if (choices.size == 1) {
+                "You can also reply “the first one” or type the full dish name."
+            } else {
+                "You can reply with its number, like “the second one”, or type a full dish name."
+            }, color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall)
             choices.forEach { choice ->
                 Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(choice.name, style = MaterialTheme.typography.bodyLarge)
+                    Text("${choice.number}. ${choice.name}", style = MaterialTheme.typography.bodyLarge)
                     Text(if (choice.exactNameMatch) "Exact name match" else "Possible match",
                         color = MetriaColors.InkMuted, style = MaterialTheme.typography.labelSmall)
                     if (choice.foods.isNotEmpty()) Text(choice.foods.joinToString(", "),
                         color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall)
-                    FilledTonalButton(onClick = { onReview(choice.id) }, modifier = Modifier.heightIn(min = 48.dp)) {
+                    FilledTonalButton(
+                        onClick = { onReview(choice.id) }, enabled = choice.enabled,
+                        modifier = Modifier.heightIn(min = 48.dp),
+                    ) {
                         Text("Review meal")
                     }
                 }

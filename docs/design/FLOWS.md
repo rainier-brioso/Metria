@@ -366,6 +366,16 @@ is introduced. All history retains its separate date-grouped view.
 
 ## 6. Ask Metria
 
+**Saved-dish clarification - 2026-10-16:** an ambiguous consumption request may
+ask in a transient card which of at most three numbered saved dishes the member meant. The next
+explicit number/ordinal or unique full name selects that current choice for
+the existing editable review. Review buttons remain available. Retain the
+member selection/reply before navigating; failed retention keeps Chat open.
+Do not retain imperative choice instructions after the card's permission expires.
+Lock, Stop, a different topic or changed/expired conversation clears the
+pending choice; history never restores its action permission. Recheck the
+current saved dish before review. Nothing is saved until final confirmation.
+
 **Equivalent conversation refresh - 2026-10-16:** periodic retention refresh may
 return the same conversation with its saved size limits applied. That refresh
 must preserve in-flight loading/Stop and the current response. A genuinely

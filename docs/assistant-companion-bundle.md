@@ -1,5 +1,59 @@
 # Local assistant companion bundle — 2026-10-12
 
+## Saved-dish Chat clarification — 2026-10-16
+
+Member approved implementing a focused clarification step after the named
+cancellation and lock/reopen checks. Existing ambiguous saved-dish requests
+offer at most three choices. Add a transient numbered question and accept an explicit
+ordinal or unique full candidate name in the next Chat turn, alongside the
+existing Review buttons. This permission applies only to a current completed
+consumption/draft request; recall alone cannot acquire draft permission.
+
+The numbered question/instructions belong only to the live choice card. Do not
+persist an imperative selection prompt that would outlive transient choices
+after Review, lock or disposal. Ordinary saved-search evidence and the member's
+selection plus host review acknowledgement follow existing transcript retention.
+
+Keep pending choices transient and host-owned, bound to the request/session.
+Before opening review, recheck the unlocked vault and unchanged candidate,
+persist the selection turn and acknowledgement, then consume the selection
+once. Failed persistence stays in Chat with a recoverable retry. Stop, lock,
+expiry, reset, changed conversation, unrelated submission and stale IDs must
+invalidate the pending choice. Reopened historical messages cannot revive it.
+No model-supplied dish ID, automatic Save, new persistence format, dependency,
+OS spelling of dish names or guessed portion is permitted. Portion questions
+and draft revision are a separate future slice.
+
+Implementation and independent review are complete. Review found obsolete
+choice instructions persisted after the live offer expired; the prompt and
+instructions now stay only in the transient card, and retained invalid-choice
+replies describe the outcome without directing a stale selection. The final
+2026-10-17 gate passes: 588 tests, zero failures/errors/skips, debug/release APKs,
+release vital lint and diff check. Debug APK SHA-256:
+`a32590585aa9bb0af0da9384faa282cfb2d3dd5635249a2808d89b14d8e131b9`.
+Named ordinal phone acceptance passes on this build: member requested the saved
+San Jacobo, replied "the first one", confirmed the correct editable review and
+discarded. The selection and host acknowledgement remained after returning to
+Chat. This is member-observed interaction evidence; the local selection adds no
+new routing trace event. Member also confirms a full-name reply opens the
+correct review and "no thanks" clears a fresh offer without review or a new
+meal. Member also confirms "the fourth one" selects nothing and opens no review,
+while keeping the current choice available. Lock/unlock then removes the choice
+card and retains history. These named invalid-choice and pending-choice lock
+checks pass on the same installed APK. Remaining
+physical gates include multiple-candidate selection,
+unrelated-topic invalidation, changed/missing dish, Stop/lock and Review/Discard
+retention, with existing keyboard/font/selection/accessibility checks applicable.
+
+Baseline lifecycle acceptance (`05b72e3`, installed 583-test APK, Samsung
+SM-S928B / Android 16): Stop during the ordinary meal path followed by a fresh
+latest-meal read passes; no late draft/reply after about a minute. Lock during
+ordinary meal generation clears request 10; after biometric unlock the member
+confirms the sent question remains, a fresh today-meals read answers correctly
+and no old draft returns. Trace confirms request 11 -> audited/consumed result
+12 using MiniLM. No raw conversation or record values inspected. Forced timeout,
+process recreation and broader lifecycle gates remain open.
+
 ## Review corrections — 2026-10-16
 
 Current delivery follow-up: the latest ordinary-meal retry shows

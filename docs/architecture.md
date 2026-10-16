@@ -2,6 +2,19 @@
 
 ## Shared routing recognition
 
+Saved-dish typed clarification (2026-10-17): at most three offered consumption
+candidates stay in transient host-owned state, bound to the completed request
+and conversation generation. A closed ordinal phrase or unique full name may
+select a candidate without model generation. Buttons use the same path. Recheck
+the full saved-dish snapshot in the unlocked vault before and after serialized
+transcript retention, then open the existing editable review. Stop, lock, real
+conversation replacement/expiry/reset, disposal and unrelated input invalidate
+the offer; history cannot revive it. Decline clears locally. Failed transcript
+save retains a same-choice retry, preserving original numbering. The choice
+question/instructions are transient UI; only evidence, member selection and
+host acknowledgement follow normal history retention. No schema change, new
+dependency or automatic meal save. Scope: `assistant-companion-bundle.md`.
+
 Conversation refresh correction (2026-10-16): a vault snapshot equivalent to the
 in-memory Chat after the existing message-count/text normalization must not
 invalidate its live assistant request or pending continuation. An unchanged
