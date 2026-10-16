@@ -2,6 +2,37 @@
 
 ## Shared routing recognition
 
+Conversation refresh correction (2026-10-16): a vault snapshot equivalent to the
+in-memory Chat after the existing message-count/text normalization must not
+invalidate its live assistant request or pending continuation. An unchanged
+last-loaded snapshot must also preserve newer unsaved local turns. Compare canonical
+snapshots rather than raw transcript lists. Genuine changed/removed/expired
+conversations, lock and clear still invalidate request identity; the stale-result
+delivery gate stays authoritative. This changes synchronization, not encrypted
+record format or retention limits.
+
+Bare meal statements (approved 2026-10-15, in development) use a distinct typed
+consumption probe: one saved-dish search, exact match review or bounded choice,
+then normal assistant intent selection on an empty/uncertain result using the
+original text (2026-10-16 correction). Suppress the saved-consumption probe for
+that continuation so the same search cannot loop. Only a positive native
+meal-draft intent enters the existing timed extraction path; a non-food statement
+may receive an ordinary response or clarification. A failed saved lookup alone
+is not evidence that the utterance describes food.
+Mandatory saved-search state must clear before the one-shot fallback. Probe
+permission is host-owned, names remain opaque/local and final Save is unchanged.
+Both MiniLM and native Gemma tool paths need the same result contract. Scope:
+`assistant-companion-bundle.md`.
+
+Saved-dish language extension (2026-10-15, in development): bounded natural and
+polite command frames may reuse the existing recall or unsaved-draft operation.
+Local command corrections preserve the opaque named-dish slot and never send it
+to the OS checker. The named span is masked only in MiniLM classifier input;
+actual query, host binding, original Chat/Gemma wording and review retain it.
+Recall/draft permission, fresh exact query binding, ambiguity
+choice, current-vault prefill and final member Save remain separate. See
+`assistant-companion-bundle.md`; no automatic save or inferred usual dish.
+
 Production Chat correction revision (2026-10-15): after exact recognition misses,
 a bounded local planner may combine up to three corrections/abbreviations for an
 existing read, validating at most 64 complete candidates. Broader corrections

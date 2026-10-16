@@ -35,6 +35,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
 import java.time.Instant
+import java.time.LocalDate
 import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -222,6 +223,8 @@ class ModelLifecycle(
     private var pendingAssistantStyle: AssistantStyle? = null
     private var pendingPrivateAgentToolName: String? = null
     private var pendingPrivateAgentRequiredTool: RequiredAgentTool? = null
+    private var pendingPrivateAgentCompanion: CompanionAssistantPolicy.Resolution? = null
+    private var pendingSavedConsumptionFallback = false
     private var pendingMiniLmMealRead = false
     private var pendingMiniLmCompanion: CompanionAssistantPolicy.Resolution? = null
     private var companionNavigation: CompanionNavigationRequest? = null
@@ -565,6 +568,8 @@ class ModelLifecycle(
         }
         if (activeInference?.isDone == false || pendingPrivateAgentToolName != null) return statusLocked()
         pendingMiniLmCompanion = null
+        pendingPrivateAgentCompanion = null
+        pendingSavedConsumptionFallback = false
         companionNavigation = null
         pendingAssistantStyle?.let {
             // The existing native conversation was created with the previous style prompt.
@@ -621,6 +626,9 @@ class ModelLifecycle(
                 CompanionAssistantPolicy.IntentKind.SAVED_DRAFT -> companion.query?.let { query ->
                     CompanionAssistantPolicy.savedDishReply(response, query, draft = true)
                 }
+                CompanionAssistantPolicy.IntentKind.SAVED_CONSUMPTION_PROBE -> companion.query?.let { query ->
+                    CompanionAssistantPolicy.savedDishReply(response, query, draft = true, consumptionProbe = true)
+                }
                 else -> MiniLmMealReadPolicy.validatedFastReadReply(required, response)
             } }
             val expectedDate = requiredTool?.targetDate?.toString()
@@ -630,6 +638,7 @@ class ModelLifecycle(
             pendingMiniLmCompanion = null
             pendingPrivateAgentToolName = null
             pendingPrivateAgentRequiredTool = null
+            pendingPrivateAgentCompanion = null
             coachToolCall = null
             coachStreamingReply = null
             coachReply = reply
@@ -690,6 +699,10 @@ class ModelLifecycle(
                         "Assistant route: MiniLM saved-dish draft; Gemma generation skipped."
                     companion?.kind == CompanionAssistantPolicy.IntentKind.SAVED_DRAFT ->
                         "Assistant route: MiniLM saved-dish draft; host validation rejected the result."
+                    companion?.kind == CompanionAssistantPolicy.IntentKind.SAVED_CONSUMPTION_PROBE && reply != null ->
+                        "Assistant route: MiniLM saved-dish consumption check; Gemma generation skipped."
+                    companion?.kind == CompanionAssistantPolicy.IntentKind.SAVED_CONSUMPTION_PROBE ->
+                        "Assistant route: MiniLM saved-dish consumption check; host validation rejected the result."
                     expectedName == "read_weight" && reply != null ->
                         "Assistant route: MiniLM weight-history read; Gemma generation skipped."
                     expectedName == "read_weight" ->
@@ -728,6 +741,8 @@ class ModelLifecycle(
         val lifetime = privateAgentConversationLifetime
         val expectedName = pendingPrivateAgentToolName
         val requiredTool = pendingPrivateAgentRequiredTool
+        val hostCompanion = pendingPrivateAgentCompanion
+        val suppressBareConsumptionProbe = pendingSavedConsumptionFallback
         val expectedDate = requiredTool?.targetDate?.toString()
         if (
             state != "loaded" || conversation == null || lifetime == null || !conversation.isAlive ||
@@ -750,6 +765,8 @@ class ModelLifecycle(
         }
         pendingPrivateAgentToolName = null
         pendingPrivateAgentRequiredTool = null
+        pendingPrivateAgentCompanion = null
+        pendingSavedConsumptionFallback = false
         coachToolCall = null
         coachReply = null
         coachStreamingReply = null
@@ -768,7 +785,68 @@ class ModelLifecycle(
             requestId = requestId,
         )
         activeInference = executor.submit {
-            runPrivateAgentToolResult(conversation, lifetime, toolName, response, requestId, requiredTool)
+            runPrivateAgentToolResult(
+                conversation, lifetime, toolName, response, requestId, requiredTool, hostCompanion,
+                suppressBareConsumptionProbe,
+            )
+        }
+        return statusLocked()
+    }
+
+    /** One-shot no-match handoff: resume normal intent selection with the unchanged member text. */
+    @Synchronized
+    fun resumeSavedDishProbeAsNormalAgentTurn(
+        expectedRequestId: Long,
+        call: PrivateCoachToolCall,
+        originalQuestion: String,
+    ): ModelStatus {
+        val currentCompanion = if (pendingMiniLmMealRead) pendingMiniLmCompanion else pendingPrivateAgentCompanion
+        val currentRequired = pendingPrivateAgentRequiredTool
+        if (
+            assistantRequestId != expectedRequestId || state != "loaded" ||
+            assistantOperation != "agent_waiting_tool" || coachToolCall != call ||
+            pendingPrivateAgentToolName != "search_saved_dishes" ||
+            call.intent != "search_saved_dishes" ||
+            call.hostCompanionKind != CompanionAssistantPolicy.IntentKind.SAVED_CONSUMPTION_PROBE ||
+            currentCompanion?.kind != CompanionAssistantPolicy.IntentKind.SAVED_CONSUMPTION_PROBE ||
+            currentRequired?.name != "search_saved_dishes" || currentRequired.query != call.query ||
+            originalQuestion.trim().length !in 1..600
+        ) return statusLocked()
+        val originalProbe = CompanionAssistantPolicy.resolve(null, originalQuestion, null, LocalDate.now())
+        if (originalProbe?.kind != CompanionAssistantPolicy.IntentKind.SAVED_CONSUMPTION_PROBE ||
+            originalProbe.query != currentRequired.query
+        ) return statusLocked()
+        val loadedEngine = engine?.takeIf { it.isInitialized() } ?: return statusLocked()
+
+        // Do not use the public proposal guard here: the tool-producing inference can still be
+        // returning while its status is observed. The serial executor queues this fresh request
+        // behind it, and the new request ID makes the old result stale before it can be applied.
+        clearPrivateAgentConversationLocked()
+        pendingMiniLmMealRead = false
+        pendingMiniLmCompanion = null
+        pendingPrivateAgentCompanion = null
+        pendingSavedConsumptionFallback = false
+        pendingPrivateAgentToolName = null
+        pendingPrivateAgentRequiredTool = null
+        miniLmReadFollowUpScope = null
+        state = "thinking"
+        assistantProposal = null
+        assistantDiagnostic = null
+        coachReply = null
+        coachStreamingReply = null
+        coachDiagnostic = null
+        coachToolCall = null
+        assistantOperation = "agent_turn"
+        val nextRequestId = ++assistantRequestSequence
+        assistantRequestId = nextRequestId
+        activeInference = executor.submit {
+            runPrivateAgentTurn(
+                loadedEngine = loadedEngine,
+                memberText = originalQuestion,
+                history = emptyList(),
+                requestId = nextRequestId,
+                suppressBareConsumptionProbe = true,
+            )
         }
         return statusLocked()
     }
@@ -1495,6 +1573,7 @@ class ModelLifecycle(
         requestId: Long,
         selectedMealId: String? = null,
         followUpScope: MiniLmMealReadPolicy.FollowUpScope? = null,
+        suppressBareConsumptionProbe: Boolean = false,
     ) {
         if (!beginPrivateAgentWorker(loadedEngine, requestId)) return
         val startedAt = SystemClock.elapsedRealtime()
@@ -1522,7 +1601,10 @@ class ModelLifecycle(
                 }
                 return
             }
-            val hostRequiredTool = MetriaAgentGroundingPolicy.requiredTool(memberText, history, queryToday, selectedMealId)
+            val hostRequiredTool = MetriaAgentGroundingPolicy.requiredTool(
+                memberText, history, queryToday, selectedMealId,
+                allowBareConsumptionProbe = !suppressBareConsumptionProbe,
+            )
             hostRequiredTool?.let {
                 assistantTraceStore?.record(
                     "tool_required", "agent_turn", "waiting",
@@ -1537,6 +1619,7 @@ class ModelLifecycle(
                 selectedMealId = selectedMealId,
                 today = queryToday,
                 followUpScope = followUpScope,
+                allowBareConsumptionProbe = !suppressBareConsumptionProbe,
             ) ?: navigationIntent?.let { intent ->
                 MiniLmMealReadPolicy.ResolvedRead(
                     RequiredAgentTool("host_navigation", query = intent.destination?.name),
@@ -1558,6 +1641,7 @@ class ModelLifecycle(
                             engine === loadedEngine && assistantRequestId == requestId
                         }
                     },
+                    allowBareConsumptionProbe = !suppressBareConsumptionProbe,
                 )
                 if (workerThread.isInterrupted || synchronized(this) {
                         engine !== loadedEngine || assistantRequestId != requestId
@@ -1632,6 +1716,7 @@ class ModelLifecycle(
                         CompanionAssistantPolicy.IntentKind.GOAL_REMAINING -> "goal_remaining"
                         CompanionAssistantPolicy.IntentKind.SAVED_RECALL -> "saved_dish_recall"
                         CompanionAssistantPolicy.IntentKind.SAVED_DRAFT -> "saved_dish_draft"
+                        CompanionAssistantPolicy.IntentKind.SAVED_CONSUMPTION_PROBE -> "saved_dish_draft"
                         CompanionAssistantPolicy.IntentKind.NAVIGATION -> "navigation"
                         null -> null
                     }
@@ -1683,6 +1768,7 @@ class ModelLifecycle(
                         clearPrivateAgentConversationLocked()
                         pendingPrivateAgentToolName = null
                         pendingPrivateAgentRequiredTool = null
+                        pendingPrivateAgentCompanion = null
                         pendingMiniLmMealRead = false
                         pendingMiniLmCompanion = null
                         coachToolCall = null
@@ -1834,14 +1920,21 @@ class ModelLifecycle(
             }
             var response = sendPrivateAgentMessage(conversation, conversationLifetime, Message.user(memberText), requestId)
             val selectedTool = response.toolCalls.singleOrNull()?.let(MetriaNativeToolCallAdapter::adapt)
-            if (
-                requiredTool != null && response.toolCalls.size <= 1 &&
-                !requiredTool.accepts(selectedTool)
-            ) {
+            val fallbackToolDecision = if (suppressBareConsumptionProbe) {
+                SavedConsumptionFallbackPolicy.toolDecision(selectedTool)
+            } else SavedConsumptionFallbackPolicy.ToolDecision.NORMAL
+            if (response.toolCalls.size <= 1 && (
+                (requiredTool != null && !requiredTool.accepts(selectedTool)) ||
+                    fallbackToolDecision == SavedConsumptionFallbackPolicy.ToolDecision.RETRY_WITHOUT_SAVED_SEARCH
+                )) {
                 response = sendPrivateAgentMessage(
                     conversation,
                     conversationLifetime,
-                    Message.user(requiredTool.retryInstruction),
+                    Message.user(
+                        if (fallbackToolDecision == SavedConsumptionFallbackPolicy.ToolDecision.RETRY_WITHOUT_SAVED_SEARCH) {
+                            SavedConsumptionFallbackPolicy.retryInstruction()
+                        } else requiredTool!!.retryInstruction,
+                    ),
                     requestId,
                 )
             }
@@ -1862,7 +1955,10 @@ class ModelLifecycle(
                 response.toolCalls.singleOrNull()?.let(MetriaNativeToolCallAdapter::adapt), requiredTool, memberText,
             )
             if (mealDescription != null) {
-                runNativeMealDraft(loadedEngine, conversation, mealDescription, requestId, startedAt)
+                runNativeMealDraft(
+                    loadedEngine, conversation, mealDescription, requestId, startedAt,
+                    agentContinuation = suppressBareConsumptionProbe,
+                )
                 return
             }
             consumePrivateAgentResponse(
@@ -1872,7 +1968,9 @@ class ModelLifecycle(
                 requestId,
                 startedAt,
                 requiredTool,
+                hostCompanion = resolvedMiniLmRead?.companion,
                 factCorrectionAttempted = factCorrectionAttempted,
+                suppressBareConsumptionProbe = suppressBareConsumptionProbe,
             )
         } catch (error: Exception) {
             synchronized(this) {
@@ -1890,6 +1988,7 @@ class ModelLifecycle(
                     } else {
                         "The private conversation was interrupted. Try that message again."
                     }
+                    if (suppressBareConsumptionProbe) assistantOperation = "agent_reply"
                     reason = if (error is PrivateAgentTimeoutException) {
                         "Native local conversation timed out safely; LiteRT remains loaded."
                     } else {
@@ -1914,10 +2013,11 @@ class ModelLifecycle(
         description: String,
         requestId: Long,
         startedAt: Long,
+        agentContinuation: Boolean = false,
     ) {
         val draftLifetime = synchronized(this) {
             if (engine !== loadedEngine || assistantRequestId != requestId || privateAgentConversation !== conversation) return
-            assistantOperation = "meal"
+            assistantOperation = if (agentContinuation) "agent_meal_draft" else "meal"
             assistantProposal = null
             assistantDiagnostic = null
             coachToolCall = null
@@ -1957,6 +2057,10 @@ class ModelLifecycle(
                 assistantProposal = proposal
                 assistantDiagnostic = if (proposal == null) "Local analysis completed, but its draft was not safe to display. Try clearer details." else null
                 reason = if (proposal == null) "Native meal draft was rejected safely." else "Local meal draft ready for review. Nothing was saved."
+                if (agentContinuation && proposal == null) {
+                    assistantOperation = "agent_reply"
+                    coachDiagnostic = assistantDiagnostic
+                }
                 diagnostics = measurement("native meal draft", startedAt)
                 // Never retain proposal JSON or a pending tool in the conversational context.
                 // The worker lease keeps native cancellation/close safe until this turn exits.
@@ -1977,6 +2081,8 @@ class ModelLifecycle(
         response: Map<String, Any?>,
         requestId: Long,
         requiredTool: RequiredAgentTool?,
+        hostCompanion: CompanionAssistantPolicy.Resolution?,
+        suppressBareConsumptionProbe: Boolean = false,
     ) {
         val loadedEngine = synchronized(this) { engine } ?: return
         if (!beginPrivateAgentWorker(loadedEngine, requestId, lifetime)) return
@@ -2052,10 +2158,12 @@ class ModelLifecycle(
                 message,
                 requestId,
                 startedAt,
+                hostCompanion = hostCompanion,
                 factEvidence = evidence,
                 factCorrectionAttempted = factCorrectionAttempted,
                 groundedFallback = MetriaProgressReplyFallback.from(toolName, requiredTool, response)
                     ?: MetriaNutritionReplyFallback.from(requiredTool, response),
+                suppressBareConsumptionProbe = suppressBareConsumptionProbe,
             )
         } catch (error: Exception) {
             synchronized(this) {
@@ -2073,6 +2181,7 @@ class ModelLifecycle(
                     } else {
                         "Metria could not finish that local answer. Please ask again."
                     }
+                    if (suppressBareConsumptionProbe) assistantOperation = "agent_reply"
                     reason = if (error is PrivateAgentTimeoutException) {
                         "Native tool continuation timed out safely."
                     } else {
@@ -2098,9 +2207,11 @@ class ModelLifecycle(
         requestId: Long,
         startedAt: Long,
         requiredTool: RequiredAgentTool? = null,
+        hostCompanion: CompanionAssistantPolicy.Resolution? = null,
         factEvidence: MetriaAgentFactEvidence? = null,
         factCorrectionAttempted: Boolean = false,
         groundedFallback: String? = null,
+        suppressBareConsumptionProbe: Boolean = false,
     ) {
         synchronized(this) {
             if (engine !== loadedEngine || assistantRequestId != requestId || privateAgentConversation !== conversation) return
@@ -2122,6 +2233,9 @@ class ModelLifecycle(
                     val adapted = MetriaNativeToolCallAdapter.adapt(nativeCall)
                     if (
                         adapted == null || adapted.intent == "draft_meal" || privateAgentToolRounds > 2 ||
+                        (suppressBareConsumptionProbe &&
+                            SavedConsumptionFallbackPolicy.toolDecision(adapted) ==
+                            SavedConsumptionFallbackPolicy.ToolDecision.RETRY_WITHOUT_SAVED_SEARCH) ||
                         (requiredTool != null && !requiredTool.accepts(adapted))
                     ) {
                         assistantTraceStore?.record(
@@ -2139,6 +2253,11 @@ class ModelLifecycle(
                     } else {
                         pendingPrivateAgentToolName = nativeCall.name
                         pendingPrivateAgentRequiredTool = requiredTool
+                        pendingPrivateAgentCompanion = hostCompanion?.takeIf { companion ->
+                            companion.requiredTool?.name == nativeCall.name &&
+                                (companion.query == null || companion.query == adapted.query)
+                        }
+                        pendingSavedConsumptionFallback = suppressBareConsumptionProbe
                         assistantTraceStore?.record(
                             "tool_required",
                             "agent_turn",
@@ -2147,7 +2266,9 @@ class ModelLifecycle(
                             period = adapted.period ?: "none",
                             requestId = requestId,
                         )
-                        coachToolCall = adapted
+                        coachToolCall = adapted.copy(
+                            hostCompanionKind = pendingPrivateAgentCompanion?.kind,
+                        )
                         coachReply = null
                         coachDiagnostic = null
                         assistantOperation = "agent_waiting_tool"
@@ -2203,6 +2324,8 @@ class ModelLifecycle(
                     }
                     pendingPrivateAgentToolName = null
                     pendingPrivateAgentRequiredTool = null
+                    pendingPrivateAgentCompanion = null
+                    pendingSavedConsumptionFallback = false
                     privateAgentToolRounds = 0
                     if (accepted == null || usedFallback || conversation.getTokenCount() >= 3_300) clearPrivateAgentConversationLocked()
                 }
@@ -2331,6 +2454,8 @@ class ModelLifecycle(
         if (conversation != null && lifetime != null) lifetime.retire()
         pendingPrivateAgentToolName = null
         pendingPrivateAgentRequiredTool = null
+        pendingPrivateAgentCompanion = null
+        pendingSavedConsumptionFallback = false
         pendingMiniLmMealRead = false
         privateAgentToolRounds = 0
     }

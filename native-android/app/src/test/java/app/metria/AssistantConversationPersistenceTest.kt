@@ -64,6 +64,33 @@ class AssistantConversationPersistenceTest {
     }
 
     @Test
+    fun reviewCanReopenSameDraftButConcurrentTapsCannotNavigateTwice() = runBlocking {
+        val persistence = AssistantConversationPersistence()
+        val enteredSave = CompletableDeferred<Unit>()
+        val releaseSave = CompletableDeferred<Unit>()
+        val transcript = listOf(member, reply)
+        var reviews = 0
+        val first = async {
+            persistence.persistBeforeNavigation(42, transcript, { true }, {
+                enteredSave.complete(Unit)
+                releaseSave.await()
+                true
+            }, { reviews++; true }, repeatable = true)
+        }
+        enteredSave.await()
+        assertEquals(ConversationNavigationResult.DUPLICATE,
+            persistence.persistBeforeNavigation(42, transcript, { true }, { true },
+                { reviews++; true }, repeatable = true))
+        releaseSave.complete(Unit)
+        assertEquals(ConversationNavigationResult.COMPLETED, first.await())
+        assertEquals(1, reviews)
+        assertEquals(ConversationNavigationResult.COMPLETED,
+            persistence.persistBeforeNavigation(42, transcript, { true }, { true },
+                { reviews++; true }, repeatable = true))
+        assertEquals(2, reviews)
+    }
+
+    @Test
     fun clearInvalidatesDebouncedSnapshotBeforeItCanRunAfterClear() = runBlocking {
         val persistence = AssistantConversationPersistence()
         val beforeDebounceTicket = assertNotNullTicket(persistence.captureWriteTicket())

@@ -1,5 +1,74 @@
 # Metria product plan
 
+Current checkpoint approved for commit and push to `main` (2026-10-16): natural
+saved-dish requests, normal-intent fallback and timed drafting, retained draft
+acknowledgements, request diagnostics and canonical conversation refresh.
+Independent reviews and the complete 583-test/debug/release/lint gate pass.
+Named phone checks cover non-food normal response, unsaved draft, saved-dish
+MiniLM review and message retention across the minute refresh. Broader lifecycle,
+ambiguity, failed-save and accessibility gates stay open in the companion spec.
+The historical notes below preserve how the checkpoint was reached; earlier
+pending-approval and failed-test notes are superseded only by the named results.
+
+Confirmed live-delivery cause (2026-10-16): the meal retry reconciles request 2,
+then `conversation_sync_normalized` clears its identity during inference. A
+canonical-equivalent saved snapshot is being mistaken for different Chat history.
+Normalized-equivalence preservation passed independent review and the
+583-test/debug/release gate, with genuine change/expiry/lock/clear invalidation
+intact; no stale-result gate bypass. Member now confirms both requested meal
+cases work. Trace confirms unsaved Gemma draft delivery and saved MiniLM read
+delivery, with no refresh reset/mismatch across the successful sequence.
+Named regression is closed; broader acceptance gates remain documented open.
+
+Current phone blocker (2026-10-16): the non-food test reaches a validated native
+reply, but Chat rejects its request identity. The 577-test diagnostic build is
+installed to trace fixed reconciliation/sync-reset codes without message content.
+Actual identity-loss cause and visible non-food acceptance remain open; stale
+guards are intact and no delivery fix is claimed.
+The diagnostic replay now shows a normal response with reconciled continuation,
+accepted audit and Chat consumption; no reset/mismatch on that turn. The earlier
+failure remains unexplained. Ordinary meal/exact saved regressions remain pending.
+
+Review fixes approved 2026-10-16 are implemented and independently reviewed;
+576-test/debug/release gate passed, phone checks pending: normal intent selection once
+after uncertain/no-match saved probes, with repeat-probe suppression and the
+existing timed native draft path only after positive meal intent.
+
+Checkpoint review found an open bare-consumption gap: some non-food `I had ...`
+statements are masked then forced into meal extraction after no saved match.
+Fix normal-intent fallback without a repeated saved probe before treating the
+slice as commit-ready. Existing exact-meal and retention phone passes remain
+valid; no source change or new build was made during this review.
+
+Bare consumption probe (approved 2026-10-15) is implemented and passes the
+570-test/debug/release gate; bare exact-name Review/Discard phone acceptance
+passes with MiniLM and Gemma skipped: “I had san jacobo”
+tries a saved dish without special keywords, offers review/choice for matches
+and continues ordinary meal drafting on no match. Original text, opaque names,
+one-shot cleared-search handoff and final member Save remain required. Scope:
+`assistant-companion-bundle.md`. No new commit/push authorization.
+
+The ordinary unsaved-meal draft phone check also worked, but leaving Review
+lost the transient assistant card and left only the member question. A scoped
+historical acknowledgement and persist-before-review fix passed independent
+review and the 573-test/debug/release gate, and is installed for acceptance;
+no draft payload persistence or missing-answer gate bypass is introduced.
+The member confirms Review/leave-without-saving retains the assistant message,
+including after closing/reopening Chat. Broader lifecycle gates remain open.
+
+Natural saved-dish recognition extension (approved 2026-10-15) passed independent
+review and the 568-test/debug/release gate; installed in place and launched
+from committed checkpoint `6cfb4a0`: polite/natural recall and consumption frames,
+bounded command corrections with opaque names, existing review-only draft and
+ambiguity choice. No automatic save, inferred usual dish, new dependency or
+commit/push authorization. Scope: `assistant-companion-bundle.md`. The missing
+answer issue remains explicitly deferred. Member-observed functionality passed;
+retained route fell back on MiniLM margin. A classifier-only named-slot masking
+follow-up passed review and the 568-test/build gate and is installed; fast
+saved-dish recall and consumption/review/discard phone checks both pass with
+MiniLM, fresh saved-dish searches and Gemma skipped. Broader acceptance gates
+remain open; this slice is uncommitted.
+
 Member-approved Chat correction revision (2026-10-15) passed review and the
 562-test/debug/release gate: bounded
 multi-word corrections and contextual abbreviations, complete-request validation,
@@ -26,8 +95,9 @@ skipped by Chat's current-request gate. Why identity changed remains unproven;
 do not bypass stale-result checks. The member explicitly deferred this delivery
 investigation and authorized a full checkpoint review followed by commit/push.
 Named multi-word phone acceptance is recorded above; remaining provider,
-regression and accessibility gates are not marked passed. Full checkpoint
-recognition/runtime/privacy reviews found no blockers; commit/push is authorized.
+regression and accessibility gates are not marked passed. That reviewed
+checkpoint was committed and pushed as `6cfb4a0`; its authorization does not cover
+committing the new saved-dish slice above.
 
 ## Goal
 

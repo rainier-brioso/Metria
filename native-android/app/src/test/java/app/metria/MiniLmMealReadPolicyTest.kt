@@ -289,8 +289,19 @@ class MiniLmMealReadPolicyTest {
             null, "I had my saved dish weightt", null, today,
         ))
         assertEquals("saved_draft", savedDraftNameIsNeverRewritten.classifierKey)
-        assertEquals("i had my saved dish weightt", savedDraftNameIsNeverRewritten.classifierText)
+        assertEquals("i had my saved dish name", savedDraftNameIsNeverRewritten.classifierText)
+        assertEquals("weightt", savedDraftNameIsNeverRewritten.requiredTool.query)
         assertEquals("weightt", savedDraftNameIsNeverRewritten.companion?.query)
+        assertTrue(MiniLmMealReadPolicy.isMiniLmRouterInputInScope(
+            savedDraftNameIsNeverRewritten.classifierText, "saved_draft",
+        ))
+        val postfixRecall = requireNotNull(MiniLmMealReadPolicy.resolveReadRequest(
+            null, "Find my weightt dish", null, today,
+        ))
+        assertEquals("weightt", postfixRecall.requiredTool.query)
+        assertTrue(MiniLmMealReadPolicy.isMiniLmRouterInputInScope(
+            postfixRecall.classifierText, "saved_recall",
+        ))
         assertNull(MiniLmMealReadPolicy.resolveReadRequest(
             null, "show me an oberview of my day today", "selected-meal", today,
         ))

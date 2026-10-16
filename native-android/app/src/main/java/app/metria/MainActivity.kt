@@ -229,6 +229,12 @@ class MainActivity : FragmentActivity() {
         response: Map<String, Any?>,
     ): ModelStatus = modelLifecycle.continuePrivateAgentTool(toolName, response)
 
+    fun resumeSavedDishProbeAsNormalAgentTurn(
+        expectedRequestId: Long,
+        call: PrivateCoachToolCall,
+        originalQuestion: String,
+    ): ModelStatus = modelLifecycle.resumeSavedDishProbeAsNormalAgentTurn(expectedRequestId, call, originalQuestion)
+
     fun completeCompanionNavigation(requestId: Long): ModelStatus? =
         modelLifecycle.completeCompanionNavigation(requestId)
 

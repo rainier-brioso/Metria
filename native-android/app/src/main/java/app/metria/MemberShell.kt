@@ -215,7 +215,17 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                 // ModelLifecycle is process-local; restore the persisted phrasing style after
                 // biometric unlock or an activity/process recreation without touching history.
                 activity.setAssistantStyle(current.assistantStyle)
+                val requestBeforeSync = assistantConversationSession.activeRequestId.value
+                val normalizedSnapshot = BuildConfig.DEBUG &&
+                    assistantConversationSession.matchesPersistedSnapshot(current.activeConversation)
                 assistantConversationSession.synchronize(current.activeConversation, current.conversationExpired)
+                if (requestBeforeSync != null && assistantConversationSession.activeRequestId.value == null) {
+                    activity.recordAssistantReplyDelivery(requestBeforeSync, when {
+                        current.conversationExpired -> "conversation_sync_expired"
+                        normalizedSnapshot -> "conversation_sync_normalized"
+                        else -> "conversation_sync_changed"
+                    })
+                }
                 if (activity.consumeFirstGoalOffer() && voiceDraft == null && !addSheet) {
                     showGoalWelcomeInitially = true
                     editNutritionTargets = true
@@ -663,6 +673,7 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                             activity.startPrivateAgentTurn(question, history, selectedId).also { modelStatus = it }
                         },
                         continueAgentTool = activity::continuePrivateAgentTool,
+                        resumeSavedDishProbe = activity::resumeSavedDishProbeAsNormalAgentTurn,
                         completeCompanionNavigation = { requestId ->
                             if (status is EncryptedVault.Status.Unlocked &&
                                 assistantConversationSession.isCurrentNavigationRequest(requestId)) {
@@ -1585,7 +1596,7 @@ private class PrivateAssistantConversationSession(
 ) {
     private val persistence = AssistantConversationPersistence()
     private var hydrated = false
-    private var loadedConversationUpdatedAt: Instant? = null
+    private var loadedConversationRecord: PrivateConversationRecord? = null
     val input = mutableStateOf(initialInput)
     val submittedQuestion = mutableStateOf(initialSubmittedQuestion)
     val submittedContext = mutableStateOf(initialSubmittedContext)
@@ -1629,8 +1640,9 @@ private class PrivateAssistantConversationSession(
         isCurrent: () -> Boolean,
         save: suspend (List<PrivateConversationMessage>) -> Boolean,
         navigate: (Long) -> Boolean,
+        repeatable: Boolean = false,
     ): ConversationNavigationResult = persistence.persistBeforeNavigation(
-        requestId, transcript, isCurrent, save, navigate,
+        requestId, transcript, isCurrent, save, navigate, repeatable,
     )
 
     fun isCurrentNavigationRequest(requestId: Long): Boolean =
@@ -1800,7 +1812,7 @@ private class PrivateAssistantConversationSession(
         pendingContinuationToken = null
         messages.value = initialPrivateChatMessages()
         hydrated = true
-        loadedConversationUpdatedAt = null
+        loadedConversationRecord = null
     }
 
     fun clearForLock() {
@@ -1809,7 +1821,14 @@ private class PrivateAssistantConversationSession(
     }
 
     fun synchronize(record: PrivateConversationRecord?, expired: Boolean) {
-        if (expired) {
+        when (AssistantConversationHydrationPolicy.decide(
+            hydrated = hydrated,
+            previouslyLoaded = loadedConversationRecord,
+            localMessages = persistedMessageSnapshot(),
+            persisted = record,
+            expired = expired,
+        )) {
+        AssistantConversationHydrationDecision.EXPIRED -> {
             reset()
             messages.value = initialPrivateChatMessages() + PrivateChatMessage(
                 "Your previous private conversation expired after 24 hours of inactivity. This is a new conversation.",
@@ -1817,32 +1836,44 @@ private class PrivateAssistantConversationSession(
             )
             return
         }
-        if (hydrated && loadedConversationUpdatedAt == record?.updatedAt) return
+        AssistantConversationHydrationDecision.KEEP_LOCAL -> {
+            hydrated = true
+            loadedConversationRecord = record
+            return
+        }
+        AssistantConversationHydrationDecision.RESTORE_PERSISTED -> Unit
+        }
         val restored = record?.messages?.map { message ->
             PrivateChatMessage(message.text, message.fromMember, message.localEvidence, message.savedMealId)
         }
-        if (!hydrated || (restored != null && restored != messages.value)) {
-            retainedFailureAnnouncementRequestId.value = null
-            input.value = ""
-            submittedQuestion.value = ""
-            submittedContext.value = ""
-            activeRequestId.value = null
-            handledToolRequestId.value = null
-            handledReplyRequestId.value = null
-            savedWeightId.value = null
-            voiceMessage.value = null
-            pendingSubmissionGate.cancel()
-            pendingSubmission.value = null
-            pendingSubmissionJob?.cancel()
-            pendingSubmissionJob = null
-            pendingContinuationGate.cancel(pendingContinuationToken)
-            pendingContinuation.value = false
-            pendingContinuationToken = null
-            messages.value = restored?.ifEmpty(::initialPrivateChatMessages) ?: initialPrivateChatMessages()
-        }
+        retainedFailureAnnouncementRequestId.value = null
+        input.value = ""
+        submittedQuestion.value = ""
+        submittedContext.value = ""
+        activeRequestId.value = null
+        handledToolRequestId.value = null
+        handledReplyRequestId.value = null
+        savedWeightId.value = null
+        voiceMessage.value = null
+        pendingSubmissionGate.cancel()
+        pendingSubmission.value = null
+        pendingSubmissionJob?.cancel()
+        pendingSubmissionJob = null
+        pendingContinuationGate.cancel(pendingContinuationToken)
+        pendingContinuation.value = false
+        pendingContinuationToken = null
+        messages.value = restored?.ifEmpty(::initialPrivateChatMessages) ?: initialPrivateChatMessages()
         hydrated = true
-        loadedConversationUpdatedAt = record?.updatedAt
+        loadedConversationRecord = record
     }
+
+    /** Comparison only for fixed debug provenance; no transcript content is logged. */
+    fun matchesPersistedSnapshot(record: PrivateConversationRecord?): Boolean = record != null &&
+        PrivateConversationPolicy.updated(persistedMessageSnapshot(), record.updatedAt)?.messages == record.messages
+
+    private fun persistedMessageSnapshot(): List<PrivateConversationMessage> = messages.value.map {
+            PrivateConversationMessage(it.text, it.fromMember, it.localEvidence, it.savedMealId)
+        }
 }
 
 @Composable
@@ -1876,6 +1907,7 @@ private fun PrivateAssistantChat(
     askCoach: (String, PrivateCoachSnapshot, String) -> ModelStatus,
     startAgent: (String, List<PrivateConversationMessage>) -> ModelStatus,
     continueAgentTool: (String, Map<String, Any?>) -> ModelStatus,
+    resumeSavedDishProbe: (Long, PrivateCoachToolCall, String) -> ModelStatus,
     understandCoach: (String, String) -> ModelStatus,
     understandCoachAudio: (java.io.File, String) -> ModelStatus,
     cancelAssistant: () -> Unit,
@@ -1930,6 +1962,9 @@ private fun PrivateAssistantChat(
     }
     fun trackPendingRequest(token: Long, result: ModelStatus) {
         activeAssistantRequestId = conversationSession.reconcilePendingSubmission(token, result)
+        result.assistantRequestId?.let {
+            recordReplyDelivery(it, if (activeAssistantRequestId == it) "submission_reconciled" else "submission_rejected")
+        }
     }
     fun trackNativeRequest(block: () -> ModelStatus) {
         val previousRequestId = activeAssistantRequestId
@@ -1944,13 +1979,19 @@ private fun PrivateAssistantChat(
                     withContext(Dispatchers.Default) { block() }
                 } ?: return@launch
                 val stillPending = conversationSession.isPendingContinuation(token)
-                if (!stillPending) return@launch
+                if (!stillPending) {
+                    result.assistantRequestId?.let { recordReplyDelivery(it, "continuation_cancelled") }
+                    return@launch
+                }
                 val requestId = conversationSession.reconcilePendingContinuation(
                     token,
                     previousRequestId,
                     result,
                 )
                 activeAssistantRequestId = requestId
+                result.assistantRequestId?.let {
+                    recordReplyDelivery(it, if (requestId == it) "continuation_reconciled" else "continuation_rejected")
+                }
                 if (requestId == null && stillPending) {
                     conversationSession.recoverableDiagnostic.value = continuationFailureDiagnostic(result.coachDiagnostic)
                 } else if (result.state == "loaded" && result.coachDiagnostic != null) {
@@ -2357,7 +2398,21 @@ private fun PrivateAssistantChat(
                 val replyLanguage = coachReplyLanguage(submittedQuestion, submittedConversationContext)
                 val matches = PersonalDishMatcher.search(PersonalDishQuery(name = action.query), personalDishes)
                 val boundedMatches = MetriaAgentResultBounds.latest(matches)
+                val consumptionProbe = call.hostCompanionKind ==
+                    CompanionAssistantPolicy.IntentKind.SAVED_CONSUMPTION_PROBE
+                if (consumptionProbe && CompanionAssistantPolicy.savedDishProbeDisposition(action.query, matches) ==
+                    CompanionAssistantPolicy.SavedDishProbeDisposition.NORMAL_INTENT
+                ) {
+                    savedDishChoices = emptyList()
+                    val requestId = modelStatus.assistantRequestId ?: return@LaunchedEffect
+                    val originalQuestion = submittedQuestion
+                    trackNativeRequest {
+                        resumeSavedDishProbe(requestId, call, originalQuestion)
+                    }
+                    return@LaunchedEffect
+                }
                 val draftIntent = call.hostCompanionKind == CompanionAssistantPolicy.IntentKind.SAVED_DRAFT ||
+                    consumptionProbe ||
                     CompanionAssistantPolicy.resolve(
                         MetriaAgentGroundingPolicy.requiredTool(submittedQuestion, emptyList(), today),
                         submittedQuestion, null, today,
@@ -2434,10 +2489,15 @@ private fun PrivateAssistantChat(
     }
     LaunchedEffect(
         modelStatus.assistantRequestId, modelStatus.coachReply, activeAssistantRequestId,
+        modelStatus.assistantProposal, modelStatus.state,
         modelStatus.companionNavigation?.requestId,
     ) {
         val requestId = modelStatus.assistantRequestId ?: return@LaunchedEffect
-        val reply = modelStatus.coachReply
+        val reply = modelStatus.coachReply ?: mealDraftTranscriptAcknowledgement(
+            activeAssistantRequestId, handledReplyRequestId, requestId, modelStatus.state,
+            modelStatus.assistantProposal != null, modelStatus.assistantOperation,
+            isVaultUnlocked() && !conversationSession.assistantStopping.value,
+        )
         var transcript = messages
         if (reply != null) {
             recordReplyDelivery(requestId, "lifecycle_ready")
@@ -2448,8 +2508,12 @@ private fun PrivateAssistantChat(
                     messages = transcript
                     recordReplyDelivery(requestId, "chat_consumed")
                 }
-                AssistantReplyDeliveryGate.ACTIVE_REQUEST_MISMATCH ->
+                AssistantReplyDeliveryGate.ACTIVE_REQUEST_MISMATCH -> {
                     recordReplyDelivery(requestId, "active_request_mismatch")
+                    val activeId = activeAssistantRequestId
+                    if (activeId == null) recordReplyDelivery(requestId, "chat_active_missing")
+                    else recordReplyDelivery(activeId, "chat_active_request")
+                }
                 AssistantReplyDeliveryGate.ALREADY_HANDLED ->
                     recordReplyDelivery(requestId, "already_handled")
                 null -> Unit
@@ -2716,7 +2780,44 @@ private fun PrivateAssistantChat(
             savedWeightId = null
             messages = messages + PrivateChatMessage("${"%.1f".format(entry.kilograms)} kg entry removed.", false)
         },
-        onReviewMeal = reviewMeal,
+        onReviewMeal = { proposal ->
+            val requestId = modelStatus.assistantRequestId
+            if (requestId != null && modelResultIsCurrent && isVaultUnlocked()) {
+                // Flush the acknowledgement before Review disposes this Chat composition,
+                // including when the member taps faster than the normal persistence debounce.
+                val acknowledgement = mealDraftTranscriptAcknowledgement(
+                    activeAssistantRequestId, handledReplyRequestId, requestId, modelStatus.state,
+                    modelStatus.assistantProposal == proposal, modelStatus.assistantOperation,
+                    !conversationSession.assistantStopping.value,
+                )
+                if (acknowledgement != null) {
+                    handledReplyRequestId = requestId
+                    messages = messages + PrivateChatMessage(acknowledgement, false)
+                }
+                val transcript = messages.map {
+                    PrivateConversationMessage(it.text, it.fromMember, it.localEvidence, it.savedMealId)
+                }
+                assistantScope.launch {
+                    val result = conversationSession.persistBeforeNavigation(
+                        requestId, transcript,
+                        isCurrent = {
+                            isVaultUnlocked() && activeAssistantRequestId == requestId &&
+                                conversationSession.isCurrentNavigationRequest(requestId) &&
+                                modelStatus.assistantRequestId == requestId && modelStatus.state == "loaded" &&
+                                modelStatus.assistantProposal == proposal &&
+                                !conversationSession.assistantStopping.value
+                        },
+                        save = onConversationChanged,
+                        navigate = { reviewMeal(proposal); true },
+                        repeatable = true,
+                    )
+                    if (result == ConversationNavigationResult.SAVE_FAILED) {
+                        conversationSession.recoverableDiagnostic.value =
+                            "Chat could not be saved, so Metria stayed here. Try again."
+                    }
+                }
+            }
+        },
         onOpenSavedMeal = openSavedMeal,
         onReviewSavedDish = { id -> if (savedDishChoices.any { it.id == id }) onReviewSavedDish(id) },
         onDiscardMealDraft = discardMealDraft,
@@ -2736,6 +2837,19 @@ private fun privateConversationContext(messages: List<PrivateChatMessage>): Stri
             text = message.text,
         )
     })
+
+/** Historical acknowledgement only: no draft payload or saved-meal claim enters the transcript. */
+internal fun mealDraftTranscriptAcknowledgement(
+    activeRequestId: Long?,
+    handledRequestId: Long?,
+    resultRequestId: Long?,
+    state: String,
+    hasProposal: Boolean,
+    operation: String?,
+    eligible: Boolean,
+): String? = if (eligible && state == "loaded" && hasProposal && operation in setOf("meal", "agent_meal_draft") &&
+    shouldConsumeAssistantResult(activeRequestId, handledRequestId, resultRequestId)
+) "I prepared a meal draft for review. Only meals you confirm are saved." else null
 
 internal enum class AssistantReplyDeliveryGate {
     CONSUME,

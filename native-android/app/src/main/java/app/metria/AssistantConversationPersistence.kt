@@ -73,10 +73,12 @@ internal class AssistantConversationPersistence {
         isCurrent: () -> Boolean,
         save: suspend (List<PrivateConversationMessage>) -> Boolean,
         navigate: (Long) -> Boolean,
+        repeatable: Boolean = false,
     ): ConversationNavigationResult {
         if (!isCurrent()) return ConversationNavigationResult.STALE
         val ticket = synchronized(monitor) {
-            if (activeClearCount > 0 || requestId <= lastCompletedNavigationRequestId || !navigatingRequestIds.add(requestId)) {
+            if (activeClearCount > 0 || (!repeatable && requestId <= lastCompletedNavigationRequestId) ||
+                !navigatingRequestIds.add(requestId)) {
                 return ConversationNavigationResult.DUPLICATE
             }
             ++generation
@@ -99,7 +101,7 @@ internal class AssistantConversationPersistence {
             }
             if (!completed) return ConversationNavigationResult.STALE
             synchronized(monitor) {
-                lastCompletedNavigationRequestId = maxOf(lastCompletedNavigationRequestId, requestId)
+                if (!repeatable) lastCompletedNavigationRequestId = maxOf(lastCompletedNavigationRequestId, requestId)
             }
             return ConversationNavigationResult.COMPLETED
         } finally {

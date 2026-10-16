@@ -159,14 +159,15 @@ internal object MiniLmMealReadPolicy {
         selectedMealId: String?,
         today: LocalDate,
         followUpScope: FollowUpScope? = null,
+        allowBareConsumptionProbe: Boolean = true,
     ): ResolvedRead? {
-        resolveReadRequestWithoutTypo(hostRequiredTool, text, selectedMealId, today, followUpScope)?.let { return it }
+        resolveReadRequestWithoutTypo(hostRequiredTool, text, selectedMealId, today, followUpScope, allowBareConsumptionProbe)?.let { return it }
         // Fuzzy candidates are a final assist for closed reads. Never rewrite text
         // in selected-record or ephemeral follow-up contexts.
         if (!selectedMealId.isNullOrBlank() || !validText(text)) return null
         val normalized = normalize(text)
         val corrected = MiniLmReadTypoCandidates.uniqueSingleCorrection(normalized) ?: return null
-        val candidate = resolveReadRequestExact(hostRequiredTool, corrected, null, today, null)
+        val candidate = resolveReadRequestExact(hostRequiredTool, corrected, null, today, null, allowBareConsumptionProbe)
             ?: resolveFlexibleRead(hostRequiredTool, corrected, null, today)
             ?: return null
         if (!candidate.allowMiniLm || !isTypoEligibleRead(candidate)) return null
@@ -180,7 +181,8 @@ internal object MiniLmMealReadPolicy {
         selectedMealId: String?,
         today: LocalDate,
         followUpScope: FollowUpScope? = null,
-    ): ResolvedRead? = resolveReadRequestExact(hostRequiredTool, text, selectedMealId, today, followUpScope)
+        allowBareConsumptionProbe: Boolean = true,
+    ): ResolvedRead? = resolveReadRequestExact(hostRequiredTool, text, selectedMealId, today, followUpScope, allowBareConsumptionProbe)
         ?: resolveFlexibleRead(hostRequiredTool, text, selectedMealId, today)
 
     private fun resolveFlexibleRead(
@@ -233,8 +235,9 @@ internal object MiniLmMealReadPolicy {
         selectedMealId: String?,
         today: LocalDate,
         followUpScope: FollowUpScope?,
+        allowBareConsumptionProbe: Boolean = true,
     ): ResolvedRead? {
-        CompanionAssistantPolicy.resolve(hostRequiredTool, text, selectedMealId, today)?.let { companion ->
+        CompanionAssistantPolicy.resolve(hostRequiredTool, text, selectedMealId, today, allowBareConsumptionProbe)?.let { companion ->
             val required = companion.requiredTool ?: RequiredAgentTool("host_navigation", query = companion.destination?.name)
             return ResolvedRead(
                 requiredTool = required,
@@ -305,7 +308,7 @@ internal object MiniLmMealReadPolicy {
                 } else "How many calories do I have left today"
             }
             val companion = if (scope.operation == FollowUpOperation.GOAL_REMAINING) {
-                CompanionAssistantPolicy.resolve(null, canonical, null, today)
+                CompanionAssistantPolicy.resolve(null, canonical, null, today, allowBareConsumptionProbe)
             } else null
             val resolved = companion?.requiredTool ?: (if (scope.operation == FollowUpOperation.TODAY_NUTRITION && scope.dayOffset == 1) {
                 RequiredAgentTool("read_day_nutrition", period = "historical_day", daysAgo = 1, metric = metric, targetDate = today.minusDays(1))
@@ -329,7 +332,7 @@ internal object MiniLmMealReadPolicy {
             return ResolvedRead(resolved, canonical, allowMiniLm = hostCompatible,
                 classifierKey = companion?.classifierKey ?: resolved.name, companion = companion)
         }
-        CompanionAssistantPolicy.resolve(hostRequiredTool, text, selectedMealId, today)?.let { companion ->
+        CompanionAssistantPolicy.resolve(hostRequiredTool, text, selectedMealId, today, allowBareConsumptionProbe)?.let { companion ->
             val required = companion.requiredTool ?: return null
             return ResolvedRead(required, companion.classifierText, classifierKey = companion.classifierKey, companion = companion)
         }

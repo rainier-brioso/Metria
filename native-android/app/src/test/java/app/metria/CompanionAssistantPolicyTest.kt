@@ -151,6 +151,148 @@ class CompanionAssistantPolicyTest {
     }
 
     @Test
+    fun `polite saved recall and explicit recent consumption phrasing keep exact query and permission`() {
+        val recall = CompanionAssistantPolicy.resolve(
+            null, "Could you find my saved dish san jacobo?", null, today,
+        )
+        assertEquals(CompanionAssistantPolicy.IntentKind.SAVED_RECALL, recall?.kind)
+        assertEquals("san jacobo", recall?.query)
+        assertEquals("find my saved dish name", recall?.classifierText)
+        assertEquals("san jacobo", recall?.query)
+
+        val showUsual = CompanionAssistantPolicy.resolve(
+            null, "Can you show me my usual breakfast?", null, today,
+        )
+        assertEquals(CompanionAssistantPolicy.IntentKind.SAVED_RECALL, showUsual?.kind)
+        assertEquals("breakfast", showUsual?.query)
+        assertEquals("show me my usual breakfast", showUsual?.classifierText)
+
+        listOf(
+            "I've just had my saved dish san jacobo" to "san jacobo",
+            "I just ate my usual breakfast" to "breakfast",
+        ).forEach { (phrase, query) ->
+            val draft = CompanionAssistantPolicy.resolve(null, phrase, null, today)
+            assertEquals(CompanionAssistantPolicy.IntentKind.SAVED_DRAFT, draft?.kind)
+            assertEquals(query, draft?.query)
+            assertEquals("search_saved_dishes", draft?.requiredTool?.name)
+        }
+
+        listOf(
+            "I had san jacobo" to "san jacobo",
+            "I ate crème brûlée" to "crème brûlée",
+            "I've eaten lentil stew" to "lentil stew",
+            "I have had my breakfast" to "my breakfast",
+        ).forEach { (phrase, query) ->
+            val probe = CompanionAssistantPolicy.resolve(null, phrase, null, today)
+            assertEquals(phrase, CompanionAssistantPolicy.IntentKind.SAVED_CONSUMPTION_PROBE, probe?.kind)
+            assertEquals(phrase, query, probe?.query)
+            assertEquals(phrase, "search_saved_dishes", probe?.requiredTool?.name)
+            if (query == "san jacobo") assertEquals(phrase, "i had name", probe?.classifierText)
+        }
+        val bareRead = requireNotNull(MiniLmMealReadPolicy.resolveReadRequest(
+            null, "I had san jacobo", null, today,
+        ))
+        assertTrue(bareRead.allowMiniLm)
+        assertEquals(CompanionAssistantPolicy.IntentKind.SAVED_CONSUMPTION_PROBE, bareRead.companion?.kind)
+        assertEquals("i had name", bareRead.classifierText)
+        assertEquals(
+            RequiredAgentTool("search_saved_dishes", query = "san jacobo"),
+            MiniLmMealReadPolicy.gemmaFallbackRequiredTool(bareRead, null),
+        )
+
+        val usualStillMeansExplicitDraft = CompanionAssistantPolicy.resolve(
+            null, "I had my usual breakfast", null, today,
+        )
+        assertEquals(CompanionAssistantPolicy.IntentKind.SAVED_DRAFT, usualStillMeansExplicitDraft?.kind)
+        assertNull(CompanionAssistantPolicy.resolve(null, "I had a headache", null, today))
+        assertNull(CompanionAssistantPolicy.resolve(null, "I had to work late", null, today))
+        assertNull(CompanionAssistantPolicy.resolve(null, "I had no san jacobo", null, today))
+        assertNull(CompanionAssistantPolicy.resolve(null, "I might have san jacobo", null, today))
+        assertNull(CompanionAssistantPolicy.resolve(null, "My partner had san jacobo", null, today))
+        assertNull(CompanionAssistantPolicy.resolve(null, "I had san jacobo and show my meals", null, today))
+        assertNull(CompanionAssistantPolicy.resolve(null, "I had san jacobo yesterday", null, today))
+        assertNull(CompanionAssistantPolicy.resolve(null, "I had san jacobo", "selected-meal", today))
+
+        val namedDraft = CompanionAssistantPolicy.resolve(
+            null, "I've just had my saved dish Crème brûlée", null, today,
+        )
+        assertEquals("crème brûlée", namedDraft?.query)
+        assertEquals("i've just had my saved dish name", namedDraft?.classifierText)
+
+        val queryContainsCommandWords = CompanionAssistantPolicy.resolve(
+            null, "Could you find my saved dish show protein?", null, today,
+        )
+        assertEquals("show protein", queryContainsCommandWords?.query)
+        assertEquals("find my saved dish name", queryContainsCommandWords?.classifierText)
+
+        val repeatedCommandWordsInQuery = CompanionAssistantPolicy.resolve(
+            null, "Find my saved dish find saved", null, today,
+        )
+        assertEquals("find saved", repeatedCommandWordsInQuery?.query)
+        assertEquals("find my saved dish name", repeatedCommandWordsInQuery?.classifierText)
+
+        val postfixNamedRecall = CompanionAssistantPolicy.resolve(
+            null, "Could you find my crème brûlée dish?", null, today,
+        )
+        assertEquals("crème brûlée", postfixNamedRecall?.query)
+        assertEquals("find my name dish", postfixNamedRecall?.classifierText)
+
+        val namedDraftWithClassifierWords = CompanionAssistantPolicy.resolve(
+            null, "I just ate my saved dish protein total show", null, today,
+        )
+        assertEquals("protein total show", namedDraftWithClassifierWords?.query)
+        assertEquals("i just ate my saved dish name", namedDraftWithClassifierWords?.classifierText)
+
+        val usualMeal = CompanionAssistantPolicy.resolve(
+            null, "Can you show me my usual breakfast?", null, today,
+        )
+        assertEquals("show me my usual breakfast", usualMeal?.classifierText)
+
+        assertNull(CompanionAssistantPolicy.resolve(null, "I hate my usual breakfast", null, today))
+        assertNull(CompanionAssistantPolicy.resolve(null, "Find my saved dish san jacobo tomorrow", null, today))
+        listOf(
+            "Find my saved dish san jacobo today",
+            "Find my saved dish san jacobo yesterday",
+            "Find my saved dish san jacobo on Monday",
+        ).forEach { text ->
+            assertNull(text, CompanionAssistantPolicy.resolve(null, text, null, today))
+        }
+        assertNull(CompanionAssistantPolicy.resolve(null, "Find my saved dish san jacobo and show my meals", null, today))
+    }
+
+    @Test
+    fun `saved dish correction scopes lock opaque names and separate recall from draft`() {
+        val named = requireNotNull(CompanionAssistantPolicy.savedDishCorrectionScope(
+            "fnd my saved dish protein total show",
+        ))
+        assertEquals(CompanionAssistantPolicy.IntentKind.SAVED_RECALL, named.intent)
+        assertEquals("protein total show", named.opaqueQuery)
+        assertTrue(named.editableTargetsByWordIndex.isNotEmpty())
+        assertFalse(named.editableTargetsByWordIndex.values.flatten().contains("protein"))
+
+        val namedLikeMealType = requireNotNull(CompanionAssistantPolicy.savedDishCorrectionScope("find my saved sncak"))
+        assertEquals("sncak", namedLikeMealType.opaqueQuery)
+        assertTrue(namedLikeMealType.editableTargetsByWordIndex.isEmpty())
+
+        val draft = requireNotNull(CompanionAssistantPolicy.savedDishCorrectionScope(
+            "i've just had my ususal breakfast",
+        ))
+        assertEquals(CompanionAssistantPolicy.IntentKind.SAVED_DRAFT, draft.intent)
+        assertEquals(setOf("usual"), draft.editableTargetsByWordIndex.values.flatten().toSet())
+
+        val invalidPermission = requireNotNull(CompanionAssistantPolicy.savedDishCorrectionScope(
+            "i hate my ususal breakfast",
+        ))
+        assertNull(invalidPermission.intent)
+        assertTrue(invalidPermission.editableTargetsByWordIndex.isEmpty())
+
+        val bareProbe = requireNotNull(CompanionAssistantPolicy.savedDishCorrectionScope("i had san jacobo"))
+        assertEquals(CompanionAssistantPolicy.IntentKind.SAVED_CONSUMPTION_PROBE, bareProbe.intent)
+        assertEquals("san jacobo", bareProbe.opaqueQuery)
+        assertTrue(bareProbe.editableTargetsByWordIndex.isEmpty())
+    }
+
+    @Test
     fun `saved dish replies bind names and draft choices to audited search results`() {
         val query = "lentil stew"
         val single = savedDishResponse(query, listOf("Lentil stew"))
@@ -168,6 +310,11 @@ class CompanionAssistantPolicyTest {
         assertTrue(multipleDraft.contains("cannot tell which is usual"))
         assertTrue(multipleDraft.contains("unsaved draft"))
         assertAuditedSavedDishReply(multipleDraft, multiple)
+        val consumptionChoice = requireNotNull(CompanionAssistantPolicy.savedDishReply(
+            multiple, query, draft = true, consumptionProbe = true,
+        ))
+        assertFalse(consumptionChoice.contains("usual"))
+        assertAuditedSavedDishReply(consumptionChoice, multiple)
 
         val recall = requireNotNull(CompanionAssistantPolicy.savedDishReply(single, query, draft = false))
         assertAuditedSavedDishReply(recall, single)
@@ -233,6 +380,54 @@ class CompanionAssistantPolicyTest {
         assertEquals(1, possible.candidates.size)
         assertNull(ambiguous.exactCandidateId)
         assertEquals(2, ambiguous.candidates.size)
+    }
+
+    @Test
+    fun `bare consumption probes use exact full identity or choices and send partial misses to normal draft`() {
+        val saved = dish(name = "San jacobo", aliases = listOf("Jambon croquettes"))
+        val exact = PersonalDishMatch(saved, 0.8, emptySet())
+        assertEquals(
+            CompanionAssistantPolicy.SavedDishProbeDisposition.EXACT_DRAFT,
+            CompanionAssistantPolicy.savedDishProbeDisposition("san jacobo", listOf(exact)),
+        )
+        assertEquals(
+            CompanionAssistantPolicy.SavedDishProbeDisposition.EXACT_DRAFT,
+            CompanionAssistantPolicy.savedDishProbeDisposition("jambon croquettes", listOf(exact)),
+        )
+        assertEquals(
+            CompanionAssistantPolicy.SavedDishProbeDisposition.CHOOSE,
+            CompanionAssistantPolicy.savedDishProbeDisposition("san jacobo", listOf(exact, exact.copy(score = 0.7))),
+        )
+        assertEquals(
+            CompanionAssistantPolicy.SavedDishProbeDisposition.CHOOSE,
+            CompanionAssistantPolicy.savedDishProbeDisposition("breakfast", listOf(
+                exact.copy(score = 0.8), exact.copy(score = 0.7), exact.copy(score = 0.6), exact.copy(score = 0.5),
+            )),
+        )
+        assertEquals(
+            CompanionAssistantPolicy.SavedDishProbeDisposition.NORMAL_INTENT,
+            CompanionAssistantPolicy.savedDishProbeDisposition("eggs and toast", listOf(
+                PersonalDishMatch(dish(name = "Eggs"), 0.8, emptySet()),
+            )),
+        )
+        assertEquals(
+            CompanionAssistantPolicy.SavedDishProbeDisposition.NORMAL_INTENT,
+            CompanionAssistantPolicy.savedDishProbeDisposition("eggs and toast", listOf(
+                PersonalDishMatch(dish(name = "Eggs"), 0.8, emptySet()),
+                PersonalDishMatch(dish(name = "Toast"), 0.8, emptySet()),
+            )),
+        )
+        assertEquals(
+            CompanionAssistantPolicy.SavedDishProbeDisposition.EXACT_DRAFT,
+            CompanionAssistantPolicy.savedDishProbeDisposition("eggs and toast", listOf(
+                PersonalDishMatch(dish(name = "Eggs and toast"), 0.8, emptySet()),
+                PersonalDishMatch(dish(name = "Eggs"), 0.8, emptySet()),
+            )),
+        )
+        assertEquals(
+            CompanionAssistantPolicy.SavedDishProbeDisposition.NORMAL_INTENT,
+            CompanionAssistantPolicy.savedDishProbeDisposition("san jacobo", emptyList()),
+        )
     }
 
     @Test

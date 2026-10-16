@@ -23,6 +23,47 @@ class MetriaAgentToolsTest {
         assertFalse(required.accepts(PrivateCoachToolCall(intent = "search_saved_dishes", query = "dinner")))
     }
 
+    @Test fun `saved consumption no-match resumes normal intent selection without recreating the probe`() {
+        val today = java.time.LocalDate.of(2026, 10, 16)
+        listOf("I had a bad night's sleep", "I had scrambled eggs and toast").forEach { original ->
+            assertNull(
+                CompanionAssistantPolicy.resolve(null, original, null, today, allowBareConsumptionProbe = false),
+            )
+            assertNull(
+                MetriaAgentGroundingPolicy.requiredTool(
+                    original, today = today, allowBareConsumptionProbe = false,
+                ),
+            )
+            assertNull(
+                MiniLmMealReadPolicy.resolveReadRequest(
+                    null, original, null, today, allowBareConsumptionProbe = false,
+                ),
+            )
+        }
+    }
+
+    @Test fun `saved consumption fallback rejects repeated search and drafts only after explicit model selection`() {
+        assertEquals(
+            SavedConsumptionFallbackPolicy.ToolDecision.RETRY_WITHOUT_SAVED_SEARCH,
+            SavedConsumptionFallbackPolicy.toolDecision(PrivateCoachToolCall("search_saved_dishes", query = "eggs")),
+        )
+        assertEquals(
+            SavedConsumptionFallbackPolicy.ToolDecision.MEAL_DRAFT_SELECTED,
+            SavedConsumptionFallbackPolicy.toolDecision(PrivateCoachToolCall("draft_meal")),
+        )
+        assertEquals(
+            SavedConsumptionFallbackPolicy.ToolDecision.NORMAL,
+            SavedConsumptionFallbackPolicy.toolDecision(PrivateCoachToolCall("read_meals", daysAgo = 0)),
+        )
+        val original = "I had a bad night's sleep"
+        assertNull(NativeMealDraftPolicy.description(
+            PrivateCoachToolCall("search_saved_dishes", query = "sleep"), null, original,
+        ))
+        assertEquals(original, NativeMealDraftPolicy.description(
+            PrivateCoachToolCall("draft_meal"), null, original,
+        ))
+    }
+
     @Test fun `no evidence correction preserves the original food question instead of becoming a new request`() {
         val instruction = MetriaAgentFactAuditor.retryInstruction(false, "¿El arroz tiene proteína?")
         assertTrue(instruction.contains("ORIGINAL_MEMBER_QUESTION: \"¿El arroz tiene proteína?\""))

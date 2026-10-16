@@ -1,5 +1,22 @@
 # Metria local assistant agent
 
+Bare consumption statements (approved 2026-10-15) may probe saved dishes without
+requiring “my saved/usual”. A typed host-only intent binds one local query; exact
+matches can offer unsaved review and ambiguity requires choice. A validated
+empty result transfers the original text once to normal assistant intent selection after
+clearing the required search. That continuation cannot repeat the saved probe;
+only an explicit native meal-draft intent enters timeout-protected extraction.
+Non-food/uncertain text stays eligible for ordinary response or clarification.
+Model JSON cannot create that handoff capability.
+Names never enter system spelling. Scope: `assistant-companion-bundle.md`.
+
+Natural saved-dish commands (approved 2026-10-15) extend only the existing recall
+and review-only draft frames. Bounded local correction applies to command words,
+never opaque dish names; names cannot enter system spelling. Original host/query
+and recall/draft permission checks remain independent of MiniLM classification.
+No automatic save or frequency inference. Specification and physical gates:
+`assistant-companion-bundle.md`.
+
 Chat correction revision (member approved 2026-10-15): the shared planner may
 combine up to three locally corrected or contextually abbreviated words, checking
 at most 64 complete candidates against original host/date/read constraints.

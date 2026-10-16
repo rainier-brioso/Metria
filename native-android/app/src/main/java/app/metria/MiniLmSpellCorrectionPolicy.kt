@@ -81,10 +81,27 @@ internal object MiniLmSpellCorrectionPolicy {
         today: LocalDate,
         checker: EnglishSpellChecker,
         nowNanos: () -> Long = System::nanoTime,
+        allowBareConsumptionProbe: Boolean = true,
         isActive: () -> Boolean,
     ): SpellCorrectionResolution {
+        // A no-match saved-dish handoff must preserve the original sentence for normal
+        // native intent selection. Do not correct it back into the saved-dish probe.
+        if (!allowBareConsumptionProbe) return abstain(SpellCheckReason.NO_CANDIDATE)
         if (!selectedMealId.isNullOrBlank() || !isActive()) return abstain(SpellCheckReason.NO_CANDIDATE)
         val tokens = tokenize(originalText) ?: return abstain(SpellCheckReason.NO_CANDIDATE)
+
+        val normalizedOriginal = MiniLmReadTextNormalization.normalize(originalText)
+        val savedDishScope = CompanionAssistantPolicy.savedDishCorrectionScope(normalizedOriginal)
+        if (savedDishScope != null) {
+            val saved = enumerateSavedDishCorrections(hostRequiredTool, normalizedOriginal, today, savedDishScope)
+            if (saved.overflow) return abstain(SpellCheckReason.NO_CANDIDATE)
+            return when (saved.interpretations.size) {
+                0 -> abstain(SpellCheckReason.NO_CANDIDATE)
+                1 -> accepted(saved.interpretations.single(), attempted = false)
+                else -> abstain(SpellCheckReason.AMBIGUOUS)
+            }
+        }
+
         val localOptions = tokens.map { token -> localVariants(token.text) }
         val localReads = enumerate(originalText, tokens, localOptions, hostRequiredTool, today)
         if (localReads.overflow) return abstain(SpellCheckReason.NO_CANDIDATE)
@@ -172,6 +189,12 @@ internal object MiniLmSpellCorrectionPolicy {
     /** Pure migration-gate check; it never calls Android or inherits a follow-up scope. */
     fun hasUniqueEligibleCandidate(originalText: String, today: LocalDate = LocalDate.now()): Boolean {
         val tokens = tokenize(originalText) ?: return false
+        val normalizedOriginal = MiniLmReadTextNormalization.normalize(originalText)
+        val savedDishScope = CompanionAssistantPolicy.savedDishCorrectionScope(normalizedOriginal)
+        if (savedDishScope != null) {
+            val saved = enumerateSavedDishCorrections(null, normalizedOriginal, today, savedDishScope)
+            return !saved.overflow && saved.interpretations.isNotEmpty()
+        }
         val local = tokens.map { localVariants(it.text) }
         val product = productSize(local) ?: return false
         if (product > MAX_COMBINATIONS) return false
@@ -186,6 +209,25 @@ internal object MiniLmSpellCorrectionPolicy {
         return candidates.isNotEmpty() && candidates.size <= MAX_PROVIDER_WORDS
     }
 
+    private fun enumerateSavedDishCorrections(
+        host: RequiredAgentTool?,
+        normalized: String,
+        today: LocalDate,
+        scope: CompanionAssistantPolicy.SavedDishCorrectionScope,
+    ): Enumeration {
+        val tokens = tokenize(normalized) ?: return Enumeration(emptyList(), true)
+        val options = tokens.mapIndexed { index, token ->
+            val targets = scope.editableTargetsByWordIndex[index].orEmpty()
+            val variants = MiniLmReadTypoCandidates.localCorrectionsFor(
+                token.text.lowercase(Locale.ROOT), targets, minimumLength = 3,
+            )
+                .map { Variant(preserveCase(token.text, it), Source.LOCAL) }
+            listOf(Variant(token.text, Source.ORIGINAL)) + variants.distinctBy { it.replacement.lowercase(Locale.ROOT) }
+        }
+        if (productSize(options)?.let { it > MAX_COMBINATIONS } != false) return Enumeration(emptyList(), true)
+        return enumerate(normalized, tokens, options, host, today, scope)
+    }
+
     private data class Enumeration(val interpretations: List<Interpretation>, val overflow: Boolean)
 
     private fun enumerate(
@@ -194,6 +236,7 @@ internal object MiniLmSpellCorrectionPolicy {
         options: List<List<Variant>>,
         host: RequiredAgentTool?,
         today: LocalDate,
+        savedDishScope: CompanionAssistantPolicy.SavedDishCorrectionScope? = null,
     ): Enumeration {
         val product = productSize(options) ?: return Enumeration(emptyList(), true)
         if (product > MAX_COMBINATIONS) return Enumeration(emptyList(), true)
@@ -209,8 +252,9 @@ internal object MiniLmSpellCorrectionPolicy {
             }
             val corrected = builder.toString()
             if (corrected != original) {
-                val read = MiniLmMealReadPolicy.resolveReadRequestWithoutTypo(host, corrected, null, today, null)
-                    ?.takeIf(::eligible)
+                val read = resolveCandidate(host, corrected, today)
+                    ?.takeIf { read -> eligible(read, savedDishScope) }
+                    ?.takeIf { savedDishScope == null || savedDishCandidateMatches(it, savedDishScope) }
                 if (read != null && changedTokenCount(indexes, options) <= MAX_CHANGED_WORDS) {
                     val key = semanticKey(read)
                     val providerIndexes = tokens.indices.filter { options[it][indexes[it]].source == Source.SYSTEM }.toSet()
@@ -272,8 +316,33 @@ internal object MiniLmSpellCorrectionPolicy {
         read.requiredTool, read.classifierKey, read.companion?.kind,
     )
 
-    private fun eligible(read: MiniLmMealReadPolicy.ResolvedRead): Boolean =
-        read.allowMiniLm && read.companion == null && read.requiredTool.name in ELIGIBLE_TOOLS
+    private fun resolveCandidate(host: RequiredAgentTool?, text: String, today: LocalDate): MiniLmMealReadPolicy.ResolvedRead? =
+        MiniLmMealReadPolicy.resolveReadRequestWithoutTypo(host, text, null, today, null)
+            ?: CompanionAssistantPolicy.resolve(host, text, null, today)?.let { companion ->
+                val tool = companion.requiredTool ?: return@let null
+                MiniLmMealReadPolicy.ResolvedRead(
+                    tool, companion.classifierText, classifierKey = companion.classifierKey, companion = companion,
+                )
+            }
+
+    private fun eligible(
+        read: MiniLmMealReadPolicy.ResolvedRead,
+        savedDishScope: CompanionAssistantPolicy.SavedDishCorrectionScope? = null,
+    ): Boolean = read.allowMiniLm && when {
+        read.companion == null -> read.requiredTool.name in ELIGIBLE_TOOLS
+        read.companion.kind in setOf(
+            CompanionAssistantPolicy.IntentKind.SAVED_RECALL,
+            CompanionAssistantPolicy.IntentKind.SAVED_DRAFT,
+        ) -> savedDishScope != null && savedDishCandidateMatches(read, savedDishScope)
+        else -> false
+    }
+
+    private fun savedDishCandidateMatches(
+        read: MiniLmMealReadPolicy.ResolvedRead,
+        scope: CompanionAssistantPolicy.SavedDishCorrectionScope,
+    ): Boolean = scope.intent != null && read.companion?.kind == scope.intent &&
+        read.requiredTool.name == "search_saved_dishes" &&
+        (scope.opaqueQuery == null || read.requiredTool.query == scope.opaqueQuery)
 
     private fun accepted(value: Interpretation, attempted: Boolean) =
         SpellCorrectionResolution(value.read, SpellCheckReason.ACCEPTED, attempted)

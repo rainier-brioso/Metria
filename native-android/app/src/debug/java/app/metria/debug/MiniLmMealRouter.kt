@@ -352,13 +352,23 @@ internal class MiniLmMealRouter(context: Context) : AutoCloseable {
         val SAVED_RECALL_EXAMPLES = listOf(
             "Find my usual breakfast",
             "Show my usual breakfast",
+            "Can you show me my usual breakfast",
             "Find my saved dish name",
             "Show my saved dish name",
             "Look up my saved dish name",
         )
         val SAVED_DRAFT_EXAMPLES = listOf(
+            "I had name",
+            "I ate name",
+            "I've just had name",
+            "I had a named meal",
+            "I had my saved dish name",
+            "I ate a named meal",
+            "I've eaten a named meal",
             "I had my usual breakfast",
             "I ate my usual lunch",
+            "I've just had my usual breakfast",
+            "I just ate my usual breakfast",
             "I ate my saved dish name",
             "I had my saved dish name",
         )

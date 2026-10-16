@@ -366,6 +366,37 @@ is introduced. All history retains its separate date-grouped view.
 
 ## 6. Ask Metria
 
+**Equivalent conversation refresh - 2026-10-16:** periodic retention refresh may
+return the same conversation with its saved size limits applied. That refresh
+must preserve in-flight loading/Stop and the current response. A genuinely
+changed/removed/expired conversation, lock or clear still invalidates prior work.
+
+**Meal draft history - 2026-10-15:** a completed ordinary meal draft adds a
+historical assistant acknowledgement to the encrypted Chat transcript. Persist
+that message before opening Review, including a quick tap before the usual
+write debounce. Save failure stays in Chat with retry; stale/locked/stopped
+requests cannot open Review. Discard can remove transient draft controls,
+but returning never removes the historical message. If the current draft remains
+available, another deliberate Review tap may reopen it. Draft payloads are not persisted as conversation
+messages and the acknowledgement never claims a meal was saved.
+
+**Bare consumption - 2026-10-15:** “I had …” may first look for a matching saved
+dish without special keywords. A clear exact match offers Review meal; ambiguity
+shows named choices. No match continues normal assistant intent selection using
+the original description, rather than ending with a saved-dish error or assuming
+that “I had …” always describes food (2026-10-16 correction). Compound descriptions
+without an exact saved whole dish follow the same path. A positive meal intent
+may prepare a draft; non-food/uncertain input may receive a response or clarification.
+The saved probe cannot repeat, and existing loading/Stop/timeout states apply. All outputs stay
+unsaved until existing final confirmation; Discard writes nothing.
+
+**Natural saved-dish wording - 2026-10-15:** polite recall requests reuse named
+saved evidence; explicit consumption requests may offer Review meal. Broader
+command wording and local frame typos preserve the dish name and never infer the
+usual dish from frequency. Recall alone cannot offer a meal draft. Multiple
+matches require choice; Review opens the existing editable draft, Discard writes
+nothing and final Save alone records it. No new screen or primary action is added.
+
 **Chat correction revision - 2026-10-15:** after exact recognition misses, a
 bounded pass may combine up to three corrections/contextual abbreviations while
 preserving the sent message. Multiple valid meanings receive a concise request

@@ -25,6 +25,9 @@ class AssistantTraceStore(
         private val allowedReasons = setOf("none", "required_tool_missing", "unsupported_personal_fact", "reply_policy", "multiple_tools", "unsupported_tool", "timeout", "runtime_failure", "continuation_expired", "minilm_accepted", "today_overview", "goal_remaining", "saved_dish_recall", "saved_dish_draft", "navigation", "scope", "scope_text", "scope_selected", "scope_host", "scope_context", "similarity", "margin", "runtime", "inference", "interrupted", "native_gemma", "legacy_gemma", "host_reply", "accepted", "no_candidate", "unavailable", "disabled", "no_suggestions", "ambiguous") + setOf(
             "empty_response", "segment_mismatch", "request_mismatch", "dictionary_word", "unmarked_typo", "no_match",
             "lifecycle_ready", "chat_consumed", "active_request_mismatch", "already_handled",
+            "submission_reconciled", "submission_rejected", "continuation_reconciled",
+            "continuation_rejected", "continuation_cancelled", "chat_active_missing", "chat_active_request",
+            "conversation_sync_expired", "conversation_sync_normalized", "conversation_sync_changed",
         )
         private val allowedTools = setOf("none", "read_progress_overview", "read_nutrition_summary", "read_day_nutrition", "read_weight", "read_meals", "read_latest_meal", "search_saved_dishes")
         private val allowedPeriods = setOf("none", "today", "yesterday", "week")
@@ -91,6 +94,9 @@ class AssistantTraceStore(
     fun recordReplyDelivery(requestId: Long, reason: String) {
         if (!debugBuild || requestId !in 1..9_999_999 || reason !in setOf(
                 "lifecycle_ready", "chat_consumed", "active_request_mismatch", "already_handled",
+                "submission_reconciled", "submission_rejected", "continuation_reconciled",
+                "continuation_rejected", "continuation_cancelled", "chat_active_missing", "chat_active_request",
+                "conversation_sync_expired", "conversation_sync_normalized", "conversation_sync_changed",
             )) return
         val shouldRecord = synchronized(this) {
             if (!enabled || closed || !replyDeliveryObservations.add(requestId to reason)) return@synchronized false
@@ -103,7 +109,8 @@ class AssistantTraceStore(
             record(
                 kind = "reply_delivery",
                 operation = "agent_turn",
-                outcome = if (reason in setOf("lifecycle_ready", "chat_consumed")) "accepted" else "rejected",
+                outcome = if (reason in setOf("lifecycle_ready", "chat_consumed", "submission_reconciled",
+                        "continuation_reconciled", "chat_active_request")) "accepted" else "rejected",
                 reason = reason,
                 requestId = requestId,
             )

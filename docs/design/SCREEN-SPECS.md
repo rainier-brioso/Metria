@@ -365,6 +365,31 @@ lock/background and the existing response lifecycle invalidate the details.
 
 ## Assistant overlay and conversation
 
+An equivalent bounded vault snapshot must not remove loading or a live response
+by resetting Chat request identity. Compare the same normalized transcript
+representation; preserve existing invalidation for changed/expired/cleared
+conversation and lock. No stale completion may regain authority through refresh.
+
+Ordinary meal draft completion retains an assistant message independently of the
+temporary draft card. Review opens only after the transcript is saved; failure
+keeps Chat open with a recoverable explanation. After leaving without Save,
+history still shows that a draft was prepared. This acknowledgement provides no
+reopen control and does not persist draft contents or imply a saved meal.
+
+Bare consumption (2026-10-15) reuses the existing loading, named choice and Review
+meal states. A saved-dish probe cannot save automatically, and no match must
+continue into normal intent selection without a misleading terminal
+saved-search error or a forced meal draft (2026-10-16 correction). Only a positive
+meal intent opens the timed draft path; non-food input can receive normal prose
+or clarification. Suppress repeat probes. Preserve original message, text selection, Stop and current
+request/session guards. No new primary action or screen is introduced.
+
+Natural saved-dish frames (2026-10-15) reuse existing named recall bubbles and
+review-only draft offers. Preserve long-press selection, loading/Stop, no-match
+and bounded ambiguity choices. Correct command wording only; keep dish names
+unaltered. No automatic review opening or save is introduced; member taps Review
+meal, edits known/unknown portions and confirms Save in the existing review.
+
 **Approved companion bundle — 2026-10-12:** goal differences are concise recorded-
 estimate comparisons with reference and coverage limitations, never prescriptions.
 Saved-dish search presents at most three named possibilities; draft ambiguity

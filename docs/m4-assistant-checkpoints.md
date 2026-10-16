@@ -3229,3 +3229,261 @@ target-phone interaction recheck pending.
   open. Missing-answer request-ID investigation explicitly deferred. Next bounded
   task when resumed: choose provider/session acceptance or another approved
   feature; do not silently resume deferred delivery work or enable release MiniLM.
+
+- Next approved slice (2026-10-15): natural saved-dish recall and consumption
+  wording, building on clean committed/pushed `6cfb4a0`. Existing exact recall/
+  draft, fresh search, named choices, editable prefill and Review/Discard/Save
+  seams mapped. Extending complete command frames and bounded local corrections,
+  preserving opaque dish names and separate recall/draft permission. No names to
+  OS spelling, auto-save, frequency inference, dependency or missing-answer work.
+  Parent owns docs; worker owns recognition/integration/tests. Complete review/
+  gate then one in-place install before named physical acceptance. No new
+  commit/push authorized for this slice.
+
+- Saved-dish implementation and independent review complete. Full candidate
+  validation now uses a saved-frame mask with immutable named query and
+  recall/draft permission; saved companions cannot enter the generic/system
+  correction path. Fixed named/usual overlap, malformed-frame name leakage,
+  short-command minimum handling and relative-day/weekday rejection; dedicated
+  no-provider and query-preservation regressions added. Exact consumption verbs
+  and saved/usual markers remain required; a plain-consumption test expectation
+  was narrowed rather than granting new permission. Three generic natural-frame
+  prototypes added, with scoring/model artifacts unchanged. Initial compile and
+  test failures were corrected before installation. Reviewer found no remaining
+  blocker; complete unit/debug/release gate running. Missing-answer work remains
+  deferred. Phone is connected; no new install or physical acceptance yet.
+
+- Saved-dish extension complete gate passed: 568 tests, zero failures/errors/
+  skips, debug/release APK assembly and release vital lint. Diff check clean;
+  independent review found no remaining blocker after name/date fixes. Command
+  and checksum are in the companion-bundle specification. Installation under
+  the active authorized in-place cycle is proceeding; no new code change after
+  the gate. Named recall/draft/review/discard phone tests remain open. No commit
+  or push; no broad release/provider/accessibility acceptance claimed.
+
+- Reviewed 568-test debug APK installed in place (`Success`) on Samsung SM-S928B
+  / Android 16 and cold launched (`Status: ok`). Existing vault/records/models
+  preserved; no system provider setting change or biometric automation. Await
+  member typo-command recall, natural named consumption, Review food/portion
+  comparison and Discard; then inspect only fixed routing/audit/delivery events.
+  No raw device content captured and no physical acceptance claimed yet.
+
+- Member reports both saved-dish requests work, review matches foods/portions and
+  draft was discarded. Retained new turn shows MiniLM margin rejection (positive
+  0.6771, competing 0.6533, fallback 0.2826), then Gemma with fresh saved-dish
+  search/continuation, accepted audit and transcript append. This accepts the
+  member-observed functionality but does not prove fast routes for both prompts.
+  No prompt/reply/record values captured. Bounded follow-up masks only opaque
+  query spans as `name` for classification, retaining command wording, actual
+  query/tool/proof, original Chat/Gemma text and all margins/authority gates.
+  Separate span/query tests, review and full gate before an in-place retry;
+  missing-answer investigation remains deferred.
+
+- Named-slot masking follow-up passed independent review and the complete
+  568-test/debug/release/vital-lint gate with zero failures/errors/skips. Exact
+  capture spans replace only classifier entities, including postfix names;
+  actual query and usual-meal input stay intact. Added capture/name/host and
+  debug-scope regressions; corrected one legacy classifier-text expectation and
+  strengthened real-query assertion. Hash in companion-bundle spec; diff check
+  clean. Authorized retry install proceeding. No thresholds, factual audits,
+  actual query or save authority changed; fast phone acceptance remains open.
+
+- Masking update installed in place (`Success`) and cold launched (`Status: ok`)
+  on Samsung SM-S928B / Android 16, preserving existing data/models. Await one
+  recall-only typo request, then inspect fixed route/audit/delivery metadata;
+  test draft separately to avoid uncertain text-to-turn correlation. No private
+  content capture, biometric action, commit or push.
+
+- Post-mask recall-only physical gate passed: member confirms correct saved dish
+  and no meal-draft offer. Safe trace shows accepted `saved_dish_recall` score
+  0.9909 versus competing 0.8934/fallback 0.2481, MiniLM selection, required saved
+  search, accepted audit and Chat append. No Gemma route or system-spelling event.
+  Requested consumption/draft retry separately; no broad draft/ambiguity or
+  provider acceptance implied. No private values inspected.
+
+- Post-mask consumption/draft physical gate passed: member confirms Review
+  offered without error, foods/portions match and draft discarded. Safe trace
+  accepts `saved_dish_draft` (0.9568 positive, 0.8717 competing, 0.3512 fallback),
+  selects MiniLM, requires saved search, accepts the reply audit and appends Chat.
+  No Gemma selection. Later already-handled observation does not undo accepted
+  delivery. Both named recall and draft cases now pass on the installed masking
+  build (568 tests; hash in companion spec). Broader no-match/ambiguity, usual
+  variants, final Save/reopen, ordinary-read and accessibility/lifecycle checks
+  remain open. Missing-answer issue still deferred. No raw data capture or new
+  code change, and no commit/push authorized/performed for this slice.
+
+- Bare-consumption slice approved (2026-10-15) after “I had san jacobo” missed
+  the marker-bound path. Adding a distinct host-owned saved-dish probe before
+  ordinary meal drafting: exact-name/alias review, bounded ambiguous choices,
+  validated no-match original-text fallback with mandatory search cleared once.
+  Compound lists without an exact whole-dish match retain ordinary drafting.
+  Preserve existing explicit saved/usual parsing, opaque names/no OS spelling,
+  current request/session checks and final Save. No new dependency, release
+  MiniLM activation, missing-answer work or commit/push. Worker owns code/tests;
+  parent owns docs; review, full gate and direct in-app checks pending.
+
+- Bare-consumption implementation gate passed: 570 tests with zero failures,
+  errors or skips; debug/release builds and release vital lint pass; diff check
+  clean. Parent reviewed the typed probe, exact/compound disposition and guarded
+  original-text handoff, correcting incomplete worker wiring and continuation
+  operation handling. Independent reviewer hit its delegated usage limit and
+  did not complete; do not claim independent approval. Pure policy tests do not
+  exercise the native handoff lifecycle. APK hash is in companion-bundle spec.
+  Installed in place (`Success`) on Samsung SM-S928B / Android 16 under ongoing
+  authorization, preserving vault/model files. Bare exact-name Review/Discard,
+  no-match draft, ambiguity and cancellation/lock acceptance remain pending.
+  Missing-answer investigation remains deferred. No commit/push.
+
+- Bare exact-name phone gate passed on the installed 570-test build: member
+  confirms “I had san jacobo” offered Review without error, saved foods/portions
+  match and draft discarded. Safe metadata accepts saved-dish draft (0.9808
+  positive / 0.3948 competing / 0.3451 fallback), selects MiniLM, requires fresh
+  saved search, passes audit and records Chat consumption. No Gemma selection
+  for this turn. Subsequent duplicate/stale observations followed delivery;
+  they are not a failure of the confirmed interaction. No private values read.
+  No-match draft, ambiguity, lifecycle and independent review remain open.
+
+- Member confirms ordinary unsaved-meal draft succeeded for the requested
+  eggs/toast case, then reports the assistant card vanished after leaving
+  Review without saving. Safe trace confirms the MiniLM saved-dish probe, but
+  contains no downstream draft audit; member observation is the draft evidence.
+  Added a plain historical prepared-draft acknowledgement, gated to current
+  completed meal operations; question/ack flush before Review navigation using
+  the existing encrypted transcript serializer. No draft payload persisted.
+  Independent review caught one-time navigation dedupe blocking later Review
+  attempts; bounded repeatable review now retains overlap/stale/lock checks
+  while allowing deliberate reopening. Reviewer verified that correction and
+  found no further concrete defects. New helper and overlapping/sequential review
+  tests added. Final build and physical retention/reopen verification pending.
+
+- Draft-history fix final gate passes: 573 tests, zero failures/errors/skips;
+  debug/release APK builds and release vital lint pass; diff check clean.
+  Installed in place (`Success`) and cold launched (`Status: ok`) on Samsung
+  SM-S928B / Android 16, preserving existing data/models. Hash recorded in
+  companion-bundle specification. Physical draft/discard/Chat retention and
+  reopen checks pending; no new commit/push authorization or action.
+
+- Draft-history physical retention gate passed: member confirms the ordinary
+  eggs/toast request, Review and leave-without-saving sequence retains the
+  prepared-draft assistant acknowledgement, including after closing/reopening
+  Chat. Tested on the installed 573-test build, Samsung SM-S928B / Android 16;
+  hash in companion spec. No saved meal or raw device-content capture. Repeat
+  Review, failed transcript save, lock/cancel and accessibility remain open.
+  No commit or push performed.
+
+- Full uncommitted checkpoint review identified two P2 fixes before commit:
+  broad bare `I had ...` plus classifier masking can force non-food statements
+  into meal extraction on no saved match; the no-match handoff also invokes the
+  legacy synchronous proposal helper without the native-agent timeout. Next
+  bounded task: normal intent selection on uncertain/no-match probes, suppress
+  the probe once to prevent repetition, and use timed native drafting only after
+  positive meal intent. Independent review found no confirmed host-binding,
+  one-shot clearing or transcript-handoff defect. Native fallback lifecycle
+  coverage remains open. No source changes/build/install during this review;
+  existing 573-test gate and named phone acceptance remain evidence, not proof
+  these newly found branches are safe. No commit/push performed.
+
+- Review corrections approved 2026-10-16: implementing original-text normal
+  intent selection after uncertain/no-match saved probes, with suppression of
+  the probe and model-emitted repeated saved search for that continuation.
+  Only a positive native draft tool decision may enter existing timed extraction.
+  Preserve exact saved fast path, typed authority, fresh request and search-state
+  clearing, cancellation/lock, review/Save and retained Chat acknowledgement.
+  Worker owns code/tests; parent owns docs, final gate and authorized in-place
+  installation. No new dependencies, blacklist growth or commit/push authority.
+
+- Review-fix implementation passed independent review and the full gate on
+  2026-10-16: 576 tests, zero failures/errors/skips; debug/release APK builds and
+  release vital lint pass; diff check clean. Parent/reviewer caught and worker
+  corrected suppression re-entry in a lower companion resolver and after a
+  native tool result. The host suppression flag now survives/reset with pending
+  tools; resumed normal intent and selected native draft use the existing timed
+  native path. Scoped `agent_meal_draft` preserves continuation reconciliation.
+  Pure tests cover resolver/tool decisions and no OS spelling; full async
+  lifecycle/timeout-race execution remains a coverage gap. APK hash in companion
+  specification. Authorized in-place install underway; phone gates remain open.
+  No commit/push performed.
+
+- Review-fix APK installed in place (`Success`) and cold launched (`Status: ok`) on
+  Samsung SM-S928B / Android 16, preserving existing data/models. Await member
+  non-food response, unsaved meal drafting and exact saved-meal regression.
+
+- First review-fix non-food retry failed visible delivery: member reports error
+  or no answer. Safe trace confirms MiniLM probe request 1 -> normal native Gemma
+  request 2 -> accepted reply audit -> lifecycle-ready -> active-request mismatch.
+  No repeat search or automatic draft is recorded, but response content was not
+  inspected and the visible non-food gate remains failed. Added diagnostic-only
+  fixed-ID/reason provenance for continuation reconciliation, transcript refresh
+  reset and missing/different active identity. No prompt/record capture or stale
+  guard bypass. Normalized transcript refresh is a candidate, not a proven phone
+  cause. Diagnostic review/gate/retry pending; global delivery work remains
+  outside scope except identifying this resumed-turn failure.
+
+- Identity-provenance diagnostic gate passes: 577 tests, zero failures/errors/
+  skips; debug/release builds and release vital lint pass; diff check clean.
+  Independent review confirms fixed codes/numeric IDs only, debug opt-in and
+  no transcript capture. Diagnostic hash in companion specification. Authorized
+  in-place installation underway; actual cause and visible non-food response
+  remain unverified. No behavioral bypass, commit or push.
+
+- Identity-provenance APK installed in place (`Success`) and cold launched
+  (`Status: ok`) on Samsung SM-S928B / Android 16; existing vault/models preserved.
+  Await same-Chat fictional non-food replay. No biometric automation or raw
+  device-content inspection.
+
+- Diagnostic non-food replay passes: member confirms a normal response appeared.
+  Safe metadata shows request 1 submission reconciled, one MiniLM saved probe,
+  request 2 continuation reconciled, native Gemma selection, accepted reply audit
+  and Chat consumption. No sync reset, mismatch or repeated search in this turn.
+  This named success does not establish the cause or repair of the prior failure.
+  Existing 577-test APK/hash, Samsung SM-S928B / Android 16. Await ordinary meal
+  draft and exact saved-meal regression; retain intermittent delivery as an open
+  diagnostic gap. No private content inspected, commit or push.
+
+- Ordinary-meal regression failed: member reports loading then disappearance
+  for “I had screamble eggs and toast”. Safe trace confirms request 2 reconciled,
+  native Gemma selected, then `conversation_sync_normalized` cleared its active
+  identity while work continued. Prior non-food success also logged this reset
+  after delivery. This establishes the normalized-equivalent refresh bug, without
+  reading raw conversation contents or claiming which size normalization differed.
+  Added pure hydration decisions with bounded last-loaded record comparison:
+  unchanged and canonical-equivalent snapshots preserve live/unsaved local state;
+  genuine change/removal/expiry/first hydration still restore/reset. Parent review
+  caught the need to preserve debounced unsaved turns under unchanged snapshots;
+  worker corrected it. Independent review clean; six focused tests added. Full
+  gate/phone retry pending; no stale guard bypass, dependency or schema change.
+
+- Canonical refresh fix gate passed: 583 tests with zero failures/errors/skips;
+  debug/release APKs and release vital lint pass; diff check clean. Independent
+  review found no material defect. Hash in companion specification. Authorized
+  in-place install underway; exact reported meal wording and retained response
+  across periodic refresh remain physical acceptance gates. No commit/push.
+
+- Refresh-fix APK installed in place (`Success`) and cold launched (`Status: ok`)
+  on Samsung SM-S928B / Android 16. Existing vault/models preserved. Await exact
+  reported wording retry, Review/Discard and response retention. No biometric
+  automation, private-content capture, commit or push.
+
+- Post-refresh-fix meal regressions pass: member reports both requested meal
+  cases worked. Safe trace confirms unsaved probe -> native Gemma -> current
+  prepared-draft acknowledgement consumed, then saved-dish MiniLM -> fresh
+  search -> accepted audit -> consumed reply without Gemma. Successful sequence
+  spans over one minute; no normalized refresh reset or active-ID mismatch.
+  Expected later already-handled event only. Samsung SM-S928B / Android 16,
+  installed 583-test APK/hash in companion spec. No private values inspected.
+  Named loading/disappearance regression closed; broader lifecycle, ambiguity,
+  failed-save and accessibility acceptance remain open. Await explicit current
+  checkpoint commit/push approval; none performed.
+
+- Member explicitly confirms draft success and prepared-draft message retention
+  after the requested full minute, following Review/Discard, on the 583-test
+  refresh-fix build. Periodic-refresh retention phone gate passed. Broader gates
+  remain open as documented; no commit or push performed yet.
+
+- Member explicitly approved committing and pushing the reviewed checkpoint to
+  `main` on 2026-10-16. Scope: natural saved dishes, normal-intent fallback,
+  timed native draft selection, retained draft messages, request-ID diagnostics
+  and canonical hydration/refresh. Final complete gate remains 583 passing tests
+  plus debug/release APKs and release vital lint; independent review and named
+  phone checks pass. Broader acceptance gaps remain documented, not closed by
+  authorization. No unrelated files or private device artifacts are included.

@@ -35,7 +35,14 @@ internal object MiniLmReadTypoCandidates {
     }
 
     /** Conservative one-edit local alternatives, exposed so bounded multiword plans can compose them. */
-    fun localCorrectionsFor(word: String): Set<String> = if (word.length < MIN_TOKEN_LENGTH) emptySet() else vocabulary
+    fun localCorrectionsFor(word: String): Set<String> = localCorrectionsFor(word, vocabulary)
+
+    /** Reuses the same conservative edit rule for a caller's small, closed vocabulary. */
+    fun localCorrectionsFor(
+        word: String,
+        targets: Set<String>,
+        minimumLength: Int = MIN_TOKEN_LENGTH,
+    ): Set<String> = if (word.length < minimumLength) emptySet() else targets
         .filterTo(linkedSetOf()) { optimalStringAlignmentDistanceAtMostOne(word, it) }
 
     /** One insertion, deletion, adjacent transposition, or nearby-key substitution. */

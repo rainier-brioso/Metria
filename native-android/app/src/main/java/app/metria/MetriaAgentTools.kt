@@ -1146,11 +1146,12 @@ object MetriaAgentGroundingPolicy {
         history: List<PrivateConversationMessage> = emptyList(),
         today: java.time.LocalDate = java.time.LocalDate.now(),
         selectedMealId: String? = null,
+        allowBareConsumptionProbe: Boolean = true,
     ): RequiredAgentTool? {
         selectedMealId?.takeIf { it.isNotBlank() && selectedMealQuestionIsInScope(memberText) }?.let {
             return RequiredAgentTool("read_selected_meal", selectedMealId = it, selectedMealQuestion = memberText.take(600))
         }
-        CompanionAssistantPolicy.resolve(null, memberText, selectedMealId, today)
+        CompanionAssistantPolicy.resolve(null, memberText, selectedMealId, today, allowBareConsumptionProbe)
             ?.requiredTool?.let { return it.copy(targetDate = null) }
         savedDishQuestion.matchEntire(memberText)?.groupValues?.getOrNull(1)
             ?.trim()

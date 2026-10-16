@@ -11,6 +11,27 @@ class MiniLmSpellCorrectionPolicyTest {
     private val today = LocalDate.parse("2026-10-14")
 
     @Test
+    fun `normal-intent saved-dish fallback skips corrections that could recreate the probe`() {
+        var providerCalls = 0
+        val result = MiniLmSpellCorrectionPolicy.resolve(
+            hostRequiredTool = null,
+            originalText = "I had a bad night's sleep",
+            selectedMealId = null,
+            today = java.time.LocalDate.of(2026, 10, 16),
+            checker = EnglishSpellChecker { _, _ ->
+                providerCalls++
+                error("Fallback must preserve the original turn for native intent selection")
+            },
+            isActive = { true },
+            allowBareConsumptionProbe = false,
+        )
+
+        assertEquals(SpellCheckReason.NO_CANDIDATE, result.reason)
+        assertEquals(0, providerCalls)
+        assertNull(result.resolvedRead)
+    }
+
+    @Test
     fun rejectionReasonsSeparateUnusableProviderResultsWithoutExposingText() {
         val question = "Give me my recorded protein total for tday"
         val host = MetriaAgentGroundingPolicy.requiredTool(question, today = today)
@@ -54,6 +75,21 @@ class MiniLmSpellCorrectionPolicyTest {
         assertEquals("give me my recorded protein total for today", result.resolvedRead?.classifierText)
         assertEquals("read_day_nutrition", result.resolvedRead?.requiredTool?.name)
         assertEquals(today, result.resolvedRead?.requiredTool?.targetDate)
+    }
+
+    @Test
+    fun bareSavedDishProbeNeverSendsItsOpaqueNameToTheSystemChecker() {
+        val text = "I had san jacobo"
+        val host = MetriaAgentGroundingPolicy.requiredTool(text, today = today)
+        var checkerCalls = 0
+        val result = MiniLmSpellCorrectionPolicy.resolve(host, text, null, today, EnglishSpellChecker { _, _ ->
+            checkerCalls += 1
+            error("Saved-dish names must remain opaque to the system checker")
+        }) { true }
+
+        assertEquals(SpellCheckReason.NO_CANDIDATE, result.reason)
+        assertFalse(result.providerAttempted)
+        assertEquals(0, checkerCalls)
     }
 
     @Test
@@ -101,6 +137,132 @@ class MiniLmSpellCorrectionPolicyTest {
             assertEquals("read_day_nutrition", result.resolvedRead?.requiredTool?.name)
             assertEquals(expectedMetric, result.resolvedRead?.requiredTool?.metric)
             assertEquals(today, result.resolvedRead?.requiredTool?.targetDate)
+        }
+    }
+
+    @Test
+    fun savedDishNaturalPhrasingAndFrameTyposUseBoundedLocalCorrectionOnly() {
+        val cases = listOf(
+            "Could you fnd my saved dish san jacobo?" to ("san jacobo" to CompanionAssistantPolicy.IntentKind.SAVED_RECALL),
+            "I just had my ususal breakfast" to ("breakfast" to CompanionAssistantPolicy.IntentKind.SAVED_DRAFT),
+            "I just ate my usual breakfas" to ("breakfast" to CompanionAssistantPolicy.IntentKind.SAVED_DRAFT),
+        )
+        cases.forEach { (text, expected) ->
+            var providerCalled = false
+            val result = MiniLmSpellCorrectionPolicy.resolve(
+                MetriaAgentGroundingPolicy.requiredTool(text, today = today), text, null, today,
+                EnglishSpellChecker { _, _ ->
+                    providerCalled = true
+                    SpellCheckResult(SpellCheckReason.RUNTIME_FAILURE)
+                },
+            ) { true }
+
+            assertFalse(text, providerCalled)
+            assertFalse(text, result.providerAttempted)
+            assertEquals(text, SpellCheckReason.ACCEPTED, result.reason)
+            assertEquals(text, expected.second, result.resolvedRead?.companion?.kind)
+            assertEquals(text, expected.first, result.resolvedRead?.requiredTool?.query)
+        }
+        val correctedRecall = MiniLmSpellCorrectionPolicy.resolve(
+            null, "Could you fnd my saved dish san jacobo?", null, today,
+            EnglishSpellChecker { _, _ -> error("Saved-dish correction never calls the OS spell checker") },
+        ) { true }
+        assertEquals("find my saved dish name", correctedRecall.resolvedRead?.classifierText)
+        assertEquals("san jacobo", correctedRecall.resolvedRead?.requiredTool?.query)
+    }
+
+    @Test
+    fun savedDishFrameNeverCorrectsOpaqueQueryOrChangesReadVersusDraftPermission() {
+        val typoInOpaqueQuery = "Could you fnd my saved dish san jacob?"
+        var providerCalls = 0
+        val opaque = MiniLmSpellCorrectionPolicy.resolve(
+            null, typoInOpaqueQuery, null, today,
+            EnglishSpellChecker { _, _ -> providerCalls++; SpellCheckResult(SpellCheckReason.ACCEPTED) },
+        ) { true }
+        assertEquals(0, providerCalls)
+        assertEquals("san jacob", opaque.resolvedRead?.requiredTool?.query)
+        assertEquals("find my saved dish name", opaque.resolvedRead?.classifierText)
+        assertEquals("san jacob", opaque.resolvedRead?.requiredTool?.query)
+
+        val routingWordsInQuery = "Could you fnd my saved dish protein total show?"
+        val queryResult = MiniLmSpellCorrectionPolicy.resolve(
+            null, routingWordsInQuery, null, today,
+            EnglishSpellChecker { _, _ -> error("Opaque saved-dish query must not be sent to the provider") },
+        ) { true }
+        assertEquals("protein total show", queryResult.resolvedRead?.requiredTool?.query)
+        assertEquals("find my saved dish name", queryResult.resolvedRead?.classifierText)
+
+        val invalidAction = "I hate my ususal breakfast"
+        val invalid = MiniLmSpellCorrectionPolicy.resolve(
+            null, invalidAction, null, today,
+            EnglishSpellChecker { _, _ -> providerCalls++; SpellCheckResult(SpellCheckReason.ACCEPTED) },
+        ) { true }
+        assertEquals(0, providerCalls)
+        assertNull(invalid.resolvedRead)
+
+        val hostConflict = MiniLmSpellCorrectionPolicy.resolve(
+            RequiredAgentTool("read_weight"), "I just had my ususal breakfast", null, today,
+            EnglishSpellChecker { _, _ -> error("Saved-dish frame never calls the OS spell checker") },
+        ) { true }
+        assertNull(hostConflict.resolvedRead)
+    }
+
+    @Test
+    fun malformedSavedDishFrameCannotSendOpaqueNameToSystemSpellChecker() {
+        val text = "showme my saved dish proteen"
+        var providerCalled = false
+        val result = MiniLmSpellCorrectionPolicy.resolve(
+            MetriaAgentGroundingPolicy.requiredTool(text, today = today), text, null, today,
+            EnglishSpellChecker { _, _ ->
+                providerCalled = true
+                SpellCheckResult(SpellCheckReason.ACCEPTED, listOf(
+                    SpellSuggestion("protein", 0, "proteen".length, looksLikeTypo = true, inDictionary = false),
+                ))
+            },
+        ) { true }
+
+        assertFalse(providerCalled)
+        assertFalse(result.providerAttempted)
+        assertNull(result.resolvedRead)
+
+        val malformedNamedDraft = "I just had my saved sncak"
+        val scope = requireNotNull(CompanionAssistantPolicy.savedDishCorrectionScope(
+            MiniLmReadTextNormalization.normalize(malformedNamedDraft),
+        ))
+        assertEquals("sncak", scope.opaqueQuery)
+        assertEquals(CompanionAssistantPolicy.IntentKind.SAVED_DRAFT, scope.intent)
+        assertTrue(scope.editableTargetsByWordIndex.isEmpty())
+        val draftResult = MiniLmSpellCorrectionPolicy.resolve(
+            MetriaAgentGroundingPolicy.requiredTool(malformedNamedDraft, today = today),
+            malformedNamedDraft, null, today,
+            EnglishSpellChecker { _, _ -> error("Saved dish names must never reach the spell checker") },
+        ) { true }
+        assertFalse(draftResult.providerAttempted)
+        assertNull(draftResult.resolvedRead)
+    }
+
+    @Test
+    fun savedDishInvalidDateMixedNegationAndAdviceFramesAbstainWithoutProvider() {
+        listOf(
+            "Find my saved dish san jacobo tomorrow",
+            "Find my saved dish san jacobo today",
+            "Find my saved dish san jacobo yesterday",
+            "Find my saved dish san jacobo on Monday",
+            "Could you fnd my saved dish san jacobo yesterday",
+            "I just had my ususal breakfast yesterday",
+            "I just had my ususal breakfast and log it",
+            "I did not eat my ususal breakfast",
+            "Should I eat my ususal breakfast?",
+            "I just ate my breakfas",
+        ).forEach { text ->
+            var called = false
+            val result = MiniLmSpellCorrectionPolicy.resolve(
+                MetriaAgentGroundingPolicy.requiredTool(text, today = today), text, null, today,
+                EnglishSpellChecker { _, _ -> called = true; SpellCheckResult(SpellCheckReason.ACCEPTED) },
+            ) { true }
+            assertFalse(text, called)
+            assertNull(text, result.resolvedRead)
+            assertFalse(text, result.providerAttempted)
         }
     }
 

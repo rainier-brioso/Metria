@@ -134,6 +134,24 @@ class AssistantTraceStoreTest {
             assertFalse(root.resolve(AssistantTraceStore.relativePath).readText().contains("private"))
         }
     }
+
+    @Test
+    fun `request identity provenance uses only fixed reasons and numeric ids`() {
+        val root = Files.createTempDirectory("trace-test").toFile()
+        val reasons = listOf("submission_reconciled", "submission_rejected", "continuation_reconciled",
+            "continuation_rejected", "continuation_cancelled", "chat_active_missing", "chat_active_request",
+            "conversation_sync_expired", "conversation_sync_normalized", "conversation_sync_changed")
+        AssistantTraceStore(root, true, { 1_000L }).use { trace ->
+            trace.setEnabled(true)
+            reasons.forEach { trace.recordReplyDelivery(2L, it); trace.recordReplyDelivery(2L, it) }
+            trace.recordReplyDelivery(2L, "message=private")
+            trace.flush()
+            val rows = root.resolve(AssistantTraceStore.relativePath).readLines().map { it.split('\t') }
+            assertEquals(reasons, rows.map { it[4] })
+            assertTrue(rows.all { it.size == 8 && it[7] == "2" })
+            assertFalse(root.resolve(AssistantTraceStore.relativePath).readText().contains("private"))
+        }
+    }
     @Test
     fun `trace is off by default and does not create a file`() {
         val root = Files.createTempDirectory("trace-test").toFile()
