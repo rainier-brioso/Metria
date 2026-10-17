@@ -66,6 +66,15 @@ class MetriaMealDraftToolSet : ToolSet {
 
     @Tool(description = "Decline preparing the immediately preceding member food report as a meal draft. Use only when trusted host context says a one-turn candidate is available and the member clearly declines that offer. This clears the candidate and prepares no draft; it never saves or changes a meal.")
     fun decline_meal_draft(): Map<String, Any> = mapOf("status" to "host_execution_required", "tool" to "decline_meal_draft")
+
+}
+
+/** Present only for a turn whose host froze the identity of a live eligible draft. */
+class MetriaCurrentDraftPortionToolSet : ToolSet {
+    @Tool(description = "Request a change to the portion of the one current unsaved meal draft when the member clearly asks to change it and gives one explicit whole-number gram amount. Use only for the current member's clear correction. Give only the gram amount from the current member message. This cannot choose food or save the draft.")
+    fun adjust_current_draft_portion(
+        @ToolParam(description = "One whole gram amount from 1 to 2000 explicitly stated in the current member message.") grams: Int,
+    ): Map<String, Any> = mapOf("status" to "host_execution_required", "tool" to "adjust_current_draft_portion", "grams" to grams)
 }
 
 /** Converts native LiteRT tool calls into Metria's existing host-side action allowlist. */
@@ -76,6 +85,13 @@ object MetriaNativeToolCallAdapter {
         val name = toolName.trim().lowercase()
         return when (name) {
             "draft_meal", "confirm_meal_draft", "decline_meal_draft", "read_latest_meal", "read_selected_meal" -> if (arguments.isEmpty()) PrivateCoachToolCall(intent = name) else null
+            "adjust_current_draft_portion" -> {
+                if (arguments.keys != setOf("grams")) return null
+                val raw = arguments["grams"] as? Number ?: return null
+                val value = raw.toDouble()
+                val grams = raw.toInt().takeIf { value == it.toDouble() && it in 1..2_000 } ?: return null
+                PrivateCoachToolCall(intent = name, grams = grams)
+            }
             "read_progress_overview" -> {
                 val period = arguments.string("period")?.takeIf { it in setOf("today", "week") }
                     ?: return null

@@ -1,6 +1,89 @@
 # Local assistant companion bundle — 2026-10-12
 
+## Current-draft portion corrections — 2026-10-18
+
+Member reports an initial explicit gram answer correctly updated a draft with
+Review visible, but subsequent exact/natural corrections received the generic
+no-draft reply. Safe metadata shows one local portion application followed by
+normal Gemma routing and missing meal confirmation. Code inspection confirms
+the initial offer accepts one answer only, then clears its override on another
+submission. Natural correction was proposed, not part of `7f66f60`.
+
+Extend the same live ordinary draft, limited to its one existing eligible
+unique uncertain food. Exact whole-gram amounts can update locally more than
+once, including after returning from Review while the draft is still current.
+Gemma interprets natural correction through a typed portion-edit action; it
+cannot choose a draft/item ID or replace foods. Freeze the host proposal,
+target, request/session and current override before intent selection clears
+the previous status. Require one explicit whole-gram literal matching the
+selected action, 1..2,000 g; do not infer units or serving conversions. Leading
+zeros are numeric notation: `022 g` means 22 g, never a guessed 200 g.
+
+Update only the separate member-amount prefill. Preserve original model ranges,
+confidence, assumptions/questions and foods; final deterministic nutrition and
+explicit Review/Save remain unchanged. Rejected edits keep the prior amount
+available for Review. Current-request/session/proposal checks govern late
+results. Lock, Stop, draft Discard, changed/expired conversation, unrelated/new
+operation and replacement draft invalidate edit authority; persisted history
+cannot recreate it. Keep saved-dish/image/manual and ambiguous/multi-target
+drafts outside this slice. No new dependency or vault representation.
+
+A clarification or ordinary no-tool response while resolving a correction must
+retain the visible unsaved draft and its prior portion for retry/Review. A model
+intent miss cannot discard the draft. Explicit read/navigation/new-meal actions
+end the portion-edit operation. Model-request retries must route using the final
+response, not a tool-presence flag captured before retry. These boundaries are
+part of the correction extension; no Chat history reconstruction is permitted.
+
+Reuse the draft card/composer/Review flow. Loading is cancellable; success
+retains a short portion acknowledgement and Review, without re-asking the
+initial question. Invalid quantity feedback leaves the current draft editable;
+missing/stale target cannot affect another draft. Exact amount editing remains
+fast/local; a natural correction may invoke Gemma for intent selection, without
+regenerating the food proposal. Implementation and independent review are
+complete. The final Android gate passes 609 tests (zero failures/errors/skips),
+debug/release builds and release vital lint; diff check passes. Member confirms
+the fresh rice sequence (15 g, 150 g, then natural correction to 022 g) reaches
+22 g in both Review visits with foods unchanged, then Discard. The bounded safe
+trace contains accepted portion application on a native Gemma correction turn;
+it contains no quantities or food text, so values come from member acceptance.
+Member also confirms natural 2001 g correction is rejected and Review retains
+the prior 150 g. The trace shows a native Gemma turn delivered to Chat, without
+a dedicated rejection event; rejection/retained value are member-observed.
+Stop during correction passes: member reports the subsequent today-meals answer
+is correct with no late correction or draft after a minute. Safe events confirm
+the native correction was cancelled, then the new read used MiniLM and reached
+Chat, without later delivery from the cancelled request in the inspected tail.
+Member confirms lock during correction retains history, permits the correct
+new answer and produces no old Review card or late correction after a minute.
+The inspected trace tail is unchanged from the Stop check, so this lock result
+is member-observed without a newly identified matching event. Broader
+accessibility and lifecycle combinations remain open.
+No commit/push authorization
+is carried over from the previous checkpoint.
+
+Initial review found that a
+non-edit model reply still cleared the draft, recreating the lost-Review path;
+parent also found stale tool-presence tracking across a factual-audit retry.
+Both findings were fixed and independently re-reviewed before the passing final
+gate. Runtime disposition tests cover retention and retirement boundaries;
+broader model behavior is not established by those tests alone.
+
 ## One portion clarification in Chat — 2026-10-17
+
+### Member follow-up — 2026-10-18
+
+Member reports all three follow-up scenarios pass: bare numeric reply at the
+meal offer receives clarification, Skip keeps the estimate, and lock clears
+pending action state without losing history. Last known installation is the
+reviewed routing APK based on `7f66f60`; no source change or reinstall occurred
+for these reports. Exact dialogue/values were not inspected. The retained
+content-free tail contains previous acceptance events and a lock event, but
+does not independently identify the reported new clarification/Skip runs.
+Record these as named member-observed passes, not telemetry-backed new runs or
+a deterministic correction of the earlier amount-as-confirmation behavior.
+Model consistency, wider lifecycle, other units/amounts and visual/accessibility
+gates remain open. This documentation update does not authorize another commit.
 
 ### Approved structured meal continuation — 2026-10-17
 

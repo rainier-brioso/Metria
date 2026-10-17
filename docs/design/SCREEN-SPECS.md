@@ -365,6 +365,16 @@ lock/background and the existing response lifecycle invalidate the details.
 
 ## Assistant overlay and conversation
 
+Current-draft portion correction (2026-10-18) reuses the draft card and composer.
+A subsequent explicit amount or understood natural correction updates the same
+eligible food and retains a concise acknowledgement. Review remains the dominant
+action, with Discard available. Model interpretation can show existing cancellable
+loading; the food proposal is not regenerated. Invalid input leaves the previous
+amount and Review usable. Lock/Stop/Discard/new context clears edit authority;
+returning from Review in the same unlocked draft retains the member's amount.
+A clarification or unsuccessful intent selection must not remove that draft
+card; keep the previous portion available for retry and Review.
+
 A contextual meal confirmation preserves the current pending member food
 description for the unsaved draft. The assistant interprets natural replies;
 invitation wording/punctuation does not establish the pending action. Never

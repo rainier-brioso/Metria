@@ -28,4 +28,12 @@ class MealDraftTranscriptTest {
         assertNull(mealDraftTranscriptAcknowledgement(42, null, 42, "loaded", false, "meal", true))
         assertNull(mealDraftTranscriptAcknowledgement(42, null, 42, "loaded", true, "agent_reply", true))
     }
+
+    @Test
+    fun portionEditAcknowledgementDoesNotClaimThatAnExistingDraftWasNewlyPrepared() {
+        assertEquals(
+            "Your current meal draft is still available for review.",
+            mealDraftTranscriptAcknowledgement(42, null, 42, "loaded", true, "agent_meal_portion_edit", true),
+        )
+    }
 }

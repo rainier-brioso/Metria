@@ -3846,3 +3846,101 @@ target-phone interaction recheck pending.
   only. Diff check clean. Commit identity/remote completion are recorded in Git.
   Remaining bounded task: bare-amount ambiguity at a meal offer, followed by
   skip/lifecycle checks; broader accessibility/integration gates remain open.
+
+### Member follow-up checks — 2026-10-18
+
+- Member reports all three suggested checks pass: bare amount at the draft
+  offer clarifies, Skip preserves the estimate, and lock clears pending actions
+  while retaining Chat history. Last known installed artifact is the final
+  routing APK documented above, based on committed/pushed `7f66f60`.
+- Read only the existing bounded technical trace. It contains prior named
+  acceptance events and a lock event, but does not independently identify the
+  newly reported clarification/Skip scenarios. No exact private dialogue,
+  quantities, records, UI dump or screenshot inspected.
+- Named passes are member-observed. No code/build/install/model update occurred
+  between the earlier ambiguous-numeric failure and this success, so no durable
+  semantic fix or broad reliability claim is established. Existing automated
+  baseline remains 603 passing tests/debug/release/lint on the checkpoint.
+- Documentation-only update; diff check required, no rebuild necessary. No meal
+  save or new commit/push. Broader lifecycle/other quantities/accessibility gates
+  stay open. Next proposed bounded feature: contextual correction of the current
+  draft portion without changing foods or bypassing Review/Save.
+
+### Current-draft portion correction extension — 2026-10-18
+
+- Member reports initial explicit grams correctly updated a still-visible
+  draft/Review button, followed by generic no-draft replies to more amounts or
+  natural corrections. Safe events show `portion_applied`, then a new native
+  Gemma turn with `meal_confirmation_missing`; no private contents inspected.
+- Read-only discovery confirms one-shot implementation: answered offer no
+  longer parses input, then ordinary submission clears accepted override and
+  proposal. This is a missing correction capability, not evidence that the
+  first amount was lost. Natural corrections were proposed, not implemented.
+- Implement subsequent exact gram edits plus a native typed natural portion
+  edit, bound to the same current eligible target/proposal/session. Validate
+  explicit whole grams against model action; `022 g` means 22 g. Preserve prior
+  amount on rejection and after Review return. No food/confidence mutation,
+  history resurrection, dependency, vault change or automatic Save.
+- Design states updated before implementation. Worker implementation, review,
+  full Android gate and member in-app checks pending. No install/commit/push.
+
+- Initial production implementation frozen and first gate started. Independent
+  review found non-edit model replies still discard draft state; parent found
+  tool-presence tracking used the initial response after an audit retry. Fix
+  retains visible draft/amount on prose clarification or intent miss, while
+  explicit read/navigation/new-meal actions retire editing; use final response
+  for selection. Runtime decision seam/regression tests in progress. No install
+  or acceptance claimed from the first implementation snapshot.
+
+- First gate failed compilation at two root callbacks: an inner Chat unlock
+  helper was referenced outside its scope. Use the root's current unlocked-vault
+  status there. No APK installed; worker is correcting that bridge together
+  with the review findings before the final complete gate.
+
+- Final independent review found no remaining blocker in the changed paths.
+  No-tool clarification retains the current draft and amount; explicit reads,
+  navigation and genuine new meals retire edit context. Final-response tool
+  selection and current unlock checks are covered by the reviewed source.
+- Final complete gate passes: 609 unit tests, zero failures/errors/skips,
+  debug and release APK builds, and release vital lint. `git diff --check`
+  passes. Debug APK SHA-256:
+  `aeddee7bf66948e0d2904bbb03e944a17327f79255b311fe143f681302e3a4d7`.
+  Physical acceptance of repeated grams, natural correction and Review return
+  remains pending; automated checks do not establish Gemma tool selection.
+- Installed that debug APK in place on Samsung SM-S928B / Android 16 using
+  `install -r` (`Success`), under the active test-cycle authorization. Existing
+  app identity, private storage and models preserved; cold launch succeeded.
+  Member unlock and fresh repeated-amount/natural-correction acceptance pending.
+  No raw dialogue, record capture, meal Save, commit or push performed.
+- Member confirms the fresh rice draft accepts 15 g, then 150 g, then natural
+  correction to 022 g; both Review visits show 22 g with foods unchanged, followed
+  by Discard. Bounded content-free events include accepted `portion_applied` on
+  the native Gemma correction request and accepted Chat delivery. Amounts/foods
+  are member-observed, not inferred from the trace. No screenshot/private record
+  inspection. Invalid-edit retention, Stop/lock during correction and broader
+  accessibility gates remain open. No commit/push authorization requested yet.
+- Invalid-edit phone check: member confirms natural 2001 g request is rejected,
+  Review remains available and retains prior 150 g, then Discard. Safe trace
+  records a native Gemma turn accepted into Chat but no dedicated rejection
+  event; rejection and retained amount are member-observed. No code change or
+  rebuild. Stop/lock during correction and broader accessibility remain open.
+- Stop phone check passes: member confirms subsequent today-meals answer is
+  correct and no late correction/draft returns after about a minute. Safe events
+  show the native correction request cancelled, followed by accepted MiniLM
+  `read_meals` for today and Chat delivery; no later delivery from the cancelled
+  request in the inspected tail. No raw content inspected. Lock during correction
+  and broader accessibility remain open. Documentation-only evidence update.
+- Lock phone check: member confirms history retained, new today-meals answer
+  correct, no old Review card or late correction after about a minute. Inspected
+  trace tail is unchanged from the Stop check, so no fresh matching lock event
+  independently corroborates this result. Record it as member-observed only.
+- Current checkpoint is ready for explicit commit/push decision: independent
+  review complete, 609 tests/debug/release/vital lint pass, diff check clean,
+  named correction/retention/Stop/lock phone checks recorded with evidence limits.
+  Broader accessibility/lifecycle combinations and pre-draft numeric confirmation
+  consistency remain documented gaps. No new commit/push performed.
+- Member explicitly approved committing and pushing this reviewed portion-edit
+  checkpoint to main on 2026-10-18. Passing source gate remains 609 tests plus
+  debug/release/vital lint; later updates are acceptance/approval notes only.
+  Git records commit identity and remote completion. Broader documented gates
+  remain open; no release-readiness claim.

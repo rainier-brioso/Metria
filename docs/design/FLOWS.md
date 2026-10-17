@@ -366,6 +366,16 @@ is introduced. All history retains its separate date-grouped view.
 
 ## 6. Ask Metria
 
+**Current draft correction - 2026-10-18:** while the same eligible unsaved Chat
+draft remains current, the member may send another whole-gram amount or a natural
+correction such as "Actually, make that 200 g". Update only that draft's eligible
+portion, acknowledge it and keep Review/Discard available. Returning from Review
+without saving retains the current member amount. Invalid edits keep the prior
+amount; no saved entry changes. A new topic, replaced/discarded draft, lock or
+Stop ends the edit scope; history cannot reopen it.
+Clarification or a model intent miss retains the visible draft and previous
+portion for retry/Review. Explicit read/navigation/new-meal actions end editing.
+
 **Meal continuation - 2026-10-17:** Metria keeps the current eligible food
 statement as one transient pending request. The assistant interprets the next
 reply in conversation: confirmation may prepare the original meal, a new food

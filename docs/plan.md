@@ -1,5 +1,22 @@
 # Metria product plan
 
+Active extension (2026-10-18): correct the portion of a still-current unsaved
+ordinary Chat draft after its initial answer. Member confirms the first amount
+updated a visible draft; later amounts/natural corrections hit generic Chat.
+Keep exact whole-gram updates local; use a typed native intent for natural
+corrections, validated against the literal grams and host-bound original target.
+Only the separate Review prefill changes. No food edits, history reconstruction,
+new dependency, persistence format or automatic Save. Scope/status:
+`assistant-companion-bundle.md`. Implementation and independent review complete;
+609 tests, debug/release builds and release vital lint pass. Named phone sequence
+passes: repeated amounts and natural 022 g correction yield 22 g across Review
+return, foods unchanged. Member confirms invalid 2001 g correction retains 150 g
+in Review. Stop during correction passes with cancellation events and a correct
+subsequent MiniLM read, no late draft. Member also confirms lock during correction
+retains history with no late draft and a correct new answer; no fresh matching
+trace event identified. Named phone checks pass; broader accessibility/lifecycle
+combinations remain open. Ready for explicit commit/push approval.
+
 Active slice (2026-10-17): one host-bound gram clarification for a new Chat meal
 draft, plus structured conversational meal continuation. Scope and evidence:
 `assistant-companion-bundle.md` and `m4-assistant-checkpoints.md`. Gemma interprets
@@ -7,6 +24,16 @@ the next reply using conversation; empty-argument confirm/decline tools consume
 only a current typed member-food candidate. Host request/session/source/read
 guards, unsaved draft validation and explicit Review/Save remain required.
 This replaces invitation prose matching and affirmative-list authorization.
+
+2026-10-18 follow-up: member reports all three named checks pass: a bare amount
+at the meal offer gets clarification, Skip preserves the estimate, and lock
+clears the pending action while history remains. These are member-observed
+replays on the last known installed checkpoint, not new implementation evidence.
+Retained metadata could not independently identify these new runs. The earlier
+numeric-confirmation failure remains a model-consistency gap: no intervening
+source change guarantees the improved result. Broader lifecycle/accessibility
+checks remain open. Next proposed feature is natural portion correction, such
+as "Actually, make that 200 g", under the existing current-draft/Review guards.
 
 Implementation and independent review are complete. Latest full gate passes:
 603 tests, zero failures/errors/skips, debug/release APKs, release vital lint

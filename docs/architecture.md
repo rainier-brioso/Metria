@@ -2,6 +2,20 @@
 
 ## Shared routing recognition
 
+Current-draft correction extension (2026-10-18, in development): keep the first
+eligible gram question and permit subsequent explicit amounts on the same live
+ordinary draft. Natural correction uses a typed native intent with host-bound
+proposal/item/request/session and literal gram validation. It changes only the
+member Review override, never model food/range/confidence or a saved record.
+Freeze context before model selection clears the old proposal; return an
+identity-bound override with the unchanged proposal. Rejected edits retain the
+previous Review amount; unrelated operations and lock/Stop/reset/Discard cannot
+revive editing through history. Existing explicit Save remains required.
+No-tool clarification/intent failure retains the current unsaved draft and
+portion for retry; explicit read/navigation/new-meal operations retire editing.
+Route a retried model request using the final response's action, not an earlier
+tool-presence snapshot.
+
 One-shot portion clarification (2026-10-17, implemented; phone gates pending): a new
 ordinary Chat draft may bind one host-generated gram question to its original
 proposal, completed request and conversation generation. A closed explicit

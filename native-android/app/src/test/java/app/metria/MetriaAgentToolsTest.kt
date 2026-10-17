@@ -153,6 +153,24 @@ class MetriaAgentToolsTest {
     }
 
     @Test
+    fun `portion edit tool requires exactly one bounded integer gram argument`() {
+        assertEquals(
+            PrivateCoachToolCall("adjust_current_draft_portion", grams = 22),
+            MetriaNativeToolCallAdapter.adapt("adjust_current_draft_portion", mapOf("grams" to 22)),
+        )
+        assertNull(MetriaNativeToolCallAdapter.adapt("adjust_current_draft_portion", emptyMap<String, Any?>()))
+        assertNull(MetriaNativeToolCallAdapter.adapt("adjust_current_draft_portion", mapOf("grams" to 22.5)))
+        assertNull(MetriaNativeToolCallAdapter.adapt("adjust_current_draft_portion", mapOf("grams" to "22")))
+        assertNull(MetriaNativeToolCallAdapter.adapt("adjust_current_draft_portion", mapOf("grams" to 2001)))
+        assertNull(MetriaNativeToolCallAdapter.adapt(
+            "adjust_current_draft_portion", mapOf("grams" to 22, "item" to "rice"),
+        ))
+        assertEquals(AssistantAction.Clarify, AssistantActionDispatcher.resolve(
+            MetriaNativeToolCallAdapter.adapt("adjust_current_draft_portion", mapOf("grams" to 22))!!,
+        ))
+    }
+
+    @Test
     fun `native tools reject missing malformed and out of range arguments`() {
         assertNull(MetriaNativeToolCallAdapter.adapt("read_nutrition_summary", mapOf("period" to "month")))
         assertNull(MetriaNativeToolCallAdapter.adapt("read_weight", mapOf("from_days_ago" to 6.5, "to_days_ago" to 0)))
