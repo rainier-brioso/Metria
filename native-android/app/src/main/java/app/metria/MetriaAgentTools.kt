@@ -58,8 +58,14 @@ class MetriaReadToolSet : ToolSet {
 
 /** No save capability and no model-authored description: the host uses the current member turn. */
 class MetriaMealDraftToolSet : ToolSet {
-    @Tool(description = "Prepare an editable, unsaved meal draft from the member's current message. Use when they describe food they ate or want to record, even without saying log or save. Do not use for questions about saved meals, nutrition advice, hypothetical meals, or medical concerns. The member must review and explicitly save the meal.")
+    @Tool(description = "Prepare an editable, unsaved meal draft from food the member describes in the current message. Normally use when they describe food they ate or want to record, even without saying log or save. If they explicitly ask you to ask first, wait, or not prepare a draft yet, do not call this tool; ask one short confirmation question instead. Do not use for a bare confirmation of a previous message; use confirm_meal_draft only when trusted host context says a candidate is available and the conversation clearly confirms it. Do not use for questions about saved meals, nutrition advice, hypothetical meals, or medical concerns. The member must review and explicitly save the meal.")
     fun draft_meal(): Map<String, Any> = mapOf("status" to "host_execution_required", "tool" to "draft_meal")
+
+    @Tool(description = "Confirm the immediately preceding member food report as the meal to prepare for review. Use only when trusted host context says a one-turn candidate is available and the conversation clearly shows the member confirms preparing that same report. Do not use for a decline, correction, added or changed food, unrelated question, or ambiguity. This only requests an unsaved editable draft; it never saves a meal.")
+    fun confirm_meal_draft(): Map<String, Any> = mapOf("status" to "host_execution_required", "tool" to "confirm_meal_draft")
+
+    @Tool(description = "Decline preparing the immediately preceding member food report as a meal draft. Use only when trusted host context says a one-turn candidate is available and the member clearly declines that offer. This clears the candidate and prepares no draft; it never saves or changes a meal.")
+    fun decline_meal_draft(): Map<String, Any> = mapOf("status" to "host_execution_required", "tool" to "decline_meal_draft")
 }
 
 /** Converts native LiteRT tool calls into Metria's existing host-side action allowlist. */
@@ -69,7 +75,7 @@ object MetriaNativeToolCallAdapter {
     internal fun adapt(toolName: String, arguments: Map<String, *>): PrivateCoachToolCall? {
         val name = toolName.trim().lowercase()
         return when (name) {
-            "draft_meal", "read_latest_meal", "read_selected_meal" -> if (arguments.isEmpty()) PrivateCoachToolCall(intent = name) else null
+            "draft_meal", "confirm_meal_draft", "decline_meal_draft", "read_latest_meal", "read_selected_meal" -> if (arguments.isEmpty()) PrivateCoachToolCall(intent = name) else null
             "read_progress_overview" -> {
                 val period = arguments.string("period")?.takeIf { it in setOf("today", "week") }
                     ?: return null
@@ -1539,12 +1545,14 @@ object MetriaNutritionReplyFallback {
         value.toBigDecimalOrNull()?.let { it.signum() >= 0 } == true
 }
 
-/** Transitional boundary: explicit writes keep their already-tested route until Gate D. */
+/** Only explicit weight writes still need the legacy route; meal drafts use native Chat. */
 object MetriaAgentMigrationPolicy {
     private val writeWords = setOf(
         "record", "log", "save", "add",
         "registra", "registrar", "guarda", "guardar", "añade", "anade", "agrega", "apunta",
     )
+    private val weightWords = setOf("weight", "weigh", "weighed", "peso", "pesar", "pese", "pesé")
+    private val weightQuantity = Regex("^(?:record|log|save|add|registra|registrar|guarda|guardar|añade|anade|agrega|apunta)\\s+(?:(?:my|mi)\\s+)?[0-9]+(?:[.,][0-9]+)?\\s*(?:kgs?|kilograms?|lbs?|pounds?)(?:\\s+(?:today|now|hoy|ahora))?[.!?]?$" )
 
     fun useLegacyWriteRoute(memberText: String): Boolean {
         if (MiniLmMealReadPolicy.isAnyDirectReadInScope(memberText) ||
@@ -1556,6 +1564,7 @@ object MetriaAgentMigrationPolicy {
             .split(' ')
             .filter(String::isNotBlank)
             .toSet()
-        return words.any(writeWords::contains)
+        return words.any(writeWords::contains) &&
+            (words.any(weightWords::contains) || weightQuantity.matches(memberText.trim().lowercase()))
     }
 }

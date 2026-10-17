@@ -200,12 +200,14 @@ class MiniLmFlexibleReadPolicyTest {
     }
 
     @Test
-    fun fullFlexibleReadMatchAloneBypassesLegacyWriteGuard() {
+    fun readsAndNonWeightWritesUseNativeRouteWithoutGrantingReadShortcut() {
         assertFalse(MetriaAgentMigrationPolicy.useLegacyWriteRoute("What is in my food log for yesterday?"))
         assertFalse(MetriaAgentMigrationPolicy.useLegacyWriteRoute("How many calories did I log today?"))
         assertFalse(MetriaAgentMigrationPolicy.useLegacyWriteRoute("Today, how much protien did I log?"))
-        assertTrue(MetriaAgentMigrationPolicy.useLegacyWriteRoute("What is in my food log for yesterday, save"))
-        assertTrue(MetriaAgentMigrationPolicy.useLegacyWriteRoute("Record my protein total today"))
+        assertFalse(MetriaAgentMigrationPolicy.useLegacyWriteRoute("What is in my food log for yesterday, save"))
+        assertFalse(MetriaAgentMigrationPolicy.useLegacyWriteRoute("Record my protein total today"))
+        assertFalse(MiniLmMealReadPolicy.isFlexibleReadInScope("What is in my food log for yesterday, save"))
+        assertFalse(MiniLmMealReadPolicy.isFlexibleReadInScope("Record my protein total today"))
     }
 
     @Test

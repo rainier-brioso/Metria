@@ -2,6 +2,39 @@
 
 ## Shared routing recognition
 
+One-shot portion clarification (2026-10-17, implemented; phone gates pending): a new
+ordinary Chat draft may bind one host-generated gram question to its original
+proposal, completed request and conversation generation. A closed explicit
+whole-gram answer provides a separate transient review override; raw model
+ranges/confidence are unchanged. The initial slice excludes partial/grouped/
+joined targets and multiple uncertain foods. Restore cannot recreate the offer;
+Stop/lock/reset/unrelated input/disposal invalidate an unanswered question.
+Only an accepted override survives Chat disposal for same-draft repeated Review
+in the unlocked session; lock/reset/new turn/draft Discard invalidate it too.
+Existing serialized
+transcript handoff and explicit Review/Save govern navigation and persistence.
+Monitoring adds only fixed portion applied/skipped/rejected reasons to the
+existing opt-in bounded debug trace, never food names, amounts or member text.
+Scope and acceptance: `assistant-companion-bundle.md`.
+
+Structured meal continuation (2026-10-17, implemented; phone gates
+pending): retain one typed eligible original member consumption statement after
+its accepted conversational response, bound to request and unlocked session.
+Gemma interprets the next reply in conversation and may select the empty-argument
+`confirm_meal_draft` tool. The host revalidates and consumes only its current
+candidate; the model cannot provide replacement source text or a historic ID.
+The empty-argument `decline_meal_draft` outcome uses the same current-source and
+required-read guards, acknowledges decline and produces no proposal or write.
+Text Chat's legacy migration route is reserved for explicit weight entry. Meal
+write words such as record/log/save no longer bypass native meal intent and
+pending-action handling. A meal portion in kg/lb alone is not a weight-entry
+command; legacy quantity-only requests require a complete weight-entry frame.
+No invitation-prose parsing or affirmative phrase list establishes authority.
+Fresh descriptions still use `draft_meal`; missing/stale context clarifies.
+Lock/Stop/reset/expiry/disposal/next submission invalidate pending context, which
+cannot be reconstructed from persisted history. Required reads, draft validation,
+member Review and final Save retain their existing boundaries.
+
 Saved-dish typed clarification (2026-10-17): at most three offered consumption
 candidates stay in transient host-owned state, bound to the completed request
 and conversation generation. A closed ordinal phrase or unique full name may

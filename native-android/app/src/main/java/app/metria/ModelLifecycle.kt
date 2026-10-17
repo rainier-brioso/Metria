@@ -168,7 +168,22 @@ class ModelLifecycle(
         even if they do not say log or save. Infer intent from the whole message and conversation,
         not just keywords. Questions about what was already recorded still require a read tool.
         Advice, hypothetical food, and medical concerns are not meal-recording requests.
+        For a clear food-consumption report, normally prepare the unsaved draft without first
+        asking permission; the member's final Save confirmation happens in Review. Respect an
+        explicit request to ask first, wait, or not prepare a draft yet: in that turn, ask one
+        short question about preparing the reported meal and call neither meal-draft tool.
+        For example, "I had cooked rice. Please ask me before preparing a draft" requires a
+        question such as "Would you like me to prepare that rice meal for review?", not a draft.
+        Do not treat a decline of that offer as a new food report or ask the member to repeat it.
         draft_meal creates only an unsaved editable proposal from the current member message.
+        If trusted host context says a one-turn meal candidate is available, interpret the member's
+        reply using the full conversation. Choose confirm_meal_draft only when they clearly confirm
+        preparing that same report for review, or decline_meal_draft when they clearly decline.
+        A changed/corrected meal, unrelated reply, or ambiguity must be handled normally.
+        confirm_meal_draft and decline_meal_draft take no arguments; the host supplies the original
+        member report only for confirmation, after validating the candidate. Declining clears the
+        candidate and prepares no draft. Never treat acknowledgement words as food or use the prior
+        report when the member changes it.
         The host generates and validates the proposal in a separate structured task.
         Never announce a completed draft or claim it was saved; the member reviews and saves.
 
@@ -555,6 +570,7 @@ class ModelLifecycle(
         memberText: String,
         history: List<PrivateConversationMessage>,
         selectedMealId: String? = null,
+        confirmation: NativeMealDraftPolicy.MealConfirmationContext? = null,
     ): ModelStatus {
         val input = memberText.trim()
         val loadedEngine = engine
@@ -567,6 +583,20 @@ class ModelLifecycle(
             return statusLocked()
         }
         if (activeInference?.isDone == false || pendingPrivateAgentToolName != null) return statusLocked()
+        val previousRequestId = assistantRequestId
+        val previousVisibleMessages = history.filterNot(PrivateConversationMessage::localEvidence)
+        val previousMemberMessage = previousVisibleMessages.lastOrNull(PrivateConversationMessage::fromMember)
+        val previousVisibleReply = previousVisibleMessages.lastOrNull()
+        val acceptedMealConfirmation = confirmation?.takeIf {
+                it.sourceRequestId == previousRequestId &&
+                assistantOperation == "agent_reply" && coachReply != null &&
+                assistantProposal == null && companionNavigation == null &&
+                selectedMealId.isNullOrBlank() &&
+                previousMemberMessage?.text?.trim() == it.originalMemberText &&
+                previousVisibleReply?.fromMember == false &&
+                previousVisibleReply?.text?.trim() == coachReply?.trim() &&
+                NativeMealDraftPolicy.isEligibleConsumptionStatement(it.originalMemberText)
+        }
         pendingMiniLmCompanion = null
         pendingPrivateAgentCompanion = null
         pendingSavedConsumptionFallback = false
@@ -597,7 +627,11 @@ class ModelLifecycle(
         assistantRequestId = requestId
         assistantTraceStore?.record("turn_started", "agent_turn", "started", requestId = requestId)
         activeInference = executor.submit {
-            runPrivateAgentTurn(loadedEngine, input, history, requestId, selectedMealId, followUpScope)
+            runPrivateAgentTurn(
+                loadedEngine, input, history, requestId, selectedMealId, followUpScope,
+                mealConfirmation = acceptedMealConfirmation,
+                mealCandidatePreviousRequestId = previousRequestId,
+            )
         }
         return statusLocked()
     }
@@ -1574,6 +1608,8 @@ class ModelLifecycle(
         selectedMealId: String? = null,
         followUpScope: MiniLmMealReadPolicy.FollowUpScope? = null,
         suppressBareConsumptionProbe: Boolean = false,
+        mealConfirmation: NativeMealDraftPolicy.MealConfirmationContext? = null,
+        mealCandidatePreviousRequestId: Long? = null,
     ) {
         if (!beginPrivateAgentWorker(loadedEngine, requestId)) return
         val startedAt = SystemClock.elapsedRealtime()
@@ -1918,7 +1954,11 @@ class ModelLifecycle(
                 if (engine !== loadedEngine || assistantRequestId != requestId) return
                 activeConversation = conversation
             }
-            var response = sendPrivateAgentMessage(conversation, conversationLifetime, Message.user(memberText), requestId)
+            var response = sendPrivateAgentMessage(
+                conversation, conversationLifetime,
+                Message.user(NativeMealDraftPolicy.memberTurnMessage(memberText, mealConfirmation != null)),
+                requestId,
+            )
             val selectedTool = response.toolCalls.singleOrNull()?.let(MetriaNativeToolCallAdapter::adapt)
             val fallbackToolDecision = if (suppressBareConsumptionProbe) {
                 SavedConsumptionFallbackPolicy.toolDecision(selectedTool)
@@ -1951,14 +1991,63 @@ class ModelLifecycle(
                     factCorrectionAttempted = true
                 }
             }
-            val mealDescription = NativeMealDraftPolicy.description(
-                response.toolCalls.singleOrNull()?.let(MetriaNativeToolCallAdapter::adapt), requiredTool, memberText,
+            val selectedCall = response.toolCalls.singleOrNull()?.let(MetriaNativeToolCallAdapter::adapt)
+            val confirmationDescription = NativeMealDraftPolicy.confirmationDescription(
+                selectedCall, requiredTool, mealConfirmation,
+                previousRequestId = mealCandidatePreviousRequestId,
+                conversationGeneration = mealConfirmation?.conversationGeneration,
+            )
+            val candidateDeclined = NativeMealDraftPolicy.declinesCandidate(
+                selectedCall, requiredTool, mealConfirmation,
+                previousRequestId = mealCandidatePreviousRequestId,
+                conversationGeneration = mealConfirmation?.conversationGeneration,
+            )
+            if (candidateDeclined) {
+                synchronized(this) {
+                    if (engine === loadedEngine && assistantRequestId == requestId) {
+                        assistantTraceStore?.recordReplyDelivery(requestId, "meal_confirmation_declined")
+                        clearPrivateAgentConversationLocked()
+                        state = "loaded"
+                        coachStreamingReply = null
+                        coachToolCall = null
+                        coachReply = "Okay, I won’t prepare that meal draft."
+                        coachDiagnostic = null
+                        assistantProposal = null
+                        assistantOperation = "agent_reply"
+                        reason = "The current meal candidate was declined without preparing a draft."
+                    }
+                }
+                return
+            }
+            val mealDescription = confirmationDescription ?: NativeMealDraftPolicy.description(
+                selectedCall, requiredTool, memberText,
             )
             if (mealDescription != null) {
+                if (confirmationDescription != null) assistantTraceStore?.recordReplyDelivery(requestId, "meal_confirmation_used")
                 runNativeMealDraft(
                     loadedEngine, conversation, mealDescription, requestId, startedAt,
                     agentContinuation = suppressBareConsumptionProbe,
                 )
+                return
+            }
+            if ((selectedCall?.intent == "confirm_meal_draft" || selectedCall?.intent == "decline_meal_draft" ||
+                    (selectedCall == PrivateCoachToolCall(intent = "draft_meal") && NativeMealDraftPolicy.isBareAcknowledgement(memberText))) &&
+                requiredTool == null
+            ) {
+                synchronized(this) {
+                    if (engine === loadedEngine && assistantRequestId == requestId) {
+                        assistantTraceStore?.recordReplyDelivery(requestId, "meal_confirmation_missing")
+                        clearPrivateAgentConversationLocked()
+                        state = "loaded"
+                        coachStreamingReply = null
+                        coachToolCall = null
+                        coachReply = "No meal draft was prepared."
+                        coachDiagnostic = null
+                        assistantProposal = null
+                        assistantOperation = "agent_reply"
+                        reason = "Unbound meal confirmation was clarified without creating a draft."
+                    }
+                }
                 return
             }
             consumePrivateAgentResponse(
@@ -2232,7 +2321,7 @@ class ModelLifecycle(
                     val nativeCall = response.toolCalls.single()
                     val adapted = MetriaNativeToolCallAdapter.adapt(nativeCall)
                     if (
-                        adapted == null || adapted.intent == "draft_meal" || privateAgentToolRounds > 2 ||
+                        adapted == null || adapted.intent in setOf("draft_meal", "confirm_meal_draft", "decline_meal_draft") || privateAgentToolRounds > 2 ||
                         (suppressBareConsumptionProbe &&
                             SavedConsumptionFallbackPolicy.toolDecision(adapted) ==
                             SavedConsumptionFallbackPolicy.ToolDecision.RETRY_WITHOUT_SAVED_SEARCH) ||

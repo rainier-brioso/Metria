@@ -28,6 +28,8 @@ class AssistantTraceStore(
             "submission_reconciled", "submission_rejected", "continuation_reconciled",
             "continuation_rejected", "continuation_cancelled", "chat_active_missing", "chat_active_request",
             "conversation_sync_expired", "conversation_sync_normalized", "conversation_sync_changed",
+            "portion_applied", "portion_skipped", "portion_rejected",
+            "meal_confirmation_used", "meal_confirmation_missing", "meal_confirmation_declined",
         )
         private val allowedTools = setOf("none", "read_progress_overview", "read_nutrition_summary", "read_day_nutrition", "read_weight", "read_meals", "read_latest_meal", "search_saved_dishes")
         private val allowedPeriods = setOf("none", "today", "yesterday", "week")
@@ -97,6 +99,8 @@ class AssistantTraceStore(
                 "submission_reconciled", "submission_rejected", "continuation_reconciled",
                 "continuation_rejected", "continuation_cancelled", "chat_active_missing", "chat_active_request",
                 "conversation_sync_expired", "conversation_sync_normalized", "conversation_sync_changed",
+                "portion_applied", "portion_skipped", "portion_rejected",
+                "meal_confirmation_used", "meal_confirmation_missing", "meal_confirmation_declined",
             )) return
         val shouldRecord = synchronized(this) {
             if (!enabled || closed || !replyDeliveryObservations.add(requestId to reason)) return@synchronized false
@@ -110,7 +114,8 @@ class AssistantTraceStore(
                 kind = "reply_delivery",
                 operation = "agent_turn",
                 outcome = if (reason in setOf("lifecycle_ready", "chat_consumed", "submission_reconciled",
-                        "continuation_reconciled", "chat_active_request")) "accepted" else "rejected",
+                        "continuation_reconciled", "chat_active_request", "portion_applied", "portion_skipped",
+                        "meal_confirmation_used", "meal_confirmation_declined")) "accepted" else "rejected",
                 reason = reason,
                 requestId = requestId,
             )

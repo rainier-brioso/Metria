@@ -210,6 +210,8 @@ fun MetriaAssistantConversationScreen(
     coachDiagnostic: String?,
     savedWeight: WeightEntry?,
     mealProposal: MealProposal?,
+    portionQuestion: String? = null,
+    portionFeedback: String? = null,
     savedDishChoices: List<MetriaSavedDishChoice> = emptyList(),
     recordingVoice: Boolean,
     preparingVoice: Boolean,
@@ -295,7 +297,7 @@ fun MetriaAssistantConversationScreen(
                 }
                 mealProposal?.let { proposal ->
                     item {
-                        MealDraftCard(proposal, onReviewMeal, onDiscardMealDraft)
+                        MealDraftCard(proposal, portionQuestion, portionFeedback, onReviewMeal, onDiscardMealDraft)
                     }
                 }
                 if (savedDishChoices.isNotEmpty()) {
@@ -597,12 +599,24 @@ private fun SavedWeightCard(entry: WeightEntry, onEdit: (WeightEntry) -> Unit, o
 }
 
 @Composable
-private fun MealDraftCard(proposal: MealProposal, onReview: (MealProposal) -> Unit, onDiscard: () -> Unit) {
+private fun MealDraftCard(
+    proposal: MealProposal,
+    portionQuestion: String?,
+    portionFeedback: String?,
+    onReview: (MealProposal) -> Unit,
+    onDiscard: () -> Unit,
+) {
     Card(colors = CardDefaults.cardColors(containerColor = MetriaColors.PrimarySoft)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Meal draft ready", style = MaterialTheme.typography.titleMedium)
             Text(proposal.items.joinToString { it.name }, color = MetriaColors.InkMuted)
             Text("Review portions and ingredients before saving.", color = MetriaColors.Estimated, style = MaterialTheme.typography.bodySmall)
+            if (portionQuestion != null) {
+                Text(portionQuestion, style = MaterialTheme.typography.bodyMedium)
+                Text("Reply with a whole gram amount, such as 120 g, or say “skip”. You can also review without answering.",
+                    color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall)
+            }
+            portionFeedback?.let { Text(it, color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall) }
             TextButton(onClick = { onReview(proposal) }, modifier = Modifier.fillMaxWidth()) { Text("Review meal") }
             MealDraftDiscardAction(onDiscard = onDiscard)
         }

@@ -366,6 +366,28 @@ is introduced. All history retains its separate date-grouped view.
 
 ## 6. Ask Metria
 
+**Meal continuation - 2026-10-17:** Metria keeps the current eligible food
+statement as one transient pending request. The assistant interprets the next
+reply in conversation: confirmation may prepare the original meal, a new food
+description may prepare its own draft, and decline or another topic retires the
+pending request. Confirmation never becomes a food name or saves a meal. Missing
+or expired context asks for the food again. Lock, Stop, closing Chat or a new
+conversation clears the request. Clear food reports may prepare a draft directly;
+no extra permission question is required before editable Review and final Save.
+An explicit request to ask first or wait takes precedence over the direct-draft
+default: ask one short question and do not prepare a draft on that turn.
+Declining that question acknowledges that no draft will be prepared; it must not
+ask the member to repeat food that is still in the current exchange.
+
+**One portion clarification - 2026-10-17:** a new ordinary Chat draft may show
+one question in its transient card about an eligible food's uncertain portion.
+An explicit whole-gram reply updates only that food in the unsaved draft locally;
+the member then taps Review to inspect all foods/portions before final Save.
+Skip/unknown keeps the estimate. Invalid or unitless quantities do not infer
+grams; Review/Discard remain available. Retain reply/acknowledgement, not stale
+question instructions. Lock, Stop, unrelated input and conversation replacement
+clear the question; restoring history never recreates its authority.
+
 **Saved-dish clarification - 2026-10-16:** an ambiguous consumption request may
 ask in a transient card which of at most three numbered saved dishes the member meant. The next
 explicit number/ordinal or unique full name selects that current choice for

@@ -3570,3 +3570,279 @@ target-phone interaction recheck pending.
   lint, clean diff check and named phone passes. Broader acceptance gaps above
   remain open. No new installation or private-device capture is part of this
   commit/push action.
+
+- Portion clarification approved (2026-10-17) from clean pushed `1d4113f`.
+  Read-only discovery confirmed that model questions lack typed item binding and
+  model confidence is not portion provenance. First slice therefore uses a
+  host-generated question for exactly one eligible uncertain food and a separate
+  transient member-gram review prefill; raw proposal/ranges/confidence remain
+  unchanged. Skip keeps estimates and existing Review/Save remains mandatory.
+  Request/proposal/session binding and no restored offer are required. Parent
+  adds only fixed applied/skipped/rejected trace reasons with privacy/restart
+  tests; implementation agent owns Kotlin flow/review initialization/tests.
+  Scope in companion spec; development, review and full gate pending. No new
+  dependency or saved-meal change; no installation, commit or push performed.
+
+- Initial portion gate passed: 596 tests, zero failures/errors/skips,
+  debug/release APKs and release vital lint. Independent review confirms a
+  repeated-Review defect: Chat disposal drops a locally accepted portion while
+  leaving the original proposal available; reopening Review can silently revert
+  to its estimated midpoint. Fix retains only accepted overrides in unlocked
+  conversation-session memory, with unanswered offers still composition-local.
+  Lock/reset/new turn/explicit draft Discard invalidate accepted state. New
+  regression and final gate/phone acceptance are pending; do not install the
+  intermediate build. No raw member content inspected, commit or push.
+
+- Repeated-Review fix is implemented and independently reviewed without a new
+  material defect: accepted numeric overrides are session-owned and rebound only
+  to the same current proposal/request/generation. Unanswered questions remain
+  local and cannot reappear from history; Stop/reset/lock/new turn/discard/save
+  clear accepted state. Parent also blocks Review navigation while a newer
+  submission/continuation is pending, including before its request-ID handoff.
+  Pure tests cover binding, unchanged model data, exact review-prefill identity
+  after earlier item transformation and trace privacy. No automated full Compose
+  disposal/reentry integration test exists; physical repeated Review is required.
+  Final build gate and in-place phone acceptance pending. No commit/push.
+
+- Final portion gate (2026-10-17) passes after the repeated-Review fix and
+  nullable-cleared-proposal guard: 596 tests, zero failures/errors/skips,
+  debug/release APKs, release vital lint and diff check. Debug hash in companion
+  specification. Authorized in-place installation underway; no physical
+  acceptance claimed. Same-draft repeated Review, actual quantity/skip/invalid/
+  topic/lock behavior and layout/accessibility gates require member observation.
+  No new dependency, model/vault replacement, raw capture, commit or push.
+
+- Portion APK installed in place successfully and cold launched (`Status: ok`)
+  on Samsung SM-S928B / Android 16. Existing identity/private storage retained;
+  no clear/uninstall/signing change or biometric automation. Member test pending:
+  fictional cooked-rice draft -> "150 g" -> Review/Discard -> Review again,
+  checking unchanged member grams plus retained reply/acknowledgement. Safe
+  trace will verify the fixed local portion outcome, without reading content.
+
+- Portion phone attempt exposed a meal-source bug (2026-10-17, installed
+  596-test APK/hash above): member reports the initial cooked-rice statement
+  produced a recording invitation, then "Yes" produced a draft named "yes".
+  A subsequent portion reply updated Review, but exact-value and repeated-Review
+  acceptance are not established by this report. Content-free metadata confirms
+  first probe -> normal Gemma reply, next native Gemma draft, then local
+  `portion_applied`; no prompt, draft payload or record value inspected.
+  Read-only discovery confirms NativeMealDraftPolicy uses the current turn as
+  extraction text, so the affirmative loses its original food description.
+  Fix a one-turn host-held invitation -> affirmative source binding, requiring
+  the existing draft tool and original member text. Never extract food from
+  assistant prose or draft a bare acknowledgement. Invalidation/tests/review/
+  final build and phone replay pending; no acceptance or save claimed.
+
+- Original-source confirmation fix implemented: a current accepted recording
+  invitation can hold the exact preceding member consumption text for one next
+  closed affirmative. UI session request/generation/unlocked checks and native
+  previous-request/actual-invitation/tool checks remain separate. No source
+  comes from assistant food prose, model arguments or restored history. A bare,
+  stale, declined or correction-bearing acknowledgement cannot be a meal name;
+  a selected draft tool without valid source gets a host clarification. Parent
+  completed validation after implementation-agent interruption, strengthened
+  same-clause positive invitation matching, negative/non-food source rejection,
+  punctuation handling and native routing for acknowledgements. Prompt clarifies
+  direct unsaved drafting for clear consumption reports. Independent review's
+  comma and negative-source findings are covered by focused regressions. The
+  599-test/debug/release/lint gate passed before the final acknowledgement guard;
+  final source verification and phone replay pending. No install/commit/push.
+
+- Final original-source fix gate passes (2026-10-17): 599 tests, zero
+  failures/errors/skips, debug/release APKs, release vital lint and clean diff
+  check. Debug hash in companion spec. Independent review identified comma
+  confirmation and negative-source cases; parent fixed and tested them while
+  preserving correction/decline/missing-context rejection and mandatory native
+  tool/read gates. In-place installation underway for corrected cooked-rice
+  draft identity plus exact 150 g/repeated-Review test. No phone pass, raw data
+  capture, meal save, commit or push claimed.
+
+- Corrected original-source APK installed in place (`Success`) and cold launched
+  (`Status: ok`) on Samsung SM-S928B / Android 16. Existing private storage and
+  models preserved. Await member biometric unlock and same original cooked-rice
+  statement, optional "Yes, please.", exact "150 g", Review/Discard/repeated
+  Review comparisons. No raw device content read and no meal saved.
+### Confirmation replay still failing — 2026-10-17
+
+- Member reports the corrected build still produces a meal named "yes" after
+  the recording invitation. Original-food and repeated-Review gates remain open.
+- Installed APK SHA-256 was checked on-device and matches the 599-test artifact
+  `9f624078f68f389736ce8a66e21155967d3aa234e1c38ed1cd3a5fe709f98c9f`.
+- Inspected only the existing content-free trace: current native Gemma turn and
+  draft delivery appear, with neither confirmation-used nor confirmation-missing.
+  No prompt, food proposal, vault contents or raw UI dump was inspected.
+- Independent read-only path audit found exact affirmative extraction guarded in
+  current source. Cause remains unproven; exact copied confirmation requested.
+  Do not broaden food/confirmation authority to hide this evidence mismatch.
+
+### Structured meal continuation approved — 2026-10-17
+
+- Latest replay produces the safe clarification rather than an acknowledgement
+  as food. Content-free metadata confirms `meal_confirmation_missing`, then a
+  fresh meal turn and `portion_applied`. Member reports gram handling works after
+  repeating the food; source continuity and repeated-Review gates remain open.
+- Member questioned why conversation was being resolved by host string rules.
+  Approved replacing invitation prose matching with one typed session-bound
+  original meal candidate and an empty-argument Gemma confirmation tool.
+- Gemma interprets the next reply using conversation context. Host validates
+  candidate provenance, request/session identity and required-read constraints;
+  model arguments cannot replace the original food or select old history.
+  Existing unsaved draft validation and explicit Review/Save remain required.
+- Pending: implementation, independent review, complete Android gate and
+  in-place physical replay. No new dependency, private capture, commit or push.
+
+- Structured implementation and independent review complete. Added native
+  empty-argument confirmation tool, typed one-turn source/session binding and
+  prior visible member/assistant exchange checks. Candidate turns retain native
+  routing; no invitation string matching or affirmative list authorizes source
+  reuse. Generic tool-result continuation cannot execute confirmation.
+- Full Android gate passes: 602 tests, zero failures/errors/skips, debug/release
+  APKs and release vital lint; diff check clean. Artifact hash in companion spec.
+  No new dependencies or changes to saved records/model files. In-place install
+  underway under active test-cycle authorization; phone behavior still pending.
+- Review found no material deterministic host defect. Runtime/Compose
+  orchestration, Gemma's confirmation/decline/correction choices, required-read
+  retry and in-flight lock remain physical/integration gaps. The factual-auditor
+  retry prompt's older tool wording can still cause a missed model selection;
+  it cannot bypass source validation or Save review.
+
+- Reviewed 602-test build installed with `install -r` (`Success`) and cold
+  launched (`Status: ok`) on Samsung SM-S928B / Android 16. Existing app identity,
+  private storage and models retained; no biometric automation or raw capture.
+  Member replay requested: original rice report, natural confirmation only if
+  invited, original-food draft with no repeated food question, then explicit
+  gram prefill and Discard. Direct drafting does not exercise confirmation;
+  record that distinction when acceptance arrives. No meal save/commit/push.
+
+- Named rice/portion replay: member selects "Rice draft directly; portion
+  correct" after the prescribed Review/Discard check. This confirms visible
+  food and quantity for one Review, not repeated Review or decline/correction.
+- Read only current-run content-free events: saved probe, normal Gemma reply,
+  then structured `meal_confirmation_used`, delivered draft and `portion_applied`.
+  Metadata therefore confirms bound-source confirmation and local portion
+  handling occurred; exact intervening dialogue is not inferred from the member's
+  direct-draft selection. No prompt/proposal/record/UI content inspected.
+- Next bounded physical check: decline a current offer, then verify no draft;
+  correction/repeated-Review/lifecycle/accessibility gates remain open.
+
+- Ask-first/decline attempt did not exercise decline: member reports an immediate
+  draft despite explicitly requesting a question first. Direct-drafting system
+  instruction had no stated exception for that preference. Updated native prompt
+  and draft-tool description to prioritize ask-first/wait requests and return
+  one question with no draft tool. No host phrase-matching branch added.
+  New gate/install/physical acceptance pending; original-source/portion evidence
+  above remains bounded to the previous named run.
+
+- Ask-first instruction update passes 602 tests (zero failures/errors/skips),
+  debug/release APKs, release vital lint and diff check. Debug artifact hash in
+  companion spec. `install -r` succeeded on the same Samsung/Android target,
+  preserving existing app identity/private storage/models. Replayed ask-first
+  and decline behavior remains pending member unlock/observation; no model
+  reliability claim or new host language matcher. No save/commit/push.
+
+- Ask-first replay reaches an offer, and member reports no draft after decline,
+  but the reply incorrectly says the meal was unclear. Content-free trace shows
+  `meal_confirmation_missing`: draft selection was safely blocked, not a typed
+  semantic decline outcome. No prompt or record content inspected.
+- Next bounded correction: native empty-argument decline action with the same
+  pending-source/request/no-required-read validation as confirmation. Valid
+  decline acknowledges no draft; missing/stale actions use neutral wording.
+  Build/review/phone acceptance pending. No lexical authorization or Save added.
+
+- Typed decline implemented; independent review found no material defect in
+  empty-argument schema, current-source/request/read guards or no-generation
+  return. Invalid pending actions use neutral no-draft text. Fixed content-free
+  `meal_confirmation_declined` joins monitoring. Policy/schema and trace tests
+  extended; final Android gate running. Actual Gemma decline selection and
+  corrected visible acknowledgement require phone replay on the new artifact.
+
+- Final typed-decline gate passes: 603 tests, zero failures/errors/skips,
+  debug/release APKs, release vital lint and clean diff check. Debug hash in
+  companion spec. Authorized in-place install underway; no phone pass claimed.
+  Independent reviewer confirms schema/provenance/read/no-generation boundaries;
+  Gemma's actual decline selection remains a phone acceptance gate.
+
+- Reviewed 603-test build installed in place successfully on Samsung SM-S928B /
+  Android 16. Existing app identity/private storage and models retained. Member
+  unlock and ask-first/No-thanks replay requested; inspect fixed decline event
+  rather than assuming a safe generic rejection is semantic success. No private
+  capture, saved meal, commit or push.
+
+- Named 603-test ask-first/decline acceptance passes on Samsung SM-S928B /
+  Android 16: member confirms a clear decline acknowledgement and no draft.
+  Current content-free trace records `meal_confirmation_declined` accepted and
+  delivered to Chat. No prompt/food/record/UI data inspected. This is the typed
+  decline path, distinct from the earlier blocked draft selection. Remaining:
+  correction uses new food, repeated Review preserves explicit grams, skip /
+  invalid amount and broader lifecycle/accessibility checks. No save/commit/push.
+
+- Named correction acceptance passes on the same installed 603-test build:
+  member changes the offered rice to scrambled eggs, confirms eggs only in
+  Review, then Discards. Current metadata shows a fresh native Gemma turn and
+  Chat delivery, with no original-source confirmation event for that turn.
+  No food/proposal/private transcript inspected; identity is member-observed.
+  Remaining bounded portion check: reject unitless quantity, accept explicit
+  grams and retain them across repeated Review. Broader gates stay open.
+
+- Intended unitless/repeated-Review check did not reach the portion stage:
+  member entered the bare amount at the preceding meal-draft offer. Safe trace
+  records `meal_confirmation_used` and delivered draft, with no portion event
+  for this reply. No numeric portion application is established. Gemma's
+  ambiguous amount-as-confirmation behavior remains a separate open gap;
+  unitless portion rejection/repeated Review remain untested on this run.
+  Continue using the existing prepared draft at its explicit gram question;
+  no build/install/code change or private-content inspection for this observation.
+
+- Completed portion-stage acceptance passes on the installed 603-test APK:
+  member confirms unitless reply rejected, explicit 150 g correct in first
+  Review and retained in second Review after leaving without saving, then
+  Discard. Same request's safe metadata records `portion_rejected` then
+  `portion_applied`; no intervening model turn for those local answers. Exact
+  amount and repeated-Review state are member-observed, not read from telemetry.
+  No meal save, private capture, commit or push. Skip, other unsupported amounts,
+  broad lifecycle/visual/accessibility and prior numeric-confirmation ambiguity
+  remain explicit gaps. Next: final checkpoint review and commit/push decision.
+
+- Final reviewer found a real route gap: first-turn meal statements containing
+  record/log/save could enter legacy intent handling, which lacks the new
+  ask-first/pending-action contract. Example is a rice report asking permission
+  before recording. This blocks checkpoint proposal despite prior named passes.
+- Parent correction reserves legacy Chat text routing for explicit weight
+  entry; non-weight meal writes use the approved native draft path. No extra
+  ask-first spelling/phrase matcher. Existing read exclusions remain, and food
+  portions in kg/lb alone do not qualify as weight entry. Added regression
+  assertions for the reported route plus meal/weight/unit cases. Updated review,
+  complete gate and phone route acceptance pending. No commit/push.
+
+- Routing re-review confirms original blocker fixed and explicit weight
+  commands retained. First gate failed two obsolete legacy meal-route test
+  expectations; updated them to native while explicitly checking mixed requests
+  still fail read-shortcut eligibility. Final full gate passes 603 tests, zero
+  failures/errors/skips, debug/release APKs, release vital lint and diff check.
+  Current debug hash in companion spec. Authorized in-place install underway;
+  named explicit-record/ask-first phone acceptance still pending.
+
+- Final routing APK installed in place (`Success`) on Samsung SM-S928B /
+  Android 16. Existing app identity/private storage/models preserved. Member
+  unlock and exact reviewer-repro replay requested; no new physical pass or
+  commit/push claimed. No private content or biometric interaction captured.
+
+- Final reviewer-repro phone acceptance passes on current routing APK: member
+  confirms question first, clear decline and no draft for the explicit-record
+  wording. Safe events confirm native Gemma and accepted
+  `meal_confirmation_declined` delivered to Chat, no legacy route in this run.
+  Cold launch returned `Status: ok`; existing data/models preserved. No raw
+  capture or meal save. Final route blocker closed; automated gate and diff
+  check pass. No source change after the passing full gate, only evidence notes.
+- Checkpoint ready for explicit commit/push decision. Include portion policy and
+  repeated-Review session override, structured confirm/decline, native meal
+  routing, fixed monitoring, tests and evidence. Bare numeric confirmation
+  ambiguity, skip/other amounts, full lifecycle/Compose/visual/accessibility
+  gates remain open. No release-readiness claim and no commit/push yet.
+
+- Member explicitly approved committing and pushing the reviewed checkpoint
+  to main on 2026-10-17. Final source gate remains the passing 603-test/debug/
+  release/lint run; subsequent changes are acceptance/approval documentation
+  only. Diff check clean. Commit identity/remote completion are recorded in Git.
+  Remaining bounded task: bare-amount ambiguity at a meal offer, followed by
+  skip/lifecycle checks; broader accessibility/integration gates remain open.

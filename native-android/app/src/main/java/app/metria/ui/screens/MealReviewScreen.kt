@@ -83,6 +83,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import app.metria.CatalogFood
 import app.metria.CatalogNutrition
+import app.metria.ChatPortionOverride
 import app.metria.FoodCatalog
 import app.metria.FoodCorrection
 import app.metria.GramRange
@@ -218,7 +219,7 @@ private fun reviewProposalItems(proposal: MealProposal, catalog: OfflineFoodCata
     }
 }
 
-private fun initialDrafts(items: List<MealProposalItem>): List<MealReviewItemDraft> {
+internal fun initialDrafts(items: List<MealProposalItem>): List<MealReviewItemDraft> {
     val groupedDishIds = mutableMapOf<String, String>()
     return items.mapIndexed { index, item ->
         val groupKey = item.groupLabel?.trim()?.takeIf(String::isNotEmpty)
@@ -235,6 +236,28 @@ private fun initialDrafts(items: List<MealProposalItem>): List<MealReviewItemDra
             role = item.role,
             evidence = item.evidence,
         )
+    }
+}
+
+internal fun initialDraftsWithPortionOverride(
+    items: List<MealProposalItem>,
+    proposal: MealProposal,
+    override: ChatPortionOverride?,
+): List<MealReviewItemDraft> {
+    val drafts = initialDrafts(items)
+    if (override == null || override.grams !in 1..2_000 || override.originalProposal != proposal) return drafts
+    val original = proposal.items.getOrNull(override.itemIndex) ?: return drafts
+    val expectedTarget = app.metria.ChatPortionClarificationPolicy.target(proposal, "meal", true)
+    if (expectedTarget?.itemIndex != override.itemIndex ||
+        !original.name.trim().equals(override.itemName, ignoreCase = true)
+    ) return drafts
+    // Match the original validated item after reviewProposalItems has performed
+    // any earlier joined-food splits; its list index may have shifted.
+    val matches = items.indices.filter { items[it] == original }
+    if (matches.size != 1) return drafts
+    return drafts.toMutableList().also { updated ->
+        val index = matches.single()
+        updated[index] = updated[index].copy(grams = override.grams.toString())
     }
 }
 
@@ -417,6 +440,7 @@ private fun nutritionLine(nutrition: CatalogNutrition): String = listOfNotNull(
 @Composable
 fun MetriaMealReviewSheet(
     proposal: MealProposal,
+    initialPortionOverride: ChatPortionOverride? = null,
     manualEntry: Boolean = false,
     initialMealSlot: String? = null,
     initialRecordedDate: LocalDate? = null,
@@ -435,14 +459,16 @@ fun MetriaMealReviewSheet(
     onDismiss: () -> Unit,
     onSave: (MealEntry, List<FoodCorrection>, List<PersonalDish>, MealCorrectionMemory?) -> String?,
 ) {
-    val draftKey = 31 * proposal.items.hashCode() + (initialSavedDishPrefill?.hashCode() ?: 0)
+    val draftKey = 31 * (31 * proposal.items.hashCode() + (initialSavedDishPrefill?.hashCode() ?: 0)) +
+        (initialPortionOverride?.hashCode() ?: 0)
     val proposalItems = remember(proposal, catalog, initialSavedDishPrefill) {
         if (initialSavedDishPrefill == null) reviewProposalItems(proposal, catalog) else emptyList()
     }
     // Keep the baseline IDs across configuration recreation; otherwise every
     // restored item would look removed and re-added to the learning diff.
     val initialItems = rememberSaveable(draftKey, saver = MealReviewItemsSaver) {
-        initialSavedDishPrefill?.let(::savedDishInitialDrafts) ?: initialDrafts(proposalItems)
+        initialSavedDishPrefill?.let(::savedDishInitialDrafts)
+            ?: initialDraftsWithPortionOverride(proposalItems, proposal, initialPortionOverride)
     }
     var items by rememberSaveable(draftKey, stateSaver = MealReviewItemsSaver) {
         mutableStateOf(initialItems)

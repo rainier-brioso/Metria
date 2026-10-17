@@ -595,7 +595,7 @@ class MiniLmMealReadPolicyTest {
     }
 
     @Test
-    fun directReadParaphrasesStayAheadOfLegacyWriteWordRoutingOnlyWhenFullyInScope() {
+    fun directReadsAndMixedMealRequestsRemainNativeButOnlyFullReadsUseShortcut() {
         listOf(
             "How much protein have I logged today?",
             "Remind me what I ate yesterday",
@@ -605,7 +605,11 @@ class MiniLmMealReadPolicyTest {
             "Log a meal and tell me my protein total today",
             "Could you remind me what I ate today and add dinner",
             "Save my latest meal and show its calories",
-        ).forEach { assertTrue(it, MetriaAgentMigrationPolicy.useLegacyWriteRoute(it)) }
+        ).forEach {
+            assertFalse(it, MetriaAgentMigrationPolicy.useLegacyWriteRoute(it))
+            assertFalse(it, MiniLmMealReadPolicy.isAnyDirectReadInScope(it))
+            assertFalse(it, MiniLmMealReadPolicy.isFlexibleReadInScope(it))
+        }
     }
 
     @Test

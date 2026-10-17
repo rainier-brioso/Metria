@@ -1,5 +1,247 @@
 # Local assistant companion bundle — 2026-10-12
 
+## One portion clarification in Chat — 2026-10-17
+
+### Approved structured meal continuation — 2026-10-17
+
+The member rejected resolving a conversational confirmation by matching the
+assistant's invitation prose. Replace that mechanism with one transient typed
+pending meal candidate, bound to the original eligible member consumption
+statement, accepted response, request and unlocked conversation generation.
+Gemma receives conversation context and a host-provided candidate-available
+signal; it interprets confirmation, rejection, correction or a new topic. An
+empty-argument `confirm_meal_draft` tool selects only the current host candidate.
+It cannot supply replacement food text, select a historic request, override a
+required read or save a record. A fresh meal description continues through
+`draft_meal`; missing/stale confirmation context clarifies without extracting
+acknowledgement words. No invitation regex or affirmative phrase list grants
+authority to reuse the candidate. Lock, Stop, reset, expiry, disposal and the
+next submission retire the offer; persisted history cannot reconstruct it.
+Existing meal validation, one-portion clarification and explicit Review/Save
+remain unchanged. Implementation and acceptance evidence follow below.
+
+Structured continuation is implemented and independently reviewed. The full
+Android gate passes: 602 tests, zero failures/errors/skips, debug/release APKs,
+release vital lint and clean diff check. Native entry additionally verifies the
+previous visible member text and assistant reply against the current accepted
+turn. Candidate presence keeps the next reply on the native path, including
+natural replies that would otherwise enter legacy routing. The dedicated tool
+is rejected from generic tool-result continuation. Debug APK SHA-256:
+`b76b02c18810e3cade166095d9386cb246b7e0c993cb5c382da2336d4bf69621`.
+Authorized in-place installation succeeded on Samsung SM-S928B / Android 16;
+cold launch returned `Status: ok`, preserving existing identity/private storage
+and models. Member unlock and confirmation/decline/correction phone checks
+remain pending. Helper/schema coverage is not a full runtime/Compose lifecycle
+test or proof of Gemma's conversational choices.
+
+Named rice/portion phone replay passes on this build: member reports a rice
+draft directly and the requested portion correct after Review/Discard. The
+current-run content-free trace also records `meal_confirmation_used` followed
+by `portion_applied`; the tool used its bound source and the quantity was handled
+locally. The member's direct-draft selection does not establish exact intervening
+dialogue, and no transcript was inspected. Do not claim decline, correction,
+repeated Review or lock acceptance from this result; those remain open.
+
+The explicit ask-first phone check instead prepared a draft immediately, so
+decline was not exercised. The direct-drafting default lacked an explicit
+exception for a member request to wait or ask first. Revised native instructions
+and tool description give that preference precedence: ask one short question
+without either draft tool on that turn. This remains model intent selection,
+not another host wording matcher. Updated gate and phone acceptance pending.
+
+Ask-first instruction update passes the full 602-test/debug/release/lint gate,
+zero failures/errors/skips and clean diff check. Debug APK SHA-256:
+`3e76f9e82cb6c55d5baff2524b265fee84c5297bc2a348a91680096222a7982f`.
+Phone acceptance of ask-first and subsequent decline is still required; prompt
+changes do not establish semantic model behavior from automated tests alone.
+
+Ask-first replay now reaches the invitation and creates no draft after the
+member declines, but its acknowledgement is inaccurate. Safe metadata records
+`meal_confirmation_missing`: an erroneous draft selection was blocked by the
+acknowledgement input guard. This is safe rejection, not verified semantic
+decline handling. Complete the structured protocol with empty-argument
+`decline_meal_draft`, subject to the same current candidate/request/read guards.
+It acknowledges the decline and creates no proposal or write. Invalid/missing
+pending actions receive a neutral no-draft explanation rather than claiming the
+food context was lost. No lexical decline list grants action authority.
+
+Typed decline handling is implemented and independently reviewed. Its fixed
+reply acknowledges the declined draft; native state clears and returns before
+generation. Both pending-meal tools require a current validated candidate and
+cannot override record reads or enter generic tool-result execution. Invalid
+actions say only "No meal draft was prepared." Monitoring adds the closed
+`meal_confirmation_declined` accepted outcome, with no text or food data.
+Final Android gate and corrected-phone acknowledgement remain pending.
+
+Final typed-decline gate passes: 603 tests, zero failures/errors/skips,
+debug/release APKs, release vital lint and clean diff check. Debug SHA-256:
+`f6e9ef410fc7dc49916de6bfa9a9667b5a4800b4705ea659a93faa64b40cba2f`.
+No new dependency, persistence representation or write permission. Installation
+and semantic decline/visible acknowledgement replay are the next physical gate.
+
+Current 603-test APK is installed in place on Samsung SM-S928B / Android 16.
+Named ask-first/decline phone check passes: member confirms clear decline
+acknowledgement with no draft; the current-run safe trace records accepted
+`meal_confirmation_declined` and Chat delivery. This exercises the intended
+typed outcome, not the prior generic blocked-draft fallback. Existing app data
+and models preserved; no meal saved. Correction, repeated Review, skip/invalid
+quantity and broader lifecycle/accessibility acceptance remain open.
+
+Named correction phone check passes on the current 603-test build: after the
+ask-first rice offer, member requests scrambled eggs instead, verifies Review
+contains eggs without rice, then Discards. Safe metadata shows a fresh native
+Gemma turn delivered to Chat, without the original-source confirmation event.
+Food identity is member-observed, not read from telemetry. This accepts the
+named correction only; broader arbitrary corrections remain unverified.
+
+Unitless/repeated-Review attempt has not reached its intended stage: member
+entered the bare amount at the preceding draft-confirmation question. Metadata
+records `meal_confirmation_used` and draft delivery, with no portion event for
+that reply. The amount was interpreted as confirmation, not validated/applied
+as grams. Record this as an unresolved ambiguous-reply behavior, not a pass or
+failure of the local portion parser. Continue the portion check on the prepared
+draft only when its explicit gram question is visible. No code change or new
+installation made for this observation.
+
+Completed portion-stage phone check passes on the current 603-test APK: member
+confirms the unitless reply is rejected, explicit 150 g appears in Review, and
+the same amount remains after leaving without saving and reopening Review,
+then Discard. Same-request safe metadata records `portion_rejected` followed by
+`portion_applied`, with no additional model turn between those portion events.
+The repeated-Review amount is member-observed; no proposal/record content read.
+This closes the named unitless and repeated-Review checks, not the earlier
+amount-as-confirmation gap. Skip, other units/ranges, lock/in-flight lifecycle,
+multi-food/partial drafts and broader visual/accessibility gates remain open.
+
+Final checkpoint review found an alternate route: explicit write words could
+send ask-first meal requests to the old intent handler, bypassing native
+instructions and pending actions. Retire that meal route instead of matching
+additional ask-first wording. Legacy text migration now requires explicit weight
+entry; meal requests use native Chat even when they say record/log/save.
+Preserve existing direct-read exclusions and weight entry, including complete
+numeric weight commands; a food portion in kg/lb does not itself select weight
+entry. Regression tests cover the reviewer's ask-first request, direct meal
+logging, units in food descriptions and retained weight commands. Updated
+review/full gate/install and named physical route check pending.
+
+Routing correction re-review confirms the reported bypass is resolved. The
+first gate exposed two tests asserting the superseded legacy meal route; both
+now assert native routing while independently preserving rejection from direct
+and flexible read shortcuts for mixed requests. Final complete gate passes:
+603 tests, zero failures/errors/skips, debug/release APKs, release vital lint
+and clean diff check. Current debug SHA-256:
+`83cb8a400da5c6a3553114ca24bde5e9eefad1a915d1a36297498114e63c6416`.
+Named on-phone explicit-record/ask-first check remains pending installation and
+member unlock; earlier physical passes refer to the predecessor 603-test build.
+
+Final routing APK installed in place and cold launched successfully on Samsung
+SM-S928B / Android 16, preserving existing data/models. Reviewer's exact
+explicit-record ask-first phone case passes: member confirms question first,
+clear decline and no draft. Safe events confirm native Gemma and accepted
+`meal_confirmation_declined` with Chat delivery, not legacy routing. No private
+contents inspected. This closes the final review blocker; the named earlier
+correction/portion passes remain predecessor-build evidence. Checkpoint awaits
+explicit commit/push approval. Bare-amount confirmation ambiguity, skip and
+broader lifecycle/integration/visual/accessibility checks remain open.
+
+Member explicitly approved commit and push of this reviewed checkpoint to main
+on 2026-10-17, including these documented acceptance gaps. Git records the final
+checkpoint identity; approval does not close the open gates or authorize a
+release, new dependencies or destructive device actions.
+
+Latest member replay explains the extra question: the safe trace records
+`meal_confirmation_missing`, followed by a new meal description and
+`portion_applied`. The member confirms gram handling works after re-describing
+the food. This does not accept the original-food confirmation handoff or the
+exact amount across two Review visits. The earlier invitation-matching design
+and its tests/build evidence below are historical, superseded by this decision.
+
+Member approved this next slice after the saved-choice checkpoint `1d4113f`.
+For a newly completed ordinary Chat meal draft with exactly one eligible
+uncertain food, ask one host-generated question about its gram portion. Require
+a unique simple food name, no joined/grouped target or partial/omitted foods.
+Multiple uncertain foods retain normal editable review in this first slice. The question
+belongs to the transient draft card, not retained imperative Chat history.
+Review/Discard remain available without answering; skip or an unknown amount
+keeps the estimate for manual review. This does not interpret arbitrary model
+questions, revise saved dishes, change foods, infer serving conversions or
+enable repeated draft-edit commands.
+
+An explicit whole-gram reply from 1 to 2,000 g with a gram unit applies only to that draft item through a
+host-validated transient portion override. Preserve the original model range,
+confidence, questions and assumptions; the member amount is a separate review
+prefill, not an exact model estimate. No additional Gemma call, automatic meal Save,
+nutrition guess, raised confidence or new persistence representation. Retain the
+member's reply and historical acknowledgement; other foods and their estimates
+stay unchanged. Final Review still verifies foods/portions and calculates
+nutrition through the existing deterministic flow before explicit Save.
+
+Bind the offer to the completed request, original proposal and unlocked
+conversation generation. Ask at most once per new draft. Stop, lock, clear,
+expiry, disposal, changed proposal and unrelated submission invalidate the
+unanswered question. An accepted portion stays only in unlocked session memory
+for the same draft across Review/return, so repeated Review cannot silently
+revert to the model midpoint. Stop/lock/reset/new turn/draft Discard or proposal
+replacement invalidate that accepted override too. Restored messages cannot
+recreate either state. Unsupported quantities
+remain un-applied with a concise explanation; unrelated questions start normal
+handling. Failed transcript retention must keep review in Chat for retry.
+
+Implementation and independent review are complete. The reviewed repeated-
+Review fix keeps accepted amounts in unlocked session memory; pending questions
+remain transient. Final 2026-10-17 gate passes: 596 tests, zero failures/errors/
+skips, debug/release APKs, release vital lint and diff check. APK SHA-256:
+`cf6105fa93ad7eddcdae89d667b3525ba49fe2edd3b853e1b65bbbf15e9a6bab`.
+Authorized `install -r` succeeded on Samsung SM-S928B / Android 16 and cold
+launch returned `Status: ok`, preserving app identity/vault/models. Member
+biometric unlock and physical acceptance are pending. Required
+named checks: numeric reply updates only the intended portion in Review;
+skip keeps the estimate; invalid/unitless reply does not invent grams; lock and
+topic change clear the question; Review/Discard retains the historical reply.
+The existing content-free trace records only closed portion applied/skipped/
+rejected reasons and numeric request identity; names, grams and replies are
+excluded, with the existing opt-in/retention/release-no-op rules unchanged.
+Broader multi-food, partial-proposal, lifecycle, save-failure, keyboard/font,
+TalkBack/rotation and visual gates remain explicit acceptance work.
+
+First phone attempt is not accepted: the member reports a recording invitation
+instead of an immediate draft, followed by a draft named "yes" after affirmative
+consent. Portion prefill worked according to the member and fixed metadata shows
+`portion_applied`, but the original meal source was lost before that step.
+The draft extractor currently takes only the current message. Add a one-turn
+host-bound confirmation for the preceding member consumption statement, created
+only after its accepted current recording invitation; an affirmative still needs
+the native draft tool and cannot authorize Save. Keep exact member description,
+never food inferred from assistant prose. Bare/stale acknowledgement must not
+become extraction text. Lock/Stop/reset/expiry/disposal/different topic invalidate
+the offer, with no reconstruction from saved history. Build/review and original
+food plus repeated-Review phone acceptance remain pending.
+
+Confirmation correction is implemented and reviewed. Exact closed affirmatives
+may use the current original member description, with punctuation normalization
+for "Yes, please.". Added details/negation never reuse old source. A positive
+recording invitation must occupy one bounded question clause; unrelated advice
+questions, negative/non-food statements and statements without an invitation
+cannot seed it. Native entry rechecks the actual prior accepted invitation,
+source request and absence of selected meal/draft/navigation before existing
+draft-tool validation. Missing or declined acknowledgement clarifies without
+extraction. The final 599-test/debug/release/lint gate passes, zero failures/
+errors/skips, diff check clean. Corrected debug APK SHA-256:
+`9f624078f68f389736ce8a66e21155967d3aa234e1c38ed1cd3a5fe709f98c9f`.
+Authorized in-place installation succeeded on Samsung SM-S928B / Android 16;
+cold launch returned `Status: ok`. Existing identity/vault/models retained.
+Original-food/portion/repeated-Review replay pending; no physical acceptance
+claimed. Confirmation used/missing joins fixed content-free
+monitoring; no original description, amount or assistant prose enters it.
+
+Corrected-build replay remains failed: the member reports that the affirmative
+still produces a meal named "yes". The installed APK checksum matches the
+599-test artifact above. Its retained metadata shows the native Gemma turn and
+draft delivery, but neither confirmation-used nor confirmation-missing, so the
+cause is not yet established. Do not accept original-source or repeated-Review
+behavior from this replay. Next: verify the exact short confirmation and close
+the runtime-path evidence gap before changing routing rules.
+
 ## Saved-dish Chat clarification — 2026-10-16
 
 Member approved implementing a focused clarification step after the named

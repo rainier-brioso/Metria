@@ -1,5 +1,48 @@
 # Metria product plan
 
+Active slice (2026-10-17): one host-bound gram clarification for a new Chat meal
+draft, plus structured conversational meal continuation. Scope and evidence:
+`assistant-companion-bundle.md` and `m4-assistant-checkpoints.md`. Gemma interprets
+the next reply using conversation; empty-argument confirm/decline tools consume
+only a current typed member-food candidate. Host request/session/source/read
+guards, unsaved draft validation and explicit Review/Save remain required.
+This replaces invitation prose matching and affirmative-list authorization.
+
+Implementation and independent review are complete. Latest full gate passes:
+603 tests, zero failures/errors/skips, debug/release APKs, release vital lint
+and clean diff check. Reviewed build installed in place on Samsung SM-S928B /
+Android 16, preserving existing app identity/private storage/models.
+Named phone evidence: correct rice/portion in Review on the 602-test predecessor
+with `meal_confirmation_used` and `portion_applied`; current 603-test build asks
+first when requested and acknowledges "No thanks" with no draft, confirmed by
+`meal_confirmation_declined`. Member also confirms a corrected food request
+prepares scrambled eggs without the offered rice, then Discard. Unitless amount
+rejection and explicit 150 g retention across two Review visits pass on the
+predecessor 603-test build, with `portion_rejected` then `portion_applied`.
+Skip and broader lifecycle/accessibility checks remain open. Historical failures and
+intermediate fixes are retained in the checkpoint, not current acceptance.
+
+Previous saved-choice checkpoint is pushed as `1d4113f`. Member explicitly
+approved committing and pushing this reviewed portion/continuation checkpoint
+to main on 2026-10-17. Commit identity and remote completion are recorded in Git.
+Ambiguous amount-as-confirmation handling at the prior draft offer remains an
+additional conversation gap; it does not establish a portion amount.
+
+Final checkpoint review found explicit meal write verbs could bypass native
+ask-first/pending-action handling through legacy routing. Fix reserves legacy
+text routing for explicit weight entry and keeps meal requests native, without
+another ask-first phrase matcher. Re-review and named phone evidence below
+close that blocker.
+
+Routing correction re-review and final full 603-test/debug/release/lint gate
+pass; mixed requests still cannot use direct/flexible read shortcuts. Updated
+APK installed in place. Named explicit-record ask-first phone check now passes:
+member confirms question first, clear decline and no draft; current safe events
+confirm native Gemma and accepted `meal_confirmation_declined`, no legacy route.
+Reviewer's route blocker is closed. Checkpoint commit/push is approved with the
+documented broader gaps; no release-readiness claim. Next bounded task: resolve
+bare-amount ambiguity at the meal offer, then remaining skip/lifecycle checks.
+
 Active slice (2026-10-16): bounded saved-dish Chat clarification, accepting
 explicit ordinal/name replies to current ambiguous consumption choices before
 existing review. Scope and pending gates: `assistant-companion-bundle.md`.

@@ -138,6 +138,21 @@ class MetriaAgentToolsTest {
     }
 
     @Test
+    fun `meal confirmation and decline schemas have no arguments and stay outside the generic dispatcher`() {
+        val confirmation = MetriaNativeToolCallAdapter.adapt("confirm_meal_draft", emptyMap<String, Any?>())
+        assertEquals(PrivateCoachToolCall("confirm_meal_draft"), confirmation)
+        assertNull(MetriaNativeToolCallAdapter.adapt("confirm_meal_draft", mapOf("description" to "rice")))
+        assertNull(MetriaNativeToolCallAdapter.adapt("confirm_meal_draft", mapOf("save" to true)))
+        assertEquals(AssistantAction.Clarify, AssistantActionDispatcher.resolve(confirmation!!))
+
+        val decline = MetriaNativeToolCallAdapter.adapt("decline_meal_draft", emptyMap<String, Any?>())
+        assertEquals(PrivateCoachToolCall("decline_meal_draft"), decline)
+        assertNull(MetriaNativeToolCallAdapter.adapt("decline_meal_draft", mapOf("description" to "rice")))
+        assertNull(MetriaNativeToolCallAdapter.adapt("decline_meal_draft", mapOf("save" to true)))
+        assertEquals(AssistantAction.Clarify, AssistantActionDispatcher.resolve(decline!!))
+    }
+
+    @Test
     fun `native tools reject missing malformed and out of range arguments`() {
         assertNull(MetriaNativeToolCallAdapter.adapt("read_nutrition_summary", mapOf("period" to "month")))
         assertNull(MetriaNativeToolCallAdapter.adapt("read_weight", mapOf("from_days_ago" to 6.5, "to_days_ago" to 0)))
@@ -628,17 +643,22 @@ class MetriaAgentToolsTest {
     }
 
     @Test
-    fun `migration policy sends only explicit write language to legacy route`() {
+    fun `migration policy keeps only explicit weight writes on legacy route`() {
         assertTrue(MetriaAgentMigrationPolicy.useLegacyWriteRoute("Registra 77 kg hoy"))
-        assertTrue(MetriaAgentMigrationPolicy.useLegacyWriteRoute("Save this meal"))
+        assertTrue(MetriaAgentMigrationPolicy.useLegacyWriteRoute("Log my weight"))
+        assertTrue(MetriaAgentMigrationPolicy.useLegacyWriteRoute("Record 77kg"))
+        assertFalse(MetriaAgentMigrationPolicy.useLegacyWriteRoute("Save this meal"))
+        assertFalse(MetriaAgentMigrationPolicy.useLegacyWriteRoute("I had cooked rice; please ask me before you record it"))
+        assertFalse(MetriaAgentMigrationPolicy.useLegacyWriteRoute("Please log the rice meal after asking me first"))
+        assertFalse(MetriaAgentMigrationPolicy.useLegacyWriteRoute("Log 2 lb of rice"))
         assertFalse(MetriaAgentMigrationPolicy.useLegacyWriteRoute("¿Cómo va mi semana?"))
         assertFalse(MetriaAgentMigrationPolicy.useLegacyWriteRoute("Sí, me gustaría"))
         assertFalse(MetriaAgentMigrationPolicy.useLegacyWriteRoute("How much protein did I log tday?"))
         assertFalse(MetriaAgentMigrationPolicy.useLegacyWriteRoute("How much proteiin did I log today?"))
         assertFalse(MetriaAgentMigrationPolicy.useLegacyWriteRoute("Show my food log tday"))
         assertFalse(MetriaAgentMigrationPolicy.useLegacyWriteRoute("give me my recored protein tot for today?"))
-        assertTrue(MetriaAgentMigrationPolicy.useLegacyWriteRoute("How much protein did I log today and add a snack"))
-        assertTrue(MetriaAgentMigrationPolicy.useLegacyWriteRoute("record my protein total today"))
+        assertFalse(MetriaAgentMigrationPolicy.useLegacyWriteRoute("How much protein did I log today and add a snack"))
+        assertFalse(MetriaAgentMigrationPolicy.useLegacyWriteRoute("record my protein total today"))
     }
 
     @Test

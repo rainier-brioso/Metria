@@ -365,6 +365,25 @@ lock/background and the existing response lifecycle invalidate the details.
 
 ## Assistant overlay and conversation
 
+A contextual meal confirmation preserves the current pending member food
+description for the unsaved draft. The assistant interprets natural replies;
+invitation wording/punctuation does not establish the pending action. Never
+present “yes” or another acknowledgement as food. An expired/missing pending
+request gets a concise clarification and cannot reopen an old action from
+history. Existing loading, Stop, review and retained messages apply; no additional
+confirmation screen is added.
+Declining a current meal offer receives a concise no-draft acknowledgement.
+Do not describe that decision as missing food context or ask for the same food
+again. A rejected pending action must only state the no-draft outcome it knows.
+
+One portion clarification (2026-10-17) uses the existing transient meal draft
+card and composer. Show one short food-specific question with an example in
+grams and a skip hint. Keep Review as the dominant draft action and Discard
+available. A valid reply updates the unsaved draft and retains a historical
+acknowledgement; it never claims the meal is saved or nutrition is verified.
+Unsupported quantity feedback is concise and does not remove Review. Questions
+are ephemeral; request/proposal/session changes cannot apply a stale reply.
+
 Saved-dish clarification (2026-10-16) reuses the selectable Chat timeline and
 existing candidate card, with consistent numbered candidates and a concise
 question in the transient card, without retaining obsolete choice instructions

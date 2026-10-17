@@ -8,6 +8,27 @@ import org.junit.Test
 
 class AssistantTraceStoreTest {
     @Test
+    fun `portion and confirmation outcomes retain only deduplicated fixed reasons across restart`() {
+        val root = Files.createTempDirectory("trace-test").toFile()
+        AssistantTraceStore(root, true, { 1_000L }).use { trace ->
+            trace.setEnabled(true)
+            listOf("portion_rejected", "portion_applied", "portion_skipped", "meal_confirmation_used", "meal_confirmation_missing", "meal_confirmation_declined").forEach { reason ->
+                trace.recordReplyDelivery(22L, reason)
+                trace.recordReplyDelivery(22L, reason)
+            }
+            trace.recordReplyDelivery(22L, "portion_applied:150g rice")
+            trace.flush()
+        }
+        AssistantTraceStore(root, true, { 1_001L }).use { trace ->
+            trace.flush()
+            val rows = root.resolve(AssistantTraceStore.relativePath).readLines().map { it.split('\t') }
+            assertEquals(listOf("portion_rejected", "portion_applied", "portion_skipped", "meal_confirmation_used", "meal_confirmation_missing", "meal_confirmation_declined"), rows.map { it[4] })
+            assertEquals(listOf("rejected", "accepted", "accepted", "accepted", "rejected", "accepted"), rows.map { it[3] })
+            assertTrue(rows.all { it.size == 8 && it[1] == "reply_delivery" && it[7] == "22" })
+        }
+    }
+
+    @Test
     fun `expired tool continuation records only fixed technical metadata`() {
         val root = Files.createTempDirectory("trace-test").toFile()
         AssistantTraceStore(root, true, { 1_000L }).use { trace ->
@@ -280,6 +301,7 @@ class AssistantTraceStoreTest {
         AssistantTraceStore(root, false, { 1_000L }).use { trace ->
             trace.setEnabled(true)
             trace.record("turn_started")
+            trace.recordReplyDelivery(22L, "portion_applied")
             trace.flush()
             assertEquals(AssistantTraceStore.Status(false, 0, 0), trace.status())
         }
