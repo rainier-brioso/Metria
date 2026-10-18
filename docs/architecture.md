@@ -2,6 +2,41 @@
 
 ## Shared routing recognition
 
+Explicit local food-label correction (2026-10-19, in development): reuse the
+strict literal one-food correction frame and current unlocked draft authority.
+A packaged-catalog candidate must cover the complete replacement phrase and its
+canonical food head; modifier-only, generic source/category and ambiguous labels
+abstain. Catalog use admits a label edit only, never a matched food ID or new
+nutrition. Apply a transient name overlay on the same source request/session,
+preserve explicit gram override and immutable proposal, and retain unmatched
+Review. Unknown/no-catalog/unsupported wording follows native assistant handling.
+No new dictionary, model, download, vault representation or Save capability.
+
+Single-food replacement extension (2026-10-18, in development): a separate
+transient host overlay may replace the label of the sole simple food in a live
+ordinary Chat draft. Dynamic native tool input is limited to one replacement
+phrase literally present in the current member turn; the host chooses the sole
+target and validates request/proposal/unlocked conversation identity. Original
+model proposal and uncertainty remain unchanged. Review applies the name overlay,
+preserves the separate member gram amount, removes stale description/preparation
+and does not reuse the old catalog match or nutrition. A fresh member match and
+deterministic calculation are required for replacement nutrition before Save.
+No-tool/error clarification preserves the previous overlays; explicit operations
+and lock/Stop/reset/Discard invalidate authority. History cannot restore edits.
+Keyboard dictation shares text submission; dedicated Speak's separate audio
+intent path is not yet a shared contextual edit route. Scope and acceptance:
+`assistant-companion-bundle.md`.
+
+For a structurally supported single-food correction with no initial native tool
+selection, permit one corrective native intent attempt. Required reads, navigation,
+ordinary discourse, quantities and mixed edits do not enter it. The final tool
+still must match the current member's literal replacement phrase and host-bound
+target. A second no-tool response yields host-authored unchanged-draft feedback,
+not a model claim of an unexecuted change. There is no additional factual retry
+loop for that branch. Portion prompts use the currently corrected display name;
+immutable raw item identity remains separate. Retire dynamic edit conversation
+state after either portion or food editing, including no-tool completion.
+
 Current-draft correction extension (2026-10-18, in development): keep the first
 eligible gram question and permit subsequent explicit amounts on the same live
 ordinary draft. Natural correction uses a typed native intent with host-bound
@@ -131,6 +166,17 @@ MiniLM abstention remain; monitoring adds only a fixed technical reason. Scope
 and physical gates: `minilm-today-overview.md`.
 
 ## Chat navigation persistence
+
+Hydration provenance correction (2026-10-18, in development): recognize bounded,
+exact successful conversation snapshots written by this unlocked session when a
+status refresh returns one older than the current in-memory turn. Receipts include
+the committed canonical snapshot identity and are never persisted or logged.
+Failed writes cannot create receipts; generation changes/lock/reset/clear retire
+them. Synchronization must observe writer completion before classifying a saved
+snapshot, without blocking the UI thread for disk work. Unknown changed/removed/
+expired conversations still restore and revoke request authority. The final
+stale-result delivery gate remains unchanged. This repairs provenance, not
+conversation retention or nutrition behavior.
 
 Completed current-turn Chat failures use a host-authored assistant message in
 the existing encrypted timeline, consumed once under the reply request gate.

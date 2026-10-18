@@ -102,6 +102,7 @@ data class PrivateCoachToolCall(
     val message: String? = null,
     val query: String? = null,
     val grams: Int? = null,
+    val replacementName: String? = null,
     /** Host-only frozen local reference/as-of day; `daysAgo` is applied once to select the MiniLM read day. */
     val hostReadDate: LocalDate? = null,
     /** Host-authorized intent discriminator; never parsed from model arguments. */

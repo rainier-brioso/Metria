@@ -41,6 +41,7 @@ data class ChatCurrentDraftPortionContext(
 
 enum class CurrentDraftTurnDisposition {
     APPLY_PORTION_EDIT,
+    APPLY_FOOD_EDIT,
     RETAIN_AND_CLARIFY_CONFIRMATION,
     RETAIN_CONVERSATIONAL_REPLY,
     RETIRE_FOR_EXPLICIT_OPERATION,
@@ -76,11 +77,14 @@ object ChatPortionClarificationPolicy {
         newMealIntent: Boolean,
     ): CurrentDraftTurnDisposition {
         if (!contextAvailable) return CurrentDraftTurnDisposition.NO_CURRENT_DRAFT
-        if (requiredRead || navigation || finalToolNames.any { it.startsWith("read_") } ||
+        if (requiredRead || navigation ||
             selectedIntent?.startsWith("read_") == true
         ) return CurrentDraftTurnDisposition.RETIRE_FOR_EXPLICIT_OPERATION
         if (finalToolNames.contains("adjust_current_draft_portion")) {
             return CurrentDraftTurnDisposition.APPLY_PORTION_EDIT
+        }
+        if (finalToolNames.contains("replace_current_draft_food")) {
+            return CurrentDraftTurnDisposition.APPLY_FOOD_EDIT
         }
         if (selectedIntent == "draft_meal" || finalToolNames.contains("draft_meal")) {
             return if (newMealIntent) CurrentDraftTurnDisposition.RETIRE_FOR_EXPLICIT_OPERATION
@@ -92,7 +96,8 @@ object ChatPortionClarificationPolicy {
             return CurrentDraftTurnDisposition.RETAIN_AND_CLARIFY_CONFIRMATION
         }
         if (finalToolNames.isEmpty()) return CurrentDraftTurnDisposition.RETAIN_CONVERSATIONAL_REPLY
-        return CurrentDraftTurnDisposition.RETIRE_FOR_EXPLICIT_OPERATION
+        return if (selectedIntent == "search_saved_dishes") CurrentDraftTurnDisposition.RETIRE_FOR_EXPLICIT_OPERATION
+        else CurrentDraftTurnDisposition.RETAIN_AND_CLARIFY_CONFIRMATION
     }
 
     /** Only an ordinary, complete Chat draft may ask; image/manual/saved-dish paths are excluded by operation. */
@@ -101,7 +106,7 @@ object ChatPortionClarificationPolicy {
         operation: String?,
         ordinaryChatDraft: Boolean,
     ): ChatPortionTarget? {
-        if (!ordinaryChatDraft || operation !in setOf("meal", "agent_meal_draft", "agent_meal_portion_edit") ||
+        if (!ordinaryChatDraft || operation !in setOf("meal", "agent_meal_draft", "agent_meal_portion_edit", "agent_meal_food_edit") ||
             proposal.omittedItemCount != 0 || proposal.partialCategory != null || proposal.items.isEmpty()
         ) return null
 
@@ -157,7 +162,7 @@ object ChatPortionClarificationPolicy {
         val current = proposal ?: return null
         val request = requestId ?: return null
         if (!unlocked || stopping || pending || request != activeRequestId ||
-            request != handledReplyRequestId || operation !in setOf("meal", "agent_meal_draft", "agent_meal_portion_edit")
+            request != handledReplyRequestId || operation !in setOf("meal", "agent_meal_draft", "agent_meal_portion_edit", "agent_meal_food_edit")
         ) return null
         val target = target(current, operation, ordinaryChatDraft = true) ?: return null
         if (acceptedOverride != null && !isCurrent(
@@ -183,7 +188,7 @@ object ChatPortionClarificationPolicy {
         stopping: Boolean,
     ): Boolean = unlocked && !stopping && (context.currentGrams == null || context.currentGrams in 1..2_000) &&
         previousRequestId == context.sourceRequestId &&
-        conversationGeneration == context.conversationGeneration && operation in setOf("meal", "agent_meal_draft", "agent_meal_portion_edit") &&
+        conversationGeneration == context.conversationGeneration && operation in setOf("meal", "agent_meal_draft", "agent_meal_portion_edit", "agent_meal_food_edit") &&
         proposal != null && proposal == context.originalProposal &&
         target(proposal, operation, ordinaryChatDraft = true) == context.target
 

@@ -1,5 +1,54 @@
 # Metria product plan
 
+Current reliability fix (2026-10-19): native single-food tool selection remains
+inconsistent despite one bounded retry. Implement conservative local label edits
+for an explicit single-food correction whose full phrase and canonical food head
+are recognized by the packaged catalog. This is vocabulary admission only: no
+catalog ID/nutrition selected, original proposal and explicit grams preserved,
+Review still unmatched. Unknowns keep native handling. Implementation and
+independent review complete; 632 tests/debug/release/vital-lint gate and diff
+check pass. Update installed in place and cold-launched; member confirms repeated
+edits yield white rice, 200 g, unmatched across two Review visits. Safe trace
+confirms a local food edit; per-request event deduplication cannot count repeated
+local edits. Separate native fallback also completed, without text attribution.
+Member also confirms fresh basmati/150 g/unmatched Review and Discard. Latest
+trace contains no distinct new turn for that report; the earlier native success
+is not attributed to this isolated check. Named visible acceptance passes;
+broader gaps remain in `assistant-companion-bundle.md`. Member explicitly approved
+commit/push of this reviewed checkpoint. The pending-approval statements in the
+historical notes below are superseded. Next bounded task: dedicated voice-path
+contextual-edit parity, scoped separately from the accepted text submission path.
+
+Active extension (2026-10-18): contextual replacement of the sole food in a live
+ordinary Chat draft, such as "Actually, it was brown rice". Host-bound native
+intent supplies only a replacement phrase present in the current member turn.
+Keep the original proposal and separate name/portion overrides; Review clears
+the old food match and requires a fresh member choice for replacement nutrition.
+No saved record change or automatic Save. Multi-food edits and dedicated Speak
+handoff are later slices; keyboard dictation shares the text path. Design and
+scope: `assistant-companion-bundle.md`. Implementation and independent re-review
+complete; final 619-test/debug/release/vital-lint gate passes, diff check clean.
+Verified APK installed in place and cold-launched after member reconnect;
+single-food replacement/retained grams/no inherited match phone check passes
+across two Review visits. Missing fixed monitoring events diagnosed and corrected;
+monitoring build passes 619 tests/debug/release/vital lint and is installed in
+place. Repeated food/portion phone sequence FAILED: conversation status refresh
+cleared the active correction request, then late delivery was correctly rejected.
+Exact same-session write receipts and atomic hydration/write fencing implemented
+and independently re-reviewed; no stale-result guard bypass. Final complete gate
+passes 628 tests/debug/release/vital lint. Corrected APK installed in place;
+member replay pending and
+repeated-edit acceptance remains open. New phone trace confirms first rename and
+local grams apply, but second rename returns no-tool prose and retains old name.
+One bounded corrective native intent attempt with truthful no-edit fallback is
+implemented, with malformed-tool retention and validated-context cleanup. Final
+631-test/debug/release/vital-lint gate passes (2026-10-19); update installed in place,
+second-rename phone acceptance pending.
+No commit/push authorization for this extension yet.
+
+Previous portion-correction checkpoint was approved and pushed as `e5afc12`;
+the pending-approval language in the historical notes below is superseded.
+
 Active extension (2026-10-18): correct the portion of a still-current unsaved
 ordinary Chat draft after its initial answer. Member confirms the first amount
 updated a visible draft; later amounts/natural corrections hit generic Chat.

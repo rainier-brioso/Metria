@@ -99,6 +99,8 @@ import app.metria.MealCorrectionMemoryPolicy
 import app.metria.MealIdentity
 import app.metria.MealNutrition
 import app.metria.MealProposal
+import app.metria.ChatFoodReplacementOverride
+import app.metria.ChatCurrentDraftFoodPolicy
 import app.metria.MealProposalItem
 import app.metria.MealReviewItemSnapshot
 import app.metria.MealReviewSnapshot
@@ -258,6 +260,51 @@ internal fun initialDraftsWithPortionOverride(
     return drafts.toMutableList().also { updated ->
         val index = matches.single()
         updated[index] = updated[index].copy(grams = override.grams.toString())
+    }
+}
+
+internal fun isFoodReplacementReviewPrefillValid(
+    proposal: MealProposal,
+    override: ChatFoodReplacementOverride?,
+): Boolean {
+    if (override == null || override.originalProposal != proposal || override.itemIndex !in proposal.items.indices) return false
+    val original = proposal.items[override.itemIndex]
+    return proposal.items.size == 1 && override.itemIndex == 0 &&
+        original.name.trim().equals(override.originalItemName, ignoreCase = true) &&
+        ChatCurrentDraftFoodPolicy.eligibleItem(proposal, "agent_meal_draft", true)?.first == override.itemIndex &&
+        ChatCurrentDraftFoodPolicy.validReviewLabel(override.replacementName)
+}
+
+internal fun shouldSuggestInitialCatalogMatch(
+    index: Int,
+    proposal: MealProposal,
+    replacement: ChatFoodReplacementOverride?,
+): Boolean = !(isFoodReplacementReviewPrefillValid(proposal, replacement) && index == replacement?.itemIndex)
+
+internal fun initialDraftsWithFoodReplacement(
+    items: List<MealProposalItem>,
+    proposal: MealProposal,
+    replacement: ChatFoodReplacementOverride?,
+    portionOverride: ChatPortionOverride?,
+): List<MealReviewItemDraft> {
+    val drafts = initialDraftsWithPortionOverride(items, proposal, portionOverride)
+    if (!isFoodReplacementReviewPrefillValid(proposal, replacement)) return drafts
+    val original = proposal.items.single()
+    val matches = items.indices.filter { items[it] == original }
+    if (matches.size != 1) return drafts
+    val grams = portionOverride?.takeIf {
+        it.originalProposal == proposal && it.itemIndex == 0 &&
+            it.itemName.equals(original.name.trim(), ignoreCase = true) && it.grams in 1..2_000
+    }?.grams?.toString().orEmpty()
+    val index = matches.single()
+    return drafts.toMutableList().also { updated ->
+        updated[index] = updated[index].copy(
+            name = requireNotNull(replacement).replacementName,
+            dishName = replacement.replacementName,
+            description = "",
+            preparation = "",
+            grams = grams,
+        )
     }
 }
 
@@ -441,6 +488,7 @@ private fun nutritionLine(nutrition: CatalogNutrition): String = listOfNotNull(
 fun MetriaMealReviewSheet(
     proposal: MealProposal,
     initialPortionOverride: ChatPortionOverride? = null,
+    initialFoodReplacementOverride: ChatFoodReplacementOverride? = null,
     manualEntry: Boolean = false,
     initialMealSlot: String? = null,
     initialRecordedDate: LocalDate? = null,
@@ -460,7 +508,7 @@ fun MetriaMealReviewSheet(
     onSave: (MealEntry, List<FoodCorrection>, List<PersonalDish>, MealCorrectionMemory?) -> String?,
 ) {
     val draftKey = 31 * (31 * proposal.items.hashCode() + (initialSavedDishPrefill?.hashCode() ?: 0)) +
-        (initialPortionOverride?.hashCode() ?: 0)
+        (initialPortionOverride?.hashCode() ?: 0) + (initialFoodReplacementOverride?.hashCode() ?: 0)
     val proposalItems = remember(proposal, catalog, initialSavedDishPrefill) {
         if (initialSavedDishPrefill == null) reviewProposalItems(proposal, catalog) else emptyList()
     }
@@ -468,14 +516,18 @@ fun MetriaMealReviewSheet(
     // restored item would look removed and re-added to the learning diff.
     val initialItems = rememberSaveable(draftKey, saver = MealReviewItemsSaver) {
         initialSavedDishPrefill?.let(::savedDishInitialDrafts)
-            ?: initialDraftsWithPortionOverride(proposalItems, proposal, initialPortionOverride)
+            ?: initialDraftsWithFoodReplacement(
+                proposalItems, proposal, initialFoodReplacementOverride, initialPortionOverride,
+            )
     }
     var items by rememberSaveable(draftKey, stateSaver = MealReviewItemsSaver) {
         mutableStateOf(initialItems)
     }
     val initialMatchIds = rememberSaveable(draftKey, saver = MatchIdsSaver) {
         initialItems.mapIndexedNotNull { index, item ->
-            if (FoodCatalog.isAmbiguousModelFood(item.name)) null else {
+            if (!shouldSuggestInitialCatalogMatch(index, proposal, initialFoodReplacementOverride) ||
+                FoodCatalog.isAmbiguousModelFood(item.name)
+            ) null else {
                 val savedItem = initialSavedDishPrefill?.items?.getOrNull(index)
                 val savedId = savedItem?.catalogFoodId?.takeIf {
                     savedItem.catalogRelease != null && savedItem.catalogRelease == catalog?.sourceRelease
@@ -499,7 +551,7 @@ fun MetriaMealReviewSheet(
     val initialDate = rememberSaveable(draftKey, initialRecordedDate) { (initialRecordedDate ?: LocalDate.now()).toString() }
     var date by rememberSaveable(draftKey, initialRecordedDate) { mutableStateOf(initialDate) }
     val initialTitle = rememberSaveable(draftKey) {
-        initialSavedDishPrefill?.title ?: MealIdentity.titleFor(proposalItems.map { MealEntryItem(it.name, null, null) })
+        initialSavedDishPrefill?.title ?: MealIdentity.titleFor(initialItems.map { MealEntryItem(it.name, null, null) })
     }
     var title by rememberSaveable(draftKey) { mutableStateOf(initialTitle) }
     var titleEdited by rememberSaveable(draftKey) { mutableStateOf(false) }

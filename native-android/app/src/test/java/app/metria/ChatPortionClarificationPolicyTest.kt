@@ -162,7 +162,7 @@ class ChatPortionClarificationPolicyTest {
         )
         assertEquals(
             CurrentDraftTurnDisposition.RETIRE_FOR_EXPLICIT_OPERATION,
-            disposition(setOf("read_meals")),
+            disposition(setOf("read_meals"), "read_meals"),
         )
         assertEquals(
             CurrentDraftTurnDisposition.RETIRE_FOR_EXPLICIT_OPERATION,
@@ -186,6 +186,29 @@ class ChatPortionClarificationPolicyTest {
                 contextAvailable = false, finalToolNames = setOf("adjust_current_draft_portion"),
                 selectedIntent = "adjust_current_draft_portion", requiredRead = false, navigation = false,
                 newMealIntent = false,
+            ),
+        )
+    }
+
+    @Test fun malformedOrUnknownToolSelectionKeepsCurrentDraftUnlessMemberRequestedAnExplicitRead() {
+        listOf("unknown_tool", "read_unknown", "read_meals", "search_saved_dishes").forEach { malformedTool ->
+            assertEquals(
+                CurrentDraftTurnDisposition.RETAIN_AND_CLARIFY_CONFIRMATION,
+                ChatPortionClarificationPolicy.currentDraftTurnDisposition(
+                    true, setOf(malformedTool), null, false, false, false,
+                ),
+            )
+        }
+        assertEquals(
+            CurrentDraftTurnDisposition.RETIRE_FOR_EXPLICIT_OPERATION,
+            ChatPortionClarificationPolicy.currentDraftTurnDisposition(
+                true, setOf("read_meals"), null, true, false, false,
+            ),
+        )
+        assertEquals(
+            CurrentDraftTurnDisposition.RETIRE_FOR_EXPLICIT_OPERATION,
+            ChatPortionClarificationPolicy.currentDraftTurnDisposition(
+                true, setOf("search_saved_dishes"), "search_saved_dishes", false, false, false,
             ),
         )
     }

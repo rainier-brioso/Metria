@@ -366,6 +366,25 @@ is introduced. All history retains its separate date-grouped view.
 
 ## 6. Ask Metria
 
+**Explicit local food-label edit - 2026-10-19:** when the sole current draft food
+has an unambiguous correction phrase recognized conservatively by the packaged
+food vocabulary, update the label locally and acknowledge it like an exact gram
+edit. Keep Review dominant, grams unchanged and nutrition unmatched. Vocabulary
+admission is not member confirmation of a food match. Unknown/ambiguous phrases
+retain native assistant handling; lock/Stop/Discard/reset and current-request
+guards remain. The original model estimate and final Save contract are unchanged.
+
+**Single-food correction - 2026-10-18:** a current ordinary draft containing one
+simple food may accept a natural correction such as "Actually, it was brown
+rice". Show a concise old/new acknowledgement and keep Review/Discard. Retain
+the member's gram amount, but clear old food matching and descriptive assumptions
+in Review; replacement nutrition needs a fresh local match chosen by the member.
+Preserve the original model estimate separately. Invalid/ambiguous/mixed edits
+and unsuccessful interpretation retain the current draft. Cancellable loading,
+Stop/lock/reset/Discard invalidation and same-session Review return follow the
+portion-edit contract. Multi-food and dedicated Speak are later slices; typed
+input and keyboard dictation share this path. No record changes before Save.
+
 **Current draft correction - 2026-10-18:** while the same eligible unsaved Chat
 draft remains current, the member may send another whole-gram amount or a natural
 correction such as "Actually, make that 200 g". Update only that draft's eligible

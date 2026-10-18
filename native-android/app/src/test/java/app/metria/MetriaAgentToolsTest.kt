@@ -171,6 +171,34 @@ class MetriaAgentToolsTest {
     }
 
     @Test
+    fun `food replacement tool accepts only one literal string label`() {
+        assertEquals(
+            PrivateCoachToolCall("replace_current_draft_food", replacementName = "brown rice"),
+            MetriaNativeToolCallAdapter.adapt(
+                "replace_current_draft_food", mapOf("replacement_name" to "brown rice"),
+            ),
+        )
+        assertNull(MetriaNativeToolCallAdapter.adapt("replace_current_draft_food", emptyMap<String, Any?>()))
+        assertNull(MetriaNativeToolCallAdapter.adapt(
+            "replace_current_draft_food", mapOf("replacement_name" to "brown rice", "item_id" to 17),
+        ))
+        assertNull(MetriaNativeToolCallAdapter.adapt(
+            "replace_current_draft_food", mapOf("replacement_name" to "brown rice", "grams" to 150),
+        ))
+        assertNull(MetriaNativeToolCallAdapter.adapt(
+            "replace_current_draft_food", mapOf("replacement_name" to 150),
+        ))
+        assertNull(MetriaNativeToolCallAdapter.adapt(
+            "replace_current_draft_food", mapOf("replacement_name" to mapOf("name" to "brown rice")),
+        ))
+        assertEquals(AssistantAction.Clarify, AssistantActionDispatcher.resolve(
+            MetriaNativeToolCallAdapter.adapt(
+                "replace_current_draft_food", mapOf("replacement_name" to "brown rice"),
+            )!!,
+        ))
+    }
+
+    @Test
     fun `native tools reject missing malformed and out of range arguments`() {
         assertNull(MetriaNativeToolCallAdapter.adapt("read_nutrition_summary", mapOf("period" to "month")))
         assertNull(MetriaNativeToolCallAdapter.adapt("read_weight", mapOf("from_days_ago" to 6.5, "to_days_ago" to 0)))

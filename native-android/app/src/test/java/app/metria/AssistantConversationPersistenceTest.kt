@@ -135,6 +135,92 @@ class AssistantConversationPersistenceTest {
     }
 
     @Test
+    fun hydrationBarrierHoldsWriterGateThroughSuccessfulWriteAcknowledgement() = runBlocking {
+        val persistence = AssistantConversationPersistence()
+        val enteredSave = CompletableDeferred<Unit>()
+        val releaseSave = CompletableDeferred<Unit>()
+        var acknowledgementRegistered = false
+        val writer = async {
+            persistence.persist(listOf(member)) {
+                enteredSave.complete(Unit)
+                releaseSave.await()
+                acknowledgementRegistered = true
+                true
+            }
+        }
+        enteredSave.await()
+        val refresh = async { persistence.withWriterIdle { acknowledgementRegistered } }
+
+        assertFalse(refresh.isCompleted)
+        releaseSave.complete(Unit)
+        assertEquals(ConversationPersistenceResult.SAVED, writer.await())
+        assertTrue(refresh.await())
+    }
+
+    @Test
+    fun restoreForChangedOrRemovedTranscriptFencesQueuedOlderAutosave() = runBlocking {
+        val previouslyLoaded = requireNotNull(PrivateConversationPolicy.updated(listOf(member), java.time.Instant.EPOCH))
+        val changedRecord = requireNotNull(PrivateConversationPolicy.updated(
+            listOf(PrivateConversationMessage("External replacement", fromMember = true)),
+            java.time.Instant.EPOCH.plusSeconds(1),
+        ))
+
+        listOf(changedRecord, null).forEach { persisted ->
+            val persistence = AssistantConversationPersistence()
+            val staleTicket = requireNotNull(persistence.captureWriteTicket())
+            var restoredMessages: List<PrivateConversationMessage>? = null
+            val decision = persistence.withWriterIdle {
+                val result = AssistantConversationHydrationPolicy.decide(
+                    hydrated = true,
+                    previouslyLoaded = previouslyLoaded,
+                    localMessages = listOf(member, reply),
+                    persisted = persisted,
+                    expired = false,
+                )
+                assertEquals(AssistantConversationHydrationDecision.RESTORE_PERSISTED, result)
+                persistence.invalidatePendingWrites()
+                restoredMessages = persisted?.messages
+                result
+            }
+            assertEquals(AssistantConversationHydrationDecision.RESTORE_PERSISTED, decision)
+            var oldSnapshotWrote = false
+            assertEquals(
+                ConversationPersistenceResult.SUPERSEDED,
+                persistence.persist(staleTicket, listOf(member, reply)) {
+                    oldSnapshotWrote = true
+                    true
+                },
+            )
+            assertFalse(oldSnapshotWrote)
+            assertEquals(persisted?.messages, restoredMessages)
+        }
+    }
+
+    @Test
+    fun keepingAnExactOwnWriteDoesNotInvalidateCurrentLocalSave() = runBlocking {
+        val persistence = AssistantConversationPersistence()
+        val savedRecord = requireNotNull(PrivateConversationPolicy.updated(listOf(member), java.time.Instant.EPOCH))
+        val receipts = AssistantConversationWriteReceipts()
+        assertTrue(receipts.register(receipts.captureGeneration(), savedRecord, java.time.Instant.EPOCH))
+        val currentTicket = requireNotNull(persistence.captureWriteTicket())
+        val decision = persistence.withWriterIdle {
+            AssistantConversationHydrationPolicy.decide(
+                hydrated = true,
+                previouslyLoaded = null,
+                localMessages = listOf(member, reply),
+                persisted = savedRecord,
+                expired = false,
+                acknowledgedOwnWrite = receipts.recognizes(savedRecord, java.time.Instant.EPOCH.plusSeconds(1)),
+            )
+        }
+        assertEquals(AssistantConversationHydrationDecision.KEEP_LOCAL, decision)
+        assertEquals(
+            ConversationPersistenceResult.SAVED,
+            persistence.persist(currentTicket, listOf(member, reply)) { true },
+        )
+    }
+
+    @Test
     fun lockOrNewRequestDuringSavePreventsLateNavigation() = runBlocking {
         val persistence = AssistantConversationPersistence()
         val enteredSave = CompletableDeferred<Unit>()

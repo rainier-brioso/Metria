@@ -365,6 +365,21 @@ lock/background and the existing response lifecycle invalidate the details.
 
 ## Assistant overlay and conversation
 
+An explicit single-food label correction admitted by the packaged food vocabulary
+may complete locally (2026-10-19), using the same acknowledgement/card and no
+additional screen. Review still has no selected nutrition match; retained grams
+are member-entered, not a newly inferred amount. Unknown labels use normal model
+handling. Apply only under current unlocked draft/request/session authority.
+
+Current-draft single-food replacement (2026-10-18) reuses the composer, timeline
+and Review card. A clear replacement for the sole simple food acknowledges old
+and new names, retains the chosen amount and leaves Review dominant. The Review
+food row uses the new label with stale descriptive/matching context removed;
+the member chooses a fresh local match before replacement nutrition is available.
+Uncertainty remains visible. Failed/ambiguous interpretation leaves the previous
+draft usable; cancellable thinking, Stop/lock/reset/Discard and no stale restored
+authority follow current portion editing. No new screen or automatic Save.
+
 Current-draft portion correction (2026-10-18) reuses the draft card and composer.
 A subsequent explicit amount or understood natural correction updates the same
 eligible food and retains a concise acknowledgement. Review remains the dominant

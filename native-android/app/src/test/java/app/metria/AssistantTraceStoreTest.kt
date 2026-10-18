@@ -8,22 +8,23 @@ import org.junit.Test
 
 class AssistantTraceStoreTest {
     @Test
-    fun `portion and confirmation outcomes retain only deduplicated fixed reasons across restart`() {
+    fun `draft edit and confirmation outcomes retain only deduplicated fixed reasons across restart`() {
         val root = Files.createTempDirectory("trace-test").toFile()
         AssistantTraceStore(root, true, { 1_000L }).use { trace ->
             trace.setEnabled(true)
-            listOf("portion_rejected", "portion_applied", "portion_skipped", "meal_confirmation_used", "meal_confirmation_missing", "meal_confirmation_declined").forEach { reason ->
+            listOf("portion_rejected", "portion_applied", "portion_skipped", "food_replacement_applied", "food_replacement_rejected", "meal_confirmation_used", "meal_confirmation_missing", "meal_confirmation_declined").forEach { reason ->
                 trace.recordReplyDelivery(22L, reason)
                 trace.recordReplyDelivery(22L, reason)
             }
             trace.recordReplyDelivery(22L, "portion_applied:150g rice")
+            trace.recordReplyDelivery(22L, "food_replacement_applied:brown rice")
             trace.flush()
         }
         AssistantTraceStore(root, true, { 1_001L }).use { trace ->
             trace.flush()
             val rows = root.resolve(AssistantTraceStore.relativePath).readLines().map { it.split('\t') }
-            assertEquals(listOf("portion_rejected", "portion_applied", "portion_skipped", "meal_confirmation_used", "meal_confirmation_missing", "meal_confirmation_declined"), rows.map { it[4] })
-            assertEquals(listOf("rejected", "accepted", "accepted", "accepted", "rejected", "accepted"), rows.map { it[3] })
+            assertEquals(listOf("portion_rejected", "portion_applied", "portion_skipped", "food_replacement_applied", "food_replacement_rejected", "meal_confirmation_used", "meal_confirmation_missing", "meal_confirmation_declined"), rows.map { it[4] })
+            assertEquals(listOf("rejected", "accepted", "accepted", "accepted", "rejected", "accepted", "rejected", "accepted"), rows.map { it[3] })
             assertTrue(rows.all { it.size == 8 && it[1] == "reply_delivery" && it[7] == "22" })
         }
     }
@@ -314,6 +315,23 @@ class AssistantTraceStoreTest {
             trace.flush()
             assertTrue(trace.status().enabled)
             assertEquals(1, trace.status().eventCount)
+        }
+    }
+
+    @Test
+    fun `food correction retry and nonselection use safe fixed trace reasons`() {
+        val root = Files.createTempDirectory("trace-test").toFile()
+        AssistantTraceStore(root, true, { 1_000L }).use { trace ->
+            trace.setEnabled(true)
+            trace.record("reply_fallback", "agent_turn", "waiting", reason = "food_replacement_retry", requestId = 20L)
+            trace.recordReplyDelivery(21L, "food_replacement_not_selected")
+            trace.recordReplyDelivery(22L, "food_replacement_local_applied")
+            trace.flush()
+            val rows = root.resolve(AssistantTraceStore.relativePath).readLines()
+            assertTrue(rows.any { it.contains("reply_fallback\tagent_turn\twaiting\tfood_replacement_retry") })
+            assertTrue(rows.any { it.contains("reply_delivery\tagent_turn\trejected\tfood_replacement_not_selected") })
+            assertTrue(rows.any { it.contains("reply_delivery\tagent_turn\taccepted\tfood_replacement_local_applied") })
+            assertFalse(root.resolve(AssistantTraceStore.relativePath).readText().contains("basmati"))
         }
     }
 }

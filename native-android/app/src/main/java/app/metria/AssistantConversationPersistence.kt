@@ -19,6 +19,9 @@ internal class AssistantConversationPersistence {
     private var navigationTranscript: List<PrivateConversationMessage>? = null
     private var activeClearCount = 0
 
+    /** Hold the writer gate through a small in-memory hydration decision and its write invalidation. */
+    suspend fun <T> withWriterIdle(block: () -> T): T = mutex.withLock { block() }
+
     fun invalidatePendingWrites() {
         synchronized(monitor) {
             generation += 1

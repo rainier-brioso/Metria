@@ -29,6 +29,9 @@ class AssistantTraceStore(
             "continuation_rejected", "continuation_cancelled", "chat_active_missing", "chat_active_request",
             "conversation_sync_expired", "conversation_sync_normalized", "conversation_sync_changed",
             "portion_applied", "portion_skipped", "portion_rejected",
+            "food_replacement_applied", "food_replacement_rejected",
+            "food_replacement_retry", "food_replacement_not_selected",
+            "food_replacement_local_applied",
             "meal_confirmation_used", "meal_confirmation_missing", "meal_confirmation_declined",
         )
         private val allowedTools = setOf("none", "read_progress_overview", "read_nutrition_summary", "read_day_nutrition", "read_weight", "read_meals", "read_latest_meal", "search_saved_dishes")
@@ -100,6 +103,9 @@ class AssistantTraceStore(
                 "continuation_rejected", "continuation_cancelled", "chat_active_missing", "chat_active_request",
                 "conversation_sync_expired", "conversation_sync_normalized", "conversation_sync_changed",
                 "portion_applied", "portion_skipped", "portion_rejected",
+                "food_replacement_applied", "food_replacement_rejected",
+                "food_replacement_not_selected",
+                "food_replacement_local_applied",
                 "meal_confirmation_used", "meal_confirmation_missing", "meal_confirmation_declined",
             )) return
         val shouldRecord = synchronized(this) {
@@ -115,6 +121,8 @@ class AssistantTraceStore(
                 operation = "agent_turn",
                 outcome = if (reason in setOf("lifecycle_ready", "chat_consumed", "submission_reconciled",
                         "continuation_reconciled", "chat_active_request", "portion_applied", "portion_skipped",
+                        "food_replacement_applied",
+                        "food_replacement_local_applied",
                         "meal_confirmation_used", "meal_confirmation_declined")) "accepted" else "rejected",
                 reason = reason,
                 requestId = requestId,

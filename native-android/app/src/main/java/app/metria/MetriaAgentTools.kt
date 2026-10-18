@@ -77,6 +77,18 @@ class MetriaCurrentDraftPortionToolSet : ToolSet {
     ): Map<String, Any> = mapOf("status" to "host_execution_required", "tool" to "adjust_current_draft_portion", "grams" to grams)
 }
 
+/** Present only when the host froze the one eligible current draft food. */
+class MetriaCurrentDraftFoodToolSet : ToolSet {
+    @Tool(description = "Request replacing the one food in the current unsaved draft when the member clearly corrects its identity. Use only a short replacement food name stated literally in the current member message. Do not use for a question, denial, addition, removal, portion change, or a request naming multiple foods. This cannot choose a row or save the draft.")
+    fun replace_current_draft_food(
+        @ToolParam(description = "One short replacement food phrase, copied from the current member message. No IDs, amounts, portions, nutrition, or additional foods.") replacement_name: String,
+    ): Map<String, Any> = mapOf(
+        "status" to "host_execution_required",
+        "tool" to "replace_current_draft_food",
+        "replacement_name" to replacement_name,
+    )
+}
+
 /** Converts native LiteRT tool calls into Metria's existing host-side action allowlist. */
 object MetriaNativeToolCallAdapter {
     fun adapt(call: ToolCall): PrivateCoachToolCall? = adapt(call.name, call.arguments)
@@ -91,6 +103,14 @@ object MetriaNativeToolCallAdapter {
                 val value = raw.toDouble()
                 val grams = raw.toInt().takeIf { value == it.toDouble() && it in 1..2_000 } ?: return null
                 PrivateCoachToolCall(intent = name, grams = grams)
+            }
+            "replace_current_draft_food" -> {
+                if (arguments.keys != setOf("replacement_name")) return null
+                val replacement = (arguments["replacement_name"] as? String)
+                    ?.trim()
+                    ?.takeIf { it.length in 2..60 }
+                    ?: return null
+                PrivateCoachToolCall(intent = name, replacementName = replacement)
             }
             "read_progress_overview" -> {
                 val period = arguments.string("period")?.takeIf { it in setOf("today", "week") }

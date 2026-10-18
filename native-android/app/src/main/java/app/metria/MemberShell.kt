@@ -147,6 +147,7 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
     val assistantConversationSession = rememberPrivateAssistantConversationSession()
     var mealProposalForConfirmation by remember { mutableStateOf<MealProposal?>(null) }
     var portionOverrideForConfirmation by remember { mutableStateOf<ChatPortionOverride?>(null) }
+    var foodReplacementForConfirmation by remember { mutableStateOf<ChatFoodReplacementOverride?>(null) }
     var savedDishPrefill by remember { mutableStateOf<CompanionAssistantPolicy.SavedDishMealPrefill?>(null) }
     var mealReviewFromAssistant by remember { mutableStateOf(false) }
     var mealReviewIsTextEntry by remember { mutableStateOf(false) }
@@ -168,6 +169,13 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
         if (!mealReviewFromAssistant || mealProposalForConfirmation != override.originalProposal ||
             savedDishPrefill != null || manualMealReview || mealReviewIsPhotoEntry || mealReviewIsTextEntry
         ) portionOverrideForConfirmation = null
+    }
+    LaunchedEffect(foodReplacementForConfirmation, mealProposalForConfirmation, mealReviewFromAssistant,
+        savedDishPrefill, manualMealReview, mealReviewIsPhotoEntry, mealReviewIsTextEntry) {
+        val replacement = foodReplacementForConfirmation ?: return@LaunchedEffect
+        if (!mealReviewFromAssistant || mealProposalForConfirmation != replacement.originalProposal ||
+            savedDishPrefill != null || manualMealReview || mealReviewIsPhotoEntry || mealReviewIsTextEntry
+        ) foodReplacementForConfirmation = null
     }
     var editNutritionTargets by remember { mutableStateOf(false) }
     var showGoalWelcomeInitially by remember { mutableStateOf(false) }
@@ -228,7 +236,7 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                 val requestBeforeSync = assistantConversationSession.activeRequestId.value
                 val normalizedSnapshot = BuildConfig.DEBUG &&
                     assistantConversationSession.matchesPersistedSnapshot(current.activeConversation)
-                assistantConversationSession.synchronize(current.activeConversation, current.conversationExpired)
+                assistantConversationSession.synchronizeAfterWrites(current.activeConversation, current.conversationExpired)
                 if (requestBeforeSync != null && assistantConversationSession.activeRequestId.value == null) {
                     activity.recordAssistantReplyDelivery(requestBeforeSync, when {
                         current.conversationExpired -> "conversation_sync_expired"
@@ -418,9 +426,7 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                                 },
                                 assistantConversationSession = assistantConversationSession,
                                 onConversationChanged = { conversation ->
-                                    withContext(Dispatchers.IO) {
-                                        vault.saveActiveConversation(conversation) is EncryptedVault.Status.Unlocked
-                                    }
+                                    assistantConversationSession.saveConversationSnapshot(conversation, vault::saveActiveConversation)
                                 },
                                 onNewConversation = {
                                     assistantConversationSession.invalidateForConversationClear()
@@ -445,10 +451,11 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                                 cancelAssistantDownload = { modelStatus = activity.cancelLocalAssistantDownload() },
                                 askMeal = { text -> activity.askLocalMealAssistant(text).also { modelStatus = it } },
                                 askCoach = { question, snapshot, conversationContext -> activity.askPrivateCoach(question, snapshot, conversationContext).also { modelStatus = it } },
-                                startAgent = { question, history, confirmation, portionEditContext ->
+                                startAgent = { question, history, confirmation, portionEditContext, foodEditContext ->
                                     activity.startPrivateAgentTurn(
                                         question, history, confirmation = confirmation,
                                         portionEditContext = portionEditContext,
+                                        foodEditContext = foodEditContext,
                                         unlocked = status is EncryptedVault.Status.Unlocked,
                                         conversationGeneration = assistantConversationSession.conversationGeneration.value,
                                     )
@@ -638,10 +645,9 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                 if (quickAssistantOpen) {
                     PrivateAssistantChat(
                         conversationSession = assistantConversationSession,
+                        foodCatalog = foodCatalog,
                         onConversationChanged = { conversation ->
-                            withContext(Dispatchers.IO) {
-                                vault.saveActiveConversation(conversation) is EncryptedVault.Status.Unlocked
-                            }
+                            assistantConversationSession.saveConversationSnapshot(conversation, vault::saveActiveConversation)
                         },
                         onNewConversation = {
                             assistantConversationSession.invalidateForConversationClear()
@@ -680,7 +686,7 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                         onVoiceStartHandled = { quickAssistantStartVoice = false },
                         askMeal = { text -> activity.askLocalMealAssistant(text).also { modelStatus = it } },
                         askCoach = { question, snapshot, conversationContext -> activity.askPrivateCoach(question, snapshot, conversationContext).also { modelStatus = it } },
-                        startAgent = { question, history, confirmation, portionEditContext ->
+                        startAgent = { question, history, confirmation, portionEditContext, foodEditContext ->
                             val selectedId = selectedAskMealId
                             val selectedTool = MetriaAgentGroundingPolicy.requiredTool(
                                 question, history, selectedMealId = selectedId,
@@ -689,7 +695,7 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                             selectedAskMealId = null
                             selectedAskMealTitle = null
                             activity.startPrivateAgentTurn(
-                                question, history, selectedId, confirmation, portionEditContext,
+                                question, history, selectedId, confirmation, portionEditContext, foodEditContext,
                                 unlocked = status is EncryptedVault.Status.Unlocked,
                                 conversationGeneration = assistantConversationSession.conversationGeneration.value,
                             )
@@ -755,8 +761,9 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                         },
                         editSavedWeight = { editEntry = it; quickAssistantOpen = false },
                         undoSavedWeight = { entry -> status = vault.deleteWeight(entry.id) },
-                        reviewMeal = { proposal, portionOverride ->
+                        reviewMeal = { proposal, portionOverride, foodReplacementOverride ->
                             portionOverrideForConfirmation = portionOverride
+                            foodReplacementForConfirmation = foodReplacementOverride
                             mealReviewFromAssistant = true
                             mealProposalForConfirmation = proposal
                             quickAssistantOpen = false
@@ -855,6 +862,11 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                             savedDishPrefill == null && !manualMealReview &&
                             !mealReviewIsPhotoEntry && !mealReviewIsTextEntry
                     },
+                    initialFoodReplacementOverride = foodReplacementForConfirmation?.takeIf {
+                        it.originalProposal == proposal && mealReviewFromAssistant &&
+                            savedDishPrefill == null && !manualMealReview &&
+                            !mealReviewIsPhotoEntry && !mealReviewIsTextEntry
+                    },
                     manualEntry = manualMealReview,
                     initialMealSlot = pendingMealSlot,
                     initialRecordedDate = pendingMealDate?.let { runCatching { LocalDate.parse(it) }.getOrNull() },
@@ -899,10 +911,12 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                                 val saved = status as EncryptedVault.Status.Unlocked
                                 assistantConversationSession.synchronize(saved.activeConversation, saved.conversationExpired)
                                 assistantConversationSession.acceptedPortionOverride.value = null
+                                assistantConversationSession.acceptedFoodReplacementOverride.value = null
                                 quickAssistantOpen = true
                             }
                             mealProposalForConfirmation = null
                             portionOverrideForConfirmation = null
+                            foodReplacementForConfirmation = null
                             savedDishPrefill = null
                             mealReviewFromAssistant = false
                             mealReviewIsTextEntry = false
@@ -1234,7 +1248,7 @@ private fun AssistantScreen(
     cancelAssistantDownload: () -> Unit,
     askMeal: (String) -> ModelStatus,
     askCoach: (String, PrivateCoachSnapshot, String) -> ModelStatus,
-    startAgent: (String, List<PrivateConversationMessage>, NativeMealDraftPolicy.MealConfirmationContext?, ChatCurrentDraftPortionContext?) -> ModelStatus,
+    startAgent: (String, List<PrivateConversationMessage>, NativeMealDraftPolicy.MealConfirmationContext?, ChatCurrentDraftPortionContext?, ChatCurrentDraftFoodContext?) -> ModelStatus,
     continueAgentTool: (String, Map<String, Any?>) -> ModelStatus,
     understandCoach: (String, String) -> ModelStatus,
     understandCoachAudio: (java.io.File, String) -> ModelStatus,
@@ -1639,6 +1653,7 @@ private class PrivateAssistantConversationSession(
     initialMessages: List<PrivateChatMessage> = initialPrivateChatMessages(),
 ) {
     private val persistence = AssistantConversationPersistence()
+    private val writeReceipts = AssistantConversationWriteReceipts()
     private var hydrated = false
     private var loadedConversationRecord: PrivateConversationRecord? = null
     val input = mutableStateOf(initialInput)
@@ -1649,6 +1664,8 @@ private class PrivateAssistantConversationSession(
     val handledReplyRequestId = mutableStateOf(initialHandledReplyRequestId)
     /** Member-confirmed grams are session-only and remain bound to their original Chat draft. */
     val acceptedPortionOverride = mutableStateOf<ChatPortionOverride?>(null)
+    /** Corrected labels remain session-only and bound to the original unsaved proposal. */
+    val acceptedFoodReplacementOverride = mutableStateOf<ChatFoodReplacementOverride?>(null)
     /** One accepted meal candidate; never reconstructed from persisted Chat history. */
     val pendingMealConfirmation = mutableStateOf<NativeMealDraftPolicy.MealConfirmationContext?>(null)
     val conversationGeneration = mutableStateOf(0L)
@@ -1680,6 +1697,12 @@ private class PrivateAssistantConversationSession(
         save: suspend (List<PrivateConversationMessage>) -> Boolean,
     ): ConversationPersistenceResult = persistence.persist(ticket, snapshot, save)
 
+    /** Register the exact successful vault record before the serialized write releases its gate. */
+    suspend fun saveConversationSnapshot(
+        snapshot: List<PrivateConversationMessage>,
+        save: (List<PrivateConversationMessage>) -> EncryptedVault.Status,
+    ): Boolean = writeReceipts.saveSnapshot(snapshot, save)
+
     suspend fun clearConversation(clear: suspend () -> Boolean): ConversationPersistenceResult =
         persistence.clear(clear)
 
@@ -1699,7 +1722,9 @@ private class PrivateAssistantConversationSession(
 
     fun invalidateForConversationClear() {
         conversationGeneration.value += 1
+        writeReceipts.invalidate()
         acceptedPortionOverride.value = null
+        acceptedFoodReplacementOverride.value = null
         pendingMealConfirmation.value = null
         persistence.invalidatePendingWrites()
         activeRequestId.value = null
@@ -1718,6 +1743,7 @@ private class PrivateAssistantConversationSession(
     fun beginPendingSubmission(text: String, previousRequestId: Long?): PendingAssistantSubmission? {
         if (assistantCancellationGate.isInFlight()) return null
         acceptedPortionOverride.value = null
+        acceptedFoodReplacementOverride.value = null
         val token = pendingSubmissionGate.begin() ?: return null
         retainedFailureAnnouncementRequestId.value = null
         responseStopped.value = false
@@ -1727,6 +1753,7 @@ private class PrivateAssistantConversationSession(
     fun beginAssistantCancellation(): Long? {
         val token = assistantCancellationGate.begin() ?: return null
         acceptedPortionOverride.value = null
+        acceptedFoodReplacementOverride.value = null
         pendingMealConfirmation.value = null
         pendingSubmissionGate.cancel(pendingSubmission.value?.token)
         pendingSubmission.value = null
@@ -1845,7 +1872,9 @@ private class PrivateAssistantConversationSession(
 
     fun reset() {
         conversationGeneration.value += 1
+        writeReceipts.invalidate()
         acceptedPortionOverride.value = null
+        acceptedFoodReplacementOverride.value = null
         pendingMealConfirmation.value = null
         persistence.invalidatePendingWrites()
         assistantCancellationGate.reset()
@@ -1878,12 +1907,21 @@ private class PrivateAssistantConversationSession(
         hydrated = false
     }
 
+    suspend fun synchronizeAfterWrites(record: PrivateConversationRecord?, expired: Boolean) {
+        // A refresh may have captured the vault just before an in-flight save committed. Wait for
+        // that serialized save to register its exact receipt. Keep the writer gate through restore
+        // so its invalidated, older ticket cannot overwrite the newly hydrated transcript.
+        persistence.withWriterIdle { synchronize(record, expired) }
+    }
+
     fun synchronize(record: PrivateConversationRecord?, expired: Boolean) {
+        val ownWriteAcknowledgement = writeReceipts.recognizes(record)
         when (AssistantConversationHydrationPolicy.decide(
             hydrated = hydrated,
             previouslyLoaded = loadedConversationRecord,
             localMessages = persistedMessageSnapshot(),
             persisted = record,
+            acknowledgedOwnWrite = ownWriteAcknowledgement,
             expired = expired,
         )) {
         AssistantConversationHydrationDecision.EXPIRED -> {
@@ -1900,8 +1938,11 @@ private class PrivateAssistantConversationSession(
             return
         }
         AssistantConversationHydrationDecision.RESTORE_PERSISTED -> {
+            persistence.invalidatePendingWrites()
+            writeReceipts.invalidate()
             conversationGeneration.value += 1
             acceptedPortionOverride.value = null
+            acceptedFoodReplacementOverride.value = null
             pendingMealConfirmation.value = null
         }
         }
@@ -1949,6 +1990,7 @@ private fun rememberPrivateAssistantConversationSession(): PrivateAssistantConve
 @Composable
 private fun PrivateAssistantChat(
     conversationSession: PrivateAssistantConversationSession,
+    foodCatalog: OfflineFoodCatalog?,
     onConversationChanged: suspend (List<PrivateConversationMessage>) -> Boolean,
     onNewConversation: suspend () -> Boolean,
     modelStatus: ModelStatus,
@@ -1967,7 +2009,7 @@ private fun PrivateAssistantChat(
     onVoiceStartHandled: () -> Unit = {},
     askMeal: (String) -> ModelStatus,
     askCoach: (String, PrivateCoachSnapshot, String) -> ModelStatus,
-    startAgent: (String, List<PrivateConversationMessage>, NativeMealDraftPolicy.MealConfirmationContext?, ChatCurrentDraftPortionContext?) -> ModelStatus,
+    startAgent: (String, List<PrivateConversationMessage>, NativeMealDraftPolicy.MealConfirmationContext?, ChatCurrentDraftPortionContext?, ChatCurrentDraftFoodContext?) -> ModelStatus,
     continueAgentTool: (String, Map<String, Any?>) -> ModelStatus,
     resumeSavedDishProbe: (Long, PrivateCoachToolCall, String) -> ModelStatus,
     understandCoach: (String, String) -> ModelStatus,
@@ -1976,7 +2018,7 @@ private fun PrivateAssistantChat(
     saveWeightDirect: (Double, Instant) -> WeightEntry?,
     editSavedWeight: (WeightEntry) -> Unit,
     undoSavedWeight: (WeightEntry) -> Unit,
-    reviewMeal: (MealProposal, ChatPortionOverride?) -> Unit,
+    reviewMeal: (MealProposal, ChatPortionOverride?, ChatFoodReplacementOverride?) -> Unit,
     openSavedMeal: (String) -> Unit,
     discardMealDraft: () -> Unit,
     selectedMealContextTitle: String?,
@@ -2600,7 +2642,8 @@ private fun PrivateAssistantChat(
     }
     LaunchedEffect(
         modelStatus.assistantRequestId, modelStatus.coachReply, activeAssistantRequestId,
-        modelStatus.assistantProposal, modelStatus.assistantPortionOverride, modelStatus.state,
+        modelStatus.assistantProposal, modelStatus.assistantPortionOverride,
+        modelStatus.assistantFoodReplacementOverride, modelStatus.state,
         modelStatus.companionNavigation?.requestId,
     ) {
         val requestId = modelStatus.assistantRequestId ?: return@LaunchedEffect
@@ -2623,6 +2666,16 @@ private fun PrivateAssistantChat(
                             override.conversationGeneration == conversationSession.conversationGeneration.value &&
                             isVaultUnlocked() && !conversationSession.assistantStopping.value
                     }?.let { acceptedPortionOverride = it }
+                    modelStatus.assistantFoodReplacementOverride?.takeIf { override ->
+                        override.requestId == requestId && override.originalProposal == modelStatus.assistantProposal &&
+                            override.conversationGeneration == conversationSession.conversationGeneration.value &&
+                            isVaultUnlocked() && !conversationSession.assistantStopping.value &&
+                            ChatCurrentDraftFoodPolicy.isCurrent(
+                                override, modelStatus.assistantProposal ?: return@takeIf false,
+                                requestId, conversationSession.conversationGeneration.value,
+                                isVaultUnlocked(), conversationSession.assistantStopping.value,
+                            )
+                    }?.let { conversationSession.acceptedFoodReplacementOverride.value = it }
                     conversationSession.pendingMealConfirmation.value =
                         if (modelStatus.assistantOperation == "agent_reply" && modelStatus.assistantProposal == null &&
                             modelStatus.companionNavigation == null && isVaultUnlocked() &&
@@ -2643,7 +2696,9 @@ private fun PrivateAssistantChat(
                         )
                     }
                     portionClarification = if (proposal != null && target != null &&
-                        modelStatus.assistantOperation != "agent_meal_portion_edit"
+                        modelStatus.assistantOperation != "agent_meal_portion_edit" &&
+                        !(modelStatus.assistantOperation == "agent_meal_food_edit" &&
+                            modelStatus.assistantPortionOverride?.grams != null)
                     ) {
                         ChatPortionClarificationOffer(
                             requestId = requestId,
@@ -2852,7 +2907,36 @@ private fun PrivateAssistantChat(
             pending = conversationSession.pendingSubmission.value != null || conversationSession.pendingContinuation.value,
         )
 
+    fun liveFoodEditContext(): ChatCurrentDraftFoodContext? {
+        val proposal = modelStatus.assistantProposal ?: return null
+        val portionGrams = acceptedPortionOverride?.takeIf {
+            ChatPortionClarificationPolicy.isCurrent(
+                it, proposal, modelStatus.assistantRequestId, conversationSession.conversationGeneration.value,
+                isVaultUnlocked(), conversationSession.assistantStopping.value,
+            )
+        }?.grams
+        return ChatCurrentDraftFoodPolicy.context(
+            proposal = proposal,
+            operation = modelStatus.assistantOperation,
+            requestId = modelStatus.assistantRequestId,
+            activeRequestId = activeAssistantRequestId,
+            handledReplyRequestId = handledReplyRequestId,
+            conversationGeneration = conversationSession.conversationGeneration.value,
+            acceptedOverride = conversationSession.acceptedFoodReplacementOverride.value,
+            currentGrams = portionGrams,
+            unlocked = isVaultUnlocked(),
+            stopping = conversationSession.assistantStopping.value,
+            pending = conversationSession.pendingSubmission.value != null || conversationSession.pendingContinuation.value,
+        )
+    }
+
     fun consumeLocalPortionReply(context: ChatCurrentDraftPortionContext, text: String): Boolean {
+        val correctedFoodName = conversationSession.acceptedFoodReplacementOverride.value?.takeIf {
+            ChatCurrentDraftFoodPolicy.isCurrent(
+                it, context.originalProposal, context.sourceRequestId, context.conversationGeneration,
+                isVaultUnlocked(), conversationSession.assistantStopping.value,
+            )
+        }?.replacementName ?: context.target.itemName
         val reply = ChatPortionClarificationPolicy.parseReply(text)
         if (reply == ChatPortionReply.Unrelated) return false
         if (reply == ChatPortionReply.InvalidQuantity) {
@@ -2883,9 +2967,9 @@ private fun PrivateAssistantChat(
         messages = messages + listOf(
             PrivateChatMessage(text, true),
             PrivateChatMessage(
-                if (reply is ChatPortionReply.Grams) "Thanks. I set ${context.target.itemName} to ${reply.value} g for review."
+                if (reply is ChatPortionReply.Grams) "Thanks. I set $correctedFoodName to ${reply.value} g for review."
                 else if (grams == null) "Okay. I kept the estimate for review."
-                else "Okay. I kept ${context.target.itemName} at $grams g for review.",
+                else "Okay. I kept $correctedFoodName at $grams g for review.",
                 false,
             ),
         )
@@ -2911,6 +2995,7 @@ private fun PrivateAssistantChat(
         )
         val portionOffer = portionClarification
         val frozenPortionEditContext = livePortionEditContext()
+        val frozenFoodEditContext = liveFoodEditContext()
         if (portionOffer != null && !modelBusy && ChatPortionClarificationPolicy.isOfferCurrent(
                 offer = portionOffer,
                 proposal = modelStatus.assistantProposal,
@@ -2924,6 +3009,13 @@ private fun PrivateAssistantChat(
             if (!portionOffer.answered) {
                 when (val reply = ChatPortionClarificationPolicy.parseReply(text)) {
                     is ChatPortionReply.Grams, ChatPortionReply.Skip -> {
+                        val correctedFoodName = conversationSession.acceptedFoodReplacementOverride.value?.takeIf {
+                            ChatCurrentDraftFoodPolicy.isCurrent(
+                                it, portionOffer.proposal, portionOffer.requestId,
+                                portionOffer.conversationGeneration, isVaultUnlocked(),
+                                conversationSession.assistantStopping.value,
+                            )
+                        }?.replacementName ?: portionOffer.target.itemName
                         val accepted = ChatPortionClarificationPolicy.overrideForReview(
                             portionOffer.proposal, portionOffer.requestId, portionOffer.conversationGeneration,
                             portionOffer.target, reply,
@@ -2932,7 +3024,7 @@ private fun PrivateAssistantChat(
                         messages = messages + listOf(
                             PrivateChatMessage(text, true),
                             PrivateChatMessage(if (reply is ChatPortionReply.Grams) {
-                                "Thanks. I set ${portionOffer.target.itemName} to ${reply.value} g for review."
+                                "Thanks. I set $correctedFoodName to ${reply.value} g for review."
                             } else {
                                 "Okay. I kept the estimate for review."
                             }, false),
@@ -2969,6 +3061,38 @@ private fun PrivateAssistantChat(
         if (portionOffer == null && frozenPortionEditContext != null &&
             consumeLocalPortionReply(frozenPortionEditContext, text)
         ) return
+        if (!modelBusy && frozenFoodEditContext != null) {
+            val localReplacement = ChatCurrentDraftFoodPolicy.localCatalogReplacement(
+                context = frozenFoodEditContext,
+                text = text,
+                catalog = foodCatalog,
+                proposal = modelStatus.assistantProposal,
+                requestId = modelStatus.assistantRequestId,
+                activeRequestId = activeAssistantRequestId,
+                handledReplyRequestId = handledReplyRequestId,
+                conversationGeneration = conversationSession.conversationGeneration.value,
+                operation = modelStatus.assistantOperation,
+                unlocked = isVaultUnlocked(),
+                stopping = conversationSession.assistantStopping.value,
+                pending = conversationSession.pendingSubmission.value != null ||
+                    conversationSession.pendingContinuation.value,
+            )
+            if (localReplacement != null) {
+                val previousName = frozenFoodEditContext.currentReplacementName
+                    ?: frozenFoodEditContext.originalItemName
+                input = ""
+                messages = messages + listOf(
+                    PrivateChatMessage(text, true),
+                    PrivateChatMessage(
+                        "Okay, I changed $previousName to ${localReplacement.replacementName}. Please review the food and its match before saving.",
+                        false,
+                    ),
+                )
+                conversationSession.acceptedFoodReplacementOverride.value = localReplacement
+                recordReplyDelivery(frozenFoodEditContext.sourceRequestId, "food_replacement_local_applied")
+                return
+            }
+        }
         // Any newly submitted request retires a prior accepted amount before other
         // local reply handlers or model work can interpret the same text.
         if (frozenPortionEditContext == null && acceptedPortionOverride != null) acceptedPortionOverride = null
@@ -3045,7 +3169,9 @@ private fun PrivateAssistantChat(
                 val result = conversationSession.withAssistantModelOperation {
                     if (!conversationSession.isPendingSubmission(pending.token)) return@withAssistantModelOperation null
                     withContext(Dispatchers.Default) {
-                        if (useLegacyRoute) understandCoach(text, context) else startAgent(text, history, mealConfirmation, frozenPortionEditContext)
+                        if (useLegacyRoute) understandCoach(text, context) else startAgent(
+                            text, history, mealConfirmation, frozenPortionEditContext, frozenFoodEditContext,
+                        )
                     }
                 } ?: return@launch
                 trackPendingRequest(pending.token, result)
@@ -3142,6 +3268,25 @@ private fun PrivateAssistantChat(
             handledReplyRequestId == override.requestId &&
             conversationSession.pendingSubmission.value == null && !conversationSession.pendingContinuation.value
     }
+    val visibleAcceptedFoodReplacementOverride = conversationSession.acceptedFoodReplacementOverride.value?.takeIf { override ->
+        ChatCurrentDraftFoodPolicy.isCurrent(
+            override, modelStatus.assistantProposal ?: return@takeIf false,
+            modelStatus.assistantRequestId, conversationSession.conversationGeneration.value,
+            isVaultUnlocked(), conversationSession.assistantStopping.value,
+        ) && modelStatus.state == "loaded" && activeAssistantRequestId == override.requestId &&
+            handledReplyRequestId == override.requestId &&
+            conversationSession.pendingSubmission.value == null && !conversationSession.pendingContinuation.value
+    }
+    val displayedMealProposal = modelStatus.assistantProposal?.let { proposal ->
+        visibleAcceptedFoodReplacementOverride?.let { replacement ->
+            if (replacement.originalProposal == proposal && replacement.itemIndex in proposal.items.indices) {
+                proposal.copy(items = proposal.items.mapIndexed { index, item ->
+                    if (index == replacement.itemIndex) item.copy(name = replacement.replacementName, description = "", preparation = "")
+                    else item
+                })
+            } else proposal
+        } ?: proposal
+    }
     MetriaAssistantConversationScreen(
         messages = messages.mapIndexed { index, message -> MetriaChatMessage(
             text = message.text,
@@ -3190,20 +3335,24 @@ private fun PrivateAssistantChat(
                     )
                 },
         savedWeight = savedWeight,
-        mealProposal = modelStatus.assistantProposal.takeIf {
+        mealProposal = displayedMealProposal.takeIf {
             modelResultIsCurrent && modelStatus.state == "loaded" &&
                 conversationSession.pendingSubmission.value == null &&
                 !conversationSession.pendingContinuation.value &&
                 !conversationSession.assistantStopping.value
         },
         portionQuestion = visiblePortionOffer?.takeUnless { it.answered }?.let {
-            "What was the portion of ${it.target.itemName}, in grams?"
+            "What was the portion of ${visibleAcceptedFoodReplacementOverride?.replacementName ?: it.target.itemName}, in grams?"
         },
         portionFeedback = visiblePortionOffer?.let { offer ->
             offer.feedback ?: if (offer.answered) {
-                offer.grams?.let { "${offer.target.itemName}: $it g is ready in Review." } ?: "The original estimate is ready in Review."
+                offer.grams?.let {
+                    "${visibleAcceptedFoodReplacementOverride?.replacementName ?: offer.target.itemName}: $it g is ready in Review."
+                } ?: "The original estimate is ready in Review."
             } else null
-        } ?: visibleAcceptedPortionOverride?.let { "${it.itemName}: ${it.grams} g is ready in Review." },
+        } ?: visibleAcceptedPortionOverride?.let {
+            "${visibleAcceptedFoodReplacementOverride?.replacementName ?: it.itemName}: ${it.grams} g is ready in Review."
+        },
         savedDishChoices = visibleSavedDishChoices,
         recordingVoice = recordingVoice,
         preparingVoice = startVoiceImmediately && !recordingVoice,
@@ -3230,13 +3379,14 @@ private fun PrivateAssistantChat(
             messages = messages + PrivateChatMessage("${"%.1f".format(entry.kilograms)} kg entry removed.", false)
         },
         onReviewMeal = { proposal ->
+            val sourceProposal = modelStatus.assistantProposal ?: return@MetriaAssistantConversationScreen
             val requestId = modelStatus.assistantRequestId
             if (requestId != null && modelResultIsCurrent && isVaultUnlocked()) {
                 // Flush the acknowledgement before Review disposes this Chat composition,
                 // including when the member taps faster than the normal persistence debounce.
                 val acknowledgement = mealDraftTranscriptAcknowledgement(
                     activeAssistantRequestId, handledReplyRequestId, requestId, modelStatus.state,
-                    modelStatus.assistantProposal == proposal, modelStatus.assistantOperation,
+                    modelStatus.assistantProposal == sourceProposal, modelStatus.assistantOperation,
                     !conversationSession.assistantStopping.value,
                 )
                 if (acknowledgement != null) {
@@ -3253,7 +3403,7 @@ private fun PrivateAssistantChat(
                             isVaultUnlocked() && activeAssistantRequestId == requestId &&
                                 conversationSession.isCurrentNavigationRequest(requestId) &&
                                 modelStatus.assistantRequestId == requestId && modelStatus.state == "loaded" &&
-                                modelStatus.assistantProposal == proposal &&
+                                modelStatus.assistantProposal == sourceProposal &&
                                 conversationSession.pendingSubmission.value == null &&
                                 !conversationSession.pendingContinuation.value &&
                                 !conversationSession.assistantStopping.value
@@ -3261,7 +3411,7 @@ private fun PrivateAssistantChat(
                         save = onConversationChanged,
                         navigate = {
                             val offer = visiblePortionOffer?.takeIf {
-                                it.proposal == proposal && ChatPortionClarificationPolicy.isOfferCurrent(
+                                it.proposal == sourceProposal && ChatPortionClarificationPolicy.isOfferCurrent(
                                     it, modelStatus.assistantProposal, modelStatus.assistantRequestId,
                                     conversationSession.conversationGeneration.value, isVaultUnlocked(),
                                     conversationSession.assistantStopping.value,
@@ -3274,8 +3424,11 @@ private fun PrivateAssistantChat(
                                     it.proposal, it.requestId, it.conversationGeneration, it.target,
                                     it.grams?.let { grams -> ChatPortionReply.Grams(grams) } ?: ChatPortionReply.Skip,
                                 )
-                            } ?: visibleAcceptedPortionOverride?.takeIf { it.originalProposal == proposal }
-                            reviewMeal(proposal, override)
+                            } ?: visibleAcceptedPortionOverride?.takeIf { it.originalProposal == sourceProposal }
+                            val foodOverride = visibleAcceptedFoodReplacementOverride?.takeIf {
+                                it.originalProposal == sourceProposal
+                            }
+                            reviewMeal(sourceProposal, override, foodOverride)
                             true
                         },
                         repeatable = true,
@@ -3320,10 +3473,10 @@ internal fun mealDraftTranscriptAcknowledgement(
     hasProposal: Boolean,
     operation: String?,
     eligible: Boolean,
-): String? = if (eligible && state == "loaded" && hasProposal && operation in setOf("meal", "agent_meal_draft", "agent_meal_portion_edit") &&
+): String? = if (eligible && state == "loaded" && hasProposal && operation in setOf("meal", "agent_meal_draft", "agent_meal_portion_edit", "agent_meal_food_edit") &&
     shouldConsumeAssistantResult(activeRequestId, handledRequestId, resultRequestId)
 ) {
-    if (operation == "agent_meal_portion_edit") "Your current meal draft is still available for review."
+    if (operation == "agent_meal_portion_edit" || operation == "agent_meal_food_edit") "Your current meal draft is still available for review."
     else "I prepared a meal draft for review. Only meals you confirm are saved."
 } else null
 

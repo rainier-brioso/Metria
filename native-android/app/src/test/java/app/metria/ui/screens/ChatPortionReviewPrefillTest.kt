@@ -1,11 +1,14 @@
 package app.metria.ui.screens
 
 import app.metria.ChatPortionOverride
+import app.metria.ChatFoodReplacementOverride
 import app.metria.GramRange
 import app.metria.MealProposal
 import app.metria.MealProposalItem
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ChatPortionReviewPrefillTest {
@@ -56,5 +59,77 @@ class ChatPortionReviewPrefillTest {
         assertEquals("50", result[0].grams)
         assertEquals("50", result[1].grams)
         assertEquals("120", result[2].grams)
+    }
+
+    @Test fun singleFoodReplacementUpdatesReviewLabelAndClearsStalePreparationFields() {
+        val item = item("white rice", 100, 180).copy(
+            role = "main_food",
+            evidence = "member_report",
+        )
+        val proposal = MealProposal(
+            listOf(item), listOf("original assumption"), listOf("original question"), "medium",
+        )
+        val replacement = ChatFoodReplacementOverride(
+            requestId = 10,
+            conversationGeneration = 3,
+            originalProposal = proposal,
+            itemIndex = 0,
+            originalItemName = "white rice",
+            replacementName = "brown rice",
+        )
+        val explicitPortion = ChatPortionOverride(10, 3, proposal, 0, "white rice", 150)
+        val baseline = initialDrafts(proposal.items).single()
+
+        assertTrue(isFoodReplacementReviewPrefillValid(proposal, replacement))
+        val changed = initialDraftsWithFoodReplacement(
+            proposal.items, proposal, replacement, explicitPortion,
+        ).single()
+        assertEquals("brown rice", changed.name)
+        assertEquals("brown rice", changed.dishName)
+        assertEquals("", changed.description)
+        assertEquals("", changed.preparation)
+        assertEquals("150", changed.grams)
+        assertEquals(item.role, changed.role)
+        assertEquals(item.evidence, changed.evidence)
+        assertEquals("white rice", baseline.name)
+        assertFalse(shouldSuggestInitialCatalogMatch(0, proposal, replacement))
+    }
+
+    @Test fun replacementWithUnknownPortionDoesNotInventGramsAndNormalDraftPathStaysTheSame() {
+        val proposal = MealProposal(
+            listOf(item("white rice", 100, 180)), emptyList(), emptyList(), "medium",
+        )
+        val replacement = ChatFoodReplacementOverride(10, 3, proposal, 0, "white rice", "brown rice")
+        val normal = initialDraftsWithFoodReplacement(proposal.items, proposal, null, null).single()
+        val replaced = initialDraftsWithFoodReplacement(proposal.items, proposal, replacement, null).single()
+
+        assertEquals("white rice", normal.name)
+        assertEquals("white rice", normal.dishName)
+        assertEquals("brown rice", replaced.name)
+        assertEquals("brown rice", replaced.dishName)
+        assertEquals("", replaced.grams)
+        assertEquals("", replaced.description)
+        assertEquals("", replaced.preparation)
+        assertTrue(shouldSuggestInitialCatalogMatch(0, proposal, null))
+    }
+
+    @Test fun invalidOrStaleReplacementFallsBackToTheUnchangedProposalReview() {
+        val proposal = MealProposal(
+            listOf(item("white rice", 100, 180)), emptyList(), emptyList(), "medium",
+        )
+        val baseline = initialDrafts(proposal.items).single()
+        val invalid = ChatFoodReplacementOverride(10, 3, proposal, 0, "white rice", "rice with beans")
+        val stale = invalid.copy(originalProposal = proposal.copy(assumptions = listOf("changed")))
+
+        assertFalse(isFoodReplacementReviewPrefillValid(proposal, invalid))
+        assertFalse(isFoodReplacementReviewPrefillValid(proposal, stale))
+        assertEquals(
+            baseline.reviewFields(),
+            initialDraftsWithFoodReplacement(proposal.items, proposal, invalid, null).single().reviewFields(),
+        )
+        assertEquals(
+            baseline.reviewFields(),
+            initialDraftsWithFoodReplacement(proposal.items, proposal, stale, null).single().reviewFields(),
+        )
     }
 }

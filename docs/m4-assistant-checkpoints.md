@@ -3944,3 +3944,226 @@ target-phone interaction recheck pending.
   debug/release/vital lint; later updates are acceptance/approval notes only.
   Git records commit identity and remote completion. Broader documented gates
   remain open; no release-readiness claim.
+
+### Current-draft single-food replacement — 2026-10-18
+
+- Member approved starting one-food replacement and noted its value for voice
+  commands. Read-only discovery identifies the existing current-portion context,
+  native tool lifecycle and Review name/match controls as reusable seams.
+- First slice limited to one simple ordinary Chat food; retain immutable source
+  proposal and transient name/amount overlays. Host validates literal replacement
+  phrase and current unlocked request/session; no model-selected item/ID or new
+  nutrition. Review removes old food matching/context and requires fresh local
+  match choice. Explicit final Save remains the only record mutation.
+- Design states updated before implementation in companion/FLOWS/SCREEN-SPECS.
+  Worker owns code/tests; parent owns docs and final gate. Independent review,
+  full Android gate and named phone checks pending. No new dependency, vault
+  format, install, commit or push for this extension yet.
+- Keyboard dictation shares text handling; in-app Speak recognition currently
+  uses a separate action parser and can clear current-draft context. Dedicated
+  microphone parity is a later bounded handoff task, not an implemented benefit.
+- Production and test snapshots frozen for independent review. New policy and
+  native tool bind a literal single replacement to the host's sole current food;
+  Review applies a name overlay, clears stale descriptive/matching context and
+  requires a fresh local match. Explicit member grams remain; otherwise Review
+  leaves grams blank rather than reusing an old-food portion estimate.
+- Parent inspection caught punctuation/standalone-label validation mistakes and
+  an explicit-operation failure path that could retain old food context; worker
+  corrected them before the frozen review snapshot. First complete gate then
+  failed compilation because Review lacked two imports for the new policy/types.
+  Parent added those imports and restarted the complete gate. No new APK installed
+  or phone result claimed. Review/tests/build are separate evidence levels.
+- Gate after import fix passes tests/debug/release/vital lint. Independent review
+  found a remaining comma-list ambiguity: a single model replacement phrase
+  could be accepted from a multi-food comma-separated turn. Fix and regression
+  tests are required before installation. Parent also identified local portion
+  acknowledgements still using the original label after rename. Production and
+  test owners are correcting these separate paths, then final gate/re-review.
+- Final-source follow-up review found no material blocker: comma-list ambiguity
+  fixed without rejecting intended discourse/courtesy commas; local portion
+  acknowledgement names use current request/proposal/session-bound overlay;
+  retained explicit grams suppress redundant questioning. The latter coordinator
+  behaviors still need named phone acceptance. First repaired gate passed 619
+  tests; final complete gate after these fixes is running. ADB currently has no
+  phone connection; member reconnect requested. No install yet.
+- Final complete gate after review fixes passes: 619 unit tests with zero
+  failures/errors/skips, debug/release builds and release vital lint. Diff check
+  clean. Debug APK SHA-256:
+  `eee16955de9e97c24205578e746e9d8dea18fcc165acb4a8c357815be1b965d6`.
+- Fresh ADB post-gate snapshot lists no device. No APK installed for this
+  extension yet; existing member data/models untouched. Next bounded task is
+  reconnect, in-place install, member unlock and named single-food correction /
+  gram continuation / Review return checks. Unsupported/mixed-edit retention,
+  Stop/lock, layout/accessibility and dedicated mic parity remain unaccepted.
+  No commit/push authorization. Source tree remains buildable with this gate;
+  subsequent changes are documentation-only evidence/status updates.
+- Member requested reconnect retry. Fresh device list identified Samsung
+  SM-S928B; selected one exact transport consistently. Installed the verified
+  food-replacement debug APK above with `install -r` (`Success`) and cold launch
+  returned `Status: ok`. Existing app identity/private data/models preserved;
+  no biometric automation or raw private capture. Member unlock and named phone
+  acceptance pending. No code change, commit or push.
+- First single-food phone check passes on `eee16955...`: member confirms new
+  brown-rice name/title, retained 150 g and no selected match across two Review
+  visits, then Discard. Values are member-observed; bounded trace confirms native
+  Gemma and accepted Chat delivery, but not the specific food-edit outcome.
+- Parent diagnosed missing monitoring event: food replacement reasons were in
+  stored-record vocabulary but absent from recordReplyDelivery's entry gate and
+  accepted mapping. Added only those fixed reasons and expanded existing restart/
+  deduplication/content-exclusion regression test. No new private fields. Full
+  gate and in-place monitoring build pending; phone behavior is already observed
+  on the preceding build, not inferred from the monitoring change.
+- Monitoring fix complete gate passes: 619 tests, zero failures/errors/skips,
+  debug/release builds and release vital lint. Debug APK SHA-256:
+  `678cd1a811ef5026902cb5c3b3c3e5e70d63990a36fa66d2fd0cb8238920f15c`.
+  Existing trace regression now exercises fixed food replacement accepted/rejected
+  outcomes through delivery, deduplication and restart, excluding content suffixes.
+- Monitoring APK installed in place on Samsung SM-S928B / Android 16 (`Success`)
+  and cold-launched (`Status: ok`). Existing data/models preserved. Repeated
+  replacement/gram continuation and monitoring replay pending member unlock/test.
+  No record save, private capture, commit or push.
+- Repeated correction phone sequence FAILED: member reports draft disappeared,
+  with initial gram reply the last visible assistant message. Safe trace shows
+  draft confirmation and portion application, then correction request 4 native
+  Gemma; during inference `conversation_sync_changed` clears Chat request. Its
+  later lifecycle result is withheld by `active_request_mismatch` and
+  `chat_active_missing`. No specific food-edit outcome. Stale delivery guard is
+  correct; do not bypass it. No raw text, private records or screenshots read.
+- Read-only discovery and bounded worker assigned hydration provenance fix:
+  recognize exact successful same-session transcript writes despite a newer
+  in-memory member turn, while unknown changed/removed/expired conversations and
+  lock/reset still restore/invalidate. Parent owns docs; worker owns policy/
+  persistence/session wiring/tests. No new install or acceptance claimed yet.
+- Discovery confirms a policy gap: an exact successful intermediate self-write
+  is neither previouslyLoaded nor the newer canonical local transcript, so it
+  currently restores and clears request identity. The exact status callback
+  exposing this run is unknown: ordinary Chat writes do not update root status,
+  and refresh can also originate from lifecycle/other vault updates. Do not
+  attribute it specifically to the 60-second timer without matching evidence.
+- Hydration worker implemented bounded exact successful-write receipts (8,
+  two-minute recognition lifetime), generation invalidation and writer-idle
+  synchronization. Unknown changed/removed/expired snapshots retain restore
+  behavior; no final delivery guard change. Focused tests cover intermediate
+  own writes, normalization/message cap, exact identity mismatch, expiry/reset,
+  failed/late saves, receipt bounds and writer ordering.
+- First gate caught a compile integration issue: Review's synchronous onSave
+  called the newly suspended synchronization function. Split root status refresh
+  into suspend synchronizeAfterWrites while preserving existing synchronous
+  post-Review-save hydration. Parent/reviewer also found dispatcher cancellation
+  could discard a committed save before acknowledgement; moved commit+receipt
+  registration into the same IO block before returning to the caller, with a
+  cancellation-after-commit regression. Final gate/review pending; no install.
+- Gate after compile/cancellation fixes passes tests/debug/release/vital lint.
+  Reviewer validated exact receipt lifecycle and existing Review navigation fence,
+  then found one restore gap: unknown persisted replacement/removal must invalidate
+  already-captured autosave tickets. Otherwise a queued write can overwrite the
+  restored conversation. Add invalidation atomically under writer-idle hydration
+  barrier, with queued-write regression fixtures; no broadened Save UX needed.
+- Final hydration source re-reviewed: root synchronization holds writer mutex
+  through classification/invalidation, unknown restore invalidates old tickets,
+  exact own-write KEEP preserves current ones. Reviewer confirms no deadlock or
+  remaining scoped blocker. IO cancellation-safe receipt registration and existing
+  Review navigation fence remain intact. Final complete gate and phone replay
+  pending; do not mark the observed repeated-edit failure closed yet.
+- Final corrected full gate passes: 628 unit tests, zero failures/errors/skips,
+  debug/release builds, release vital lint and clean diff check. Debug APK SHA-256:
+  `8dd8080a14fdc41e521e34d0cdf06c995f19855375e4eb0c5590bda3f8ae8f70`.
+  In-place install/replay pending. Automated fixtures establish the named policy/
+  ordering outcomes, not physical acceptance or proof of exact callback trigger.
+- Corrected hydration APK installed in place on Samsung SM-S928B / Android 16
+  (`Success`) and launched (`Status: ok`, launch state reported unknown), preserving app identity/private
+  data/models. Member unlock and repeated correction / minute refresh / Review
+  replay pending. No raw capture, record save, commit or push.
+- Replay on corrected hydration build: member reports second rename retains
+  brown rice. Trace confirms request 4 `food_replacement_applied`, then local
+  `portion_applied`; request 5 native Gemma produces audited prose and Chat delivery
+  with no food-edit action and no hydration-reset/mismatched-request events in
+  this run. Replacement expectation failed; current draft retention worked.
+- Bounded follow-up assigned: align current-food prompt and add one native
+  corrective retry only for an eligible no-tool food correction; preserve final
+  literal/request validation and truthful unchanged-draft reply if still no edit.
+  No specific food/typo rule or raw content inspection. Gate/re-review/replay pending.
+- Retry implementation and tests frozen; independent review confirms one strict
+  no-tool retry, no extra factual retry loop, final-response action selection and
+  truthful retained-draft fallback. Portion prompt and acknowledgement old-name
+  use the current display label. Parent/reviewer found food-only fixed-portion
+  no-tool completion left dynamic conversation state installed; finalizer now
+  retires either food or portion edit context. No authority relaxation.
+  Gate before finalizer fix passed; final complete gate/replay pending.
+- Reviewer identified one final malformed-selection edge: default disposition
+  retired a draft for unknown tool names. Parent changed default to retained
+  clarification; raw read names require valid adapter output unless the member's
+  host-required read/navigation already ends editing. Valid saved-dish search
+  still retires. Added unknown/malformed vs valid-operation regression coverage.
+  Final full gate running; no new APK installed for bounded retry yet.
+- Cleanup uses validated active edit contexts, not merely the UI's offered raw
+  contexts. Required read/navigation paths retire edit authority before model
+  continuation; cleanup must not destroy a read conversation waiting for its local
+  tool result. No-tool food-only edits still retire dynamic edit state. Final gate
+  rerun after this narrow lifecycle predicate correction; phone replay pending.
+
+### Repeated-rename corrective build — 2026-10-19
+
+- Final complete gate after bounded intent retry, malformed-tool retention and
+  validated-context cleanup passes: 631 unit tests, zero failures/errors/skips,
+  debug/release APKs, release vital lint and clean diff check.
+- Debug APK SHA-256:
+  `4fb244383218f79be4eae31c06bbf0c67ae0297ef357c1ee841f0850f6ce15bf`.
+  In-place installation started under the active test-cycle authorization;
+  repeated rename/portion phone replay remains pending. No commit/push.
+- Installed that APK in place (`Success`) and launched (`Status: ok`) on Samsung
+  SM-S928B / Android 16. Existing app identity/private data/models preserved;
+  member unlock and named repeated-rename replay pending. No raw capture or Save.
+- 631-test phone replay still inconsistent: member reports brown rice rejected
+  twice, basmati accepted. Safe trace includes wrong portion selection/rejection,
+  a successful food replacement, and a later dedicated retry ending no-tool/
+  `food_replacement_not_selected`. No raw dialogue/private record inspection.
+- Assessing conservative explicit label edits locally: same live single-food
+  authority and literal frame, admission by complete packaged catalog vocabulary
+  plus canonical food-head coverage, no catalog selection or nutrition. Unknowns
+  retain native handling. No concrete food/typo exception or further retry loops.
+  Design review pending before implementation; parent owns documentation.
+- Read-only design review approves full-phrase/canonical-head vocabulary admission
+  under current draft authority, with conservative false negatives and unknown
+  native fallback. Worker assigned production/tests; no new dependency, model,
+  dictionary, catalog selection/nutrition or Save behavior. New flow states are
+  documented before implementation. Final gate/review/phone acceptance pending.
+- Local correction implementation and independent final review complete. Shared
+  submission requires actual model/active/handled request identity and current
+  proposal/generation/unlocked/idle authority; only the transient name changes.
+  Complete description vocabulary and canonical food-head coverage admit brown
+  rice without selecting its raw catalog entry or nutrition. Unknown basmati
+  keeps native handling. Review remains unmatched and explicit grams preserved.
+  First gate caught a missing required request-ID argument in one test fixture;
+  corrected, with complete gate rerunning. No new install or physical pass yet.
+- Final local-label complete gate passes 632 unit tests, zero failures/errors/
+  skips, debug/release assembly, release vital lint and clean diff check. APK
+  SHA-256: `c1b4b5ca92587847df7d4cb29df334fd072bc54920ad146448266002789783d2`.
+  Authorized in-place installation underway; local repeated-edit and native
+  unknown-food replay remain pending. No commit/push or raw device capture.
+- Local-label APK installed in place (`Success`) and cold-launched (`Status: ok`)
+  on Samsung SM-S928B / Android 16 under the active test-cycle authorization.
+  `install -r` preserved app identity/private storage; member unlock and actual
+  repeated-local-edit acceptance remain pending. No raw capture or record Save.
+- Member confirms the requested repeated sequence ends in white rice, 200 g,
+  no selected match across both Review visits, then Discard. Safe trace confirms
+  accepted local food and portion edits on the same request. Fixed delivery
+  reasons deduplicate per request, so repeated local events cannot be counted.
+  Later native food replacement also completes after bounded retry; no raw text
+  was inspected, so its phrase is not attributed. Visible repeated-edit gate
+  passes; do not claim both renames independently proved Gemma-free. Next bounded
+  check: fresh unknown-catalog basmati correction. Broader lifecycle/accessibility
+  and dedicated microphone parity remain open. No commit/push authorization yet.
+- Member confirms requested fresh basmati correction: basmati rice, 150 g and
+  no selected match, then Discard. Named visible fallback compatibility passes
+  by member report. Latest metadata tail contains no distinct new request after
+  the earlier native success and lock, so no extra independently attributed
+  basmati routing pass is claimed. Production remains the reviewed 632-test APK;
+  only acceptance documentation changed. Next bounded task: explicit checkpoint
+  commit/push approval; broader physical/accessibility/microphone gaps stay open.
+- Member explicitly approved commit and push of this reviewed checkpoint to
+  main. Handoff gate remains 632 passing tests, debug/release assembly, release
+  vital lint and clean diff check; named Review checks pass with the monitoring
+  limitations above. Historical pending-approval notes are superseded. Next
+  bounded development task: scope dedicated voice-path contextual-edit parity;
+  do not infer microphone acceptance from text or keyboard dictation results.

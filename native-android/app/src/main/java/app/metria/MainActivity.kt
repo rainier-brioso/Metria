@@ -222,10 +222,11 @@ class MainActivity : FragmentActivity() {
         selectedMealId: String? = null,
         confirmation: NativeMealDraftPolicy.MealConfirmationContext? = null,
         portionEditContext: ChatCurrentDraftPortionContext? = null,
+        foodEditContext: ChatCurrentDraftFoodContext? = null,
         unlocked: Boolean = false,
         conversationGeneration: Long? = null,
     ): ModelStatus = modelLifecycle.startPrivateAgentTurn(
-        question, history, selectedMealId, confirmation, portionEditContext, unlocked, conversationGeneration,
+        question, history, selectedMealId, confirmation, portionEditContext, foodEditContext, unlocked, conversationGeneration,
     )
 
     fun setAssistantStyle(style: EncryptedVault.AssistantStyle): ModelStatus = modelLifecycle.setAssistantStyle(style)
