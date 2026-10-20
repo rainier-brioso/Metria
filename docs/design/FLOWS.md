@@ -203,6 +203,22 @@ that handoff; Type instead, Back and background cancellation still discard it.
 Local audio understanding supplies recognized words. Today meal entry sends a
 successful transcript directly to draft generation; proposed audio actions are
 never dispatched. Generic Speak retains explicit editing and submission.
+For an eligible current ordinary Chat meal draft, its microphone uses the same
+editable words preview. Transcription has a separate transient identity and
+preserves the current draft request, name and grams. Continue in Chat submits the
+checked words through normal Chat correction handling; recognition itself never
+dispatches an audio-proposed action. Cancel/Stop, lock, newer work and disposal
+revoke the one-use handoff. Unknown food names retain normal assistant handling.
+Contextual recognition requests plain words rather than a model-generated action
+or JSON envelope; the host validates bounded text for preview only. Continue still
+requires the same source/current-draft checks before normal text submission.
+Chat microphone revision (2026-10-20): the same plain-transcription preview and
+explicit Continue apply when there is no eligible draft. A capture is bound to
+the unlocked conversation generation and request state before recording; only
+current one-use words can continue through normal typed Chat routing. Recent
+Chat history is not supplied to transcription. No Chat audio intent/action is
+executed directly. Lock/Stop/newer work revoke both ordinary and draft captures.
+Dedicated Today meal entry remains a separate flow.
 No new barcode or cloud route is enabled.
 Available catalog nutrients expand on demand, with their own coverage and
 source units; unavailable nutrient rows are not manufactured.

@@ -1,5 +1,34 @@
 # Metria product plan
 
+Active checkpoint (2026-10-20): shared Chat voice preview after pushed commit
+`8e985dc`. All ordinary Chat microphone input uses history-free, local plain
+transcription, editable words and explicit Continue through typed Chat routing.
+One-use capture/session/request authority applies even without a draft; eligible
+draft edits add the exact proposal/name/gram binding. Stop/lock/new work revoke
+voice authority. Intentional Stop permits only quiet Type instead exit in the
+unchanged session, never submission. No new model, dependency, vault format or
+automatic Save. Research, decisions and chronological acceptance evidence are in
+`assistant-companion-bundle.md` and `m4-assistant-checkpoints.md`.
+
+Implementation and independent reviews complete. Final installed APK passes
+647 tests, zero failures/errors/skips, debug/release assembly, release vital lint
+and diff check. Samsung SM-S928B / Android 16 in-place install and cold launch
+succeeded, preserving app identity/private storage. Member accepts generic spoken
+meals read without a draft, lock/unlock with history and fresh voice, spoken food/
+gram edits retained across Review, Type instead waiting for explicit Send, and
+final Stop-to-typing without error followed by a correct typed answer and no late
+result. Safe metadata corroborates transcription/MiniLM read/delivery and local
+food edit; it cannot prove exact words, every repeated portion or native lock
+interruption timing. Screenshots used for requested inspection were deleted.
+
+Member explicitly approved committing/pushing this checkpoint, not a completed
+release. Broader recognition,
+Today/generic entry-point regression, active native timing races, rotation/font/
+TalkBack, permission denial and other accessibility gates remain documented open.
+No source changes after the final gate. Save the approved development checkpoint
+with the recorded acceptance limitations; the earlier pending-approval notes are
+superseded by this explicit approval.
+
 Current reliability fix (2026-10-19): native single-food tool selection remains
 inconsistent despite one bounded retry. Implement conservative local label edits
 for an explicit single-food correction whose full phrase and canonical food head

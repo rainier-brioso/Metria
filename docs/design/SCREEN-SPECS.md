@@ -323,6 +323,25 @@ audio. Lock clears entry presentation; rotation retains editable unlocked text
 under the current orientation handling. No new transcription dependency or cloud
 speech service is introduced. Recognition accuracy and physical gates are open.
 
+For a live eligible ordinary Chat draft, the microphone also opens this preview
+and preserves the draft while transcription runs through a separate transient
+request. Explicit Continue uses the existing Chat correction rules and Review;
+audio actions cannot change the draft. Cancel/Stop, lock, newer work and disposal
+revoke the handoff. No request identity is rewound or restored from history.
+The contextual recognizer returns bounded plain words for preview, with empty,
+invalid or structured output rejected. It supplies no executable audio action;
+explicit Continue retains the normal text-routing and current-draft checks.
+All ordinary Chat microphone input uses this preview, including a fresh request
+after lock. The recognizer receives no Chat history and returns no executable
+intent. Continue requires current unlocked capture/session authority and sends
+only the member-checked text through normal Chat routing. A source draft, when
+present, additionally requires the exact one-use draft binding. Recognition alone
+never adds a "Voice request received" message or creates a draft.
+After explicit Stop, Type instead quietly opens the composer if the unlocked
+conversation/request is unchanged. Cancellation grants no authority to submit
+recognized words or revive a draft. A real changed/stale source still explains
+why the voice request was not applied. History and current draft remain intact.
+
 **Today meal-entry refinement — 2026-10-07:** a dedicated full-height focused
 destination handles typed descriptions and spoken meals from a selected card.
 Its purpose is creating one reviewable meal, with the section visible in the

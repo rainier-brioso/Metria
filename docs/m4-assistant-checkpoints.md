@@ -4167,3 +4167,221 @@ target-phone interaction recheck pending.
   limitations above. Historical pending-approval notes are superseded. Next
   bounded development task: scope dedicated voice-path contextual-edit parity;
   do not infer microphone acceptance from text or keyboard dictation results.
+
+### Dedicated voice contextual-edit handoff — 2026-10-19
+
+- Member approved continuing after discussion of Moshi/Mini-Omni2. Keep the
+  current Gemma 4 E2B/LiteRT stack; no new model/runtime dependency. Baseline
+  checkpoint `8e985dc` is pushed to main and starts clean.
+- Read-only discovery confirms generic audio replaces the assistant request ID
+  and operation, invalidating the original draft and gram binding for later
+  text submission. Do not rewind request IDs or relax context validators.
+- Approved bounded direction: a separate transient transcription channel keeps
+  the original eligible ordinary Chat draft identity, with a one-use capture/
+  audio/source/session proof. Existing recognized-words preview and Continue
+  submit through ordinary text correction; audio actions have no authority.
+  Stop/lock/reset/disposal/newer work revoke; temporary clips always delete.
+- Flow/spec updated before implementation. Worker owns production/tests; parent
+  owns docs/final gate/install; independent design/implementation review planned.
+  Microphone, cancellation, Review retention and accessibility gates pending.
+  No new APK installed or commit/push approval for this extension.
+- Independent design review agrees separate token/state/result is required:
+  preserve the old assistant tuple rather than restoring IDs after generic
+  audio. Strict one-key JSON transcript, exact proposal/name/gram/source/session
+  binding, delayed permission/clip checks and atomic one-use Continue are required.
+  Separate voice Stop revokes/deletes the attempt without cancelling the original
+  unsaved draft; shared inference remains busy until actual audio worker exit.
+  Worker implementation underway; phone reconnected, no install yet.
+- Transcript-only runtime/UI and pure handoff/parser tests implemented. Parent
+  compile caught an obsolete duplicate microphone helper, removed by worker;
+  app debug/release Kotlin compilation now passes. First full gate caught fixture
+  parameter-name mismatches in the new handoff tests; repair pending. Final
+  review is examining native worker shutdown, stale Continue/Type instead and
+  delayed permission safety. No APK installed or microphone pass claimed.
+- Final review found a material terminal-state gap: failed/cancelled recognition
+  could leave non-idle state suppressing later Chat delivery, and a previous
+  terminal token could invalidate retake. Parent also confirmed a failed consume
+  could fall through to normal submission and completed transcript cleanup must
+  cover lock/unload. Worker assigned one grouped repair with terminal/retry and
+  revoked-handoff regressions, preserving runtime busy ownership until actual
+  worker exit. No acceptance is inferred from the earlier partial gate.
+- Grouped repair full gate passes tests/debug/release/vital lint. Final review
+  confirms terminal isolation/retake, lock cleanup and failed-consume early
+  return. One last UX repair is pending: Type instead must preserve a still-current
+  one-use handoff for explicit keyboard Send, rather than always dropping draft
+  context; stale handoffs still revoke and explain a new-message path. Parent and
+  reviewer agree the narrow split preserves authority checks. Rebuild/review of
+  that branch precedes installation; no phone microphone pass yet.
+- Final Type instead split implemented and independently re-reviewed: current
+  proof survives for explicit keyboard Send; stale proof revokes with context
+  bypass and explanation. No auto-send. Reviewer reports no remaining scoped
+  blocker. Final gate has 640 passing unit tests, zero failures/errors/skips,
+  and debug assembly; release/vital lint finishing. Native audio cancellation/
+  permission/Review behavior still needs actual Samsung checks. No install yet.
+- Final full gate passes: 640 unit tests, zero failures/errors/skips, debug/release
+  assembly, release vital lint and clean diff check. Debug APK SHA-256:
+  `0c692d5d32085b73e42ad74c10bf28d52a64fe4c19b000b43bb8d68720202096`.
+  In-place installation underway on Samsung SM-S928B / Android 16 under the
+  existing repeated-install authorization. Member microphone checks pending.
+- Verified voice APK installed in place (`Success`) and cold-launched (`Status:
+  ok`) on the same Samsung. App identity/private storage preserved by install-r;
+  biometric unlock and actual microphone acceptance remain member actions.
+  Next bounded check: current rice draft at 150 g, speak brown-rice correction,
+  preview/check words, Continue, then unmatched brown rice/150 g in Review and
+  return without Save. No raw captures, private-record reads, commit or push.
+- First dedicated microphone check failed (2026-10-20): member reports spoken
+  brown-rice correction returned unreadable-speech error before preview/Continue.
+  Reconnected Samsung safe trace confirms draft/portion acceptance but has no
+  voice-stage evidence. The same error exists for contextual parse rejection and
+  legacy missing speech; exact path remains unproven. Discovery identified general
+  wellness system instructions in the transcription conversation. Replace with
+  transcript-only system instructions and add fixed content-free path/rejection
+  stages; preserve strict parser and all authority/cleanup guards. Implementation,
+  review, full gate and member retry pending. No raw audio/output/records read.
+- Focused repair implemented: contextual audio has dedicated transcript-only
+  system instructions, no automatic tool calling, unchanged strict parsing with
+  fixed failure categories, and an opt-in legacy missing-transcript marker.
+  Review found cancelled inference could be misreported as a parser/runtime
+  failure; finalization now checks current ID/state/engine/interruption before
+  emitting that event. Initial gate caught literal-tab test assertions; repaired.
+  Final full gate/re-review running. No replacement APK installed yet.
+- Focused re-review has no remaining blocker. Complete final gate passes 642
+  unit tests, zero failures/errors/skips, debug/release assembly and release vital
+  lint; diff check clean. Debug APK SHA-256:
+  `ae9a50b91e80c14e7ddda85f21cbd66a593ceab002421eeb9337294bd530fc44`.
+  Authorized in-place installation underway on the same Samsung SM-S928B /
+  Android 16. First microphone retry remains pending; no recognition pass claimed.
+- Verified APK installed in place (`Success`) and cold-launched (`Status: ok`)
+  with app identity/private storage preserved. Member unlock and fresh rice/150 g
+  spoken brown-rice preview/Continue/Review retry pending. Existing opt-in trace
+  can distinguish contextual parse stages from legacy missing transcript without
+  reading raw output or speech. No record saved, commit or push.
+- Member reports repeated attempts by two speakers at different speeds yielded
+  text only once. Safe trace establishes eight contextual attempts: one accepted,
+  seven malformed-envelope rejections, no empty/runtime failure. Formatting is
+  the observed failure boundary; ASR accuracy remains unproven. Adopt Google's
+  documented plain-text English ASR prompt alongside audio, removing JSON packaging
+  only for the contextual preview channel. Host bounds/invalid-output checks,
+  explicit member preview/Continue and all action/source guards remain. Decision
+  and primary sources recorded in companion bundle; implementation/review/gate/
+  fresh phone retry pending. No raw output/audio inspected.
+- Plain-ASR repair implemented with explicit English transcription text beside
+  audio; preview parser accepts bounded plain words and extracts no structured
+  action/JSON fields. Initial complete gate passes. Focused review caught shared
+  text validation allowing tabs and pre-trim hiding edge controls; contextual-only
+  raw size/control checks and regressions now repair that, with final full gate
+  and re-review running. Boundary CR/LF formatting is trimmed; multiple content
+  lines remain invalid. No new model/dependency/service or APK installed yet.
+- Final focused re-review has no remaining blocker. Full gate passes 642 unit
+  tests, zero failures/errors/skips, debug/release assembly and release vital lint;
+  diff check clean. Plain-ASR APK SHA-256:
+  `dc9ac70b14e34ed578086243be2857c9bf1781bb88bbd3d85aa42d1f09c4428e`.
+  Authorized in-place update underway on the same Samsung. Recognition accuracy,
+  preview/Continue/Review and broader phone acceptance remain open.
+- Plain-ASR APK installed in place (`Success`) and launched (`Status: ok`;
+  Android reported unknown launch state). App identity/private storage preserved.
+  Member unlock and one fresh rice/150 g spoken brown-rice preview/Continue/Review
+  check pending. No raw recordings/output inspected; no record Save, commit/push.
+- Member confirms correct spoken brown-rice preview and Review, retaining 150 g
+  with no selected match, leaving without Save. Safe tail confirms accepted
+  contextual transcription (two completions in the tail) and local food edit on
+  the retained source request. No text/audio inspected or per-attempt word claim.
+  Named food-edit microphone acceptance passes on the installed plain-ASR APK;
+  spoken portion/Review retention and lifecycle/accessibility gates remain open.
+- Member confirms spoken 200 grams gives brown rice/200 g/unmatched in both
+  Review visits, then Discard. Safe tail confirms a further accepted contextual
+  transcription; deduplicated source-turn portion events cannot count repeated
+  edits, so no extra event attribution is claimed. Named spoken-portion retention
+  passes. Stop/retry, lock and remaining voice/accessibility gates stay open.
+- Member confirms Stop while recognizing, retry at 200 g, retained 200 g Review
+  and no late 220 g correction after the wait; discarded. Named visible Stop/retry
+  check passes. Safe tail has a later contextual start without a result event;
+  cancellation is consistent, but retry is not independently established by that
+  tail. No stronger telemetry claim is made. Lock/new-Chat acceptance next.
+- Lifecycle check failed in a spoken variant: member reports prior Stop test
+  discarded all Chat, and after locking/unlocking, speaking the meals-read
+  request produced legacy voice rows and a draft named for an earlier amount.
+  Safe events show a pre-lock contextual start/lock followed by later reply
+  delivery, without enough correlation to establish stale-worker publication.
+  Discovery confirms generic Chat mic still dispatches history-conditioned audio
+  intents directly; contextual mic alone is preview-only. All ordinary Chat mic
+  is now scoped to the same history-free plain transcription and explicit typed
+  submit, with one-use capture/session/request proof even without a source draft.
+  Stop/lock history retention acceptance reopens. Implementation/review/gate and
+  phone retry pending. Requested screenshot caught another app and was deleted;
+  awaiting member to leave problematic Metria Chat visible. No raw data retained.
+- Authorized Metria screen inspection now confirms earlier correction messages
+  are retained, followed by legacy placeholder/recognized-words rows and a draft
+  acknowledgement; the Review card is absent. This confirms the reported legacy
+  presentation but not which audio yielded it. Temporary image deleted after
+  inspection, outside repository. Explorer found no transcript-clear call on
+  contextual Stop/dismiss; lock restores encrypted history after clearing memory.
+  No full-history-loss root cause or speculative persistence change is claimed.
+- All ordinary Chat mic now uses the transcript channel plus one-use session/
+  request proof, explicit preview and shared typed submit; eligible drafts add
+  the exact source handoff. No ordinary audio intent/placeholder dispatch.
+  Processing handles nullable request IDs; Stop/revoke cancel transcription and
+  recorder without resetting history. Generation advances before recorder cancel
+  so queued clips cannot submit. Independent review and narrow cancellation
+  recheck find no blocker. Initial full gate passes; final frozen-source gate is
+  running. Pure proof/isolation tests do not replace native all-entry-point and
+  lock/Stop phone acceptance. No replacement APK installed yet.
+- Frozen-source full gate passes 645 tests, zero failures/errors/skips,
+  debug/release assembly and release vital lint; diff check clean. Debug APK:
+  `549b9e0a278ef0ed80f8c15d4d116dafea8e2b06fb959baf57e6f8b07ddf299c`.
+  Authorized in-place update underway on the same Samsung. Fresh spoken meal
+  read without a draft and Stop/lock/restoration phone acceptance remain open.
+- All-Chat preview APK installed in place (`Success`) and cold-launched (`Status:
+  ok`) on the same Samsung with app identity/private storage preserved. Member
+  unlock and spoken read without an active draft are next. No record saved,
+  commit or push. Temporary inspection images deleted; raw captures not retained.
+- Member confirms fresh ordinary Chat speech yields the correct question preview
+  and meals answer without a new draft. Safe events corroborate accepted speech
+  transcription, shared typed turn, MiniLM today-meals read, accepted audit and
+  delivery. Named generic microphone read acceptance passes on the installed
+  all-Chat preview build. Lock/Stop/restoration and other voice gates remain open.
+- Member confirms history retained after lock, interrupted preview removed and
+  fresh voice answer correct with no old result after waiting. Safe events confirm
+  lock then accepted transcription/MiniLM meals read/delivery; no distinct pre-lock
+  transcription start is present, so exact native interruption timing remains
+  unproven. Named visible lock/fresh-voice check passes. Final-build draft editing,
+  Type instead and Stop checks are next; broader lifecycle/accessibility gaps stay.
+- Final-build member check passes spoken food correction, Type instead holding
+  recognized gram words unsent until explicit Send, and correct unmatched food/
+  200 g across two Review visits followed by Discard. Safe metadata corroborates
+  two accepted transcriptions and local food replacement; repeated portion events
+  deduplicate on source request. Named final-build draft/Type instead check passes.
+  Final focused Stop-to-normal-Chat acceptance remains; no source changes.
+- Stop-to-typing check failed with an error. Requested screen inspection confirms
+  original draft/history retained and a misleading Chat-changed diagnostic after
+  explicit Stop followed by Type instead. Image deleted. Confirmed code cause:
+  Stop revokes proof; Type instead treats null proof as unexpected stale source.
+  Bounded repair distinguishes same-session intentional cancellation for quiet
+  typing exit, granting no submission/draft authority. Genuine stale sources keep
+  their guard; changed request/session/new capture invalidates the exit receipt.
+  Implementation/review/gate and focused retry pending. No commit/push.
+- Focused Stop-to-typing receipt implemented and independently reviewed with no
+  blocker. Only explicit matching Stop may create it; it permits quiet composer
+  exit once, never Continue/action/draft submission. Request/session/lock/new
+  capture/disposal invalidate it, runtime ownership still gates Send, and history
+  remains untouched. Final frozen-source full gate running; phone retry pending.
+- Final complete gate passes 647 tests, zero failures/errors/skips, debug/release
+  assembly and release vital lint; diff check clean. Debug APK SHA-256:
+  `95295d1f58426526e6f4b8be0b539fa636c54de2c7accc91b0c498db47d49379`.
+  Authorized in-place update underway on the same Samsung. Focused Stop/Type
+  instead/normal typed reply acceptance remains open. No commit/push.
+- Verified Stop-exit APK installed in place (`Success`) and cold-launched
+  (`Status: ok`) with app identity/private storage preserved. Member unlock and
+  focused cancellation-to-typing retry pending. No source changes after the full
+  gate; inspection screenshot deleted and no raw capture retained.
+- Member confirms final Stop-to-typing retry: no misleading error, correct typed
+  answer, history retained and no late voice result/draft after waiting. Safe
+  metadata confirms a voice start without completion followed by typed MiniLM
+  today-meals read and accepted audit/delivery. Named focused acceptance passes.
+  No source changes since final 647-test/debug/release/vital-lint gate. Ready to
+  request explicit commit/push approval for the voice checkpoint, preserving
+  broader recognition/Today/native-timing/permission/accessibility gaps. This
+  does not complete the release or establish every native cancellation race.
+- Member explicitly approved commit and push of the reviewed voice checkpoint.
+  Earlier pending-approval notes are superseded. Preserve the documented broader
+  acceptance limitations; no source changes or new test claims accompany saving.

@@ -216,6 +216,15 @@ class MainActivity : FragmentActivity() {
     fun understandPrivateCoachAudio(audioFile: java.io.File, conversationContext: String = ""): ModelStatus =
         modelLifecycle.understandCoachAudio(audioFile, conversationContext)
 
+    fun transcribeContextualChatAudio(audioFile: java.io.File, captureToken: Long): ModelStatus =
+        modelLifecycle.transcribeContextualChatAudio(audioFile, captureToken)
+
+    fun cancelContextualChatTranscription(transcriptionId: Long): ModelStatus =
+        modelLifecycle.cancelContextualChatTranscription(transcriptionId)
+
+    fun clearContextualChatTranscription(transcriptionId: Long): ModelStatus =
+        modelLifecycle.clearContextualChatTranscription(transcriptionId)
+
     fun startPrivateAgentTurn(
         question: String,
         history: List<PrivateConversationMessage>,

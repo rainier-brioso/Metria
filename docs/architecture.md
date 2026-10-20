@@ -2,6 +2,39 @@
 
 ## Shared routing recognition
 
+Dedicated voice contextual edits (2026-10-19, in development): for an eligible
+live ordinary Chat draft, recognition uses a separate transient capture/request
+channel while preserving assistant request/operation/proposal and member edits.
+Only a matching current-session transcript can populate the editable preview;
+audio actions have no dispatch authority. Explicit Continue consumes the handoff
+and enters ordinary text submission with all current draft checks unchanged.
+Stop/lock/reset/disposal/newer work revoke the handoff; no request ID rewinding,
+history reconstruction, saved-record mutation or new speech dependency.
+Contextual audio uses transcript-only instructions with automatic tool calling
+disabled, with the English ASR task alongside the audio as Google recommends.
+After seven of eight phone attempts failed JSON envelope validation, contextual
+preview transport now requests bounded plain transcript text rather than JSON.
+Empty/control/structured output is rejected; no audio action is interpreted.
+Recognized words remain untrusted until member preview and explicit Continue
+through the guarded text route. Opt-in debug tracing records fixed stages/rejections
+only, never recognized words, model output, audio or exception text. Rejected
+output must be attributed only while the transcription remains current; a
+revoked or cancelled worker must not be reported as a recognition failure.
+The 2026-10-20 phone lock variant exposed generic Chat microphone still using
+history-conditioned audio intent with direct action dispatch. Replace that split:
+all ordinary Chat captures use history-free transcript-only preview and explicit
+Continue through normal text routing. Bind capture/generation/current request
+even when no eligible draft exists; draft editing adds its exact source proof.
+No generated audio action can dispatch. Stop/lock/new work revoke the proof and
+retain Chat history under its existing encrypted persistence contract. Dedicated
+Today entry remains separate. This extension is implemented and independently
+reviewed; 645-test/debug/release/vital-lint gate passes. No physical
+generic-voice/lifecycle pass is claimed.
+Explicit Stop may leave a separate one-use identity receipt for quiet Type instead
+exit in the unchanged unlocked session. It grants no Continue/submission/draft
+authority, expires on request/session/capture changes, and leaves native runtime
+ownership gating in place until cancellation finishes.
+
 Explicit local food-label correction (2026-10-19, in development): reuse the
 strict literal one-food correction frame and current unlocked draft authority.
 A packaged-catalog candidate must cover the complete replacement phrase and its

@@ -12,6 +12,7 @@ import android.os.Debug
 import android.os.PowerManager
 import android.os.SystemClock
 import android.util.Base64
+import org.json.JSONObject
 import androidx.exifinterface.media.ExifInterface
 import com.google.android.gms.tasks.Tasks
 import com.google.mlkit.vision.common.InputImage
@@ -109,6 +110,11 @@ data class ModelStatus(
     val companionNavigation: CompanionNavigationRequest? = null,
     val assistantPortionOverride: ChatPortionOverride? = null,
     val assistantFoodReplacementOverride: ChatFoodReplacementOverride? = null,
+    val voiceTranscriptionId: Long? = null,
+    val voiceTranscriptionCaptureToken: Long? = null,
+    val voiceTranscriptionState: String = "idle",
+    val voiceTranscriptionText: String? = null,
+    val voiceTranscriptionDiagnostic: String? = null,
 )
 
 data class CompanionNavigationRequest(
@@ -254,6 +260,16 @@ class ModelLifecycle(
     private var runtimeGeneration = 0L
     private var analysisGeneration = 0L
     private var assistantRequestSequence = 0L
+    private var voiceTranscriptionSequence = 0L
+    private var voiceTranscriptionId: Long? = null
+    private var voiceTranscriptionCaptureToken: Long? = null
+    private var voiceTranscriptionState = "idle"
+    private var voiceTranscriptionText: String? = null
+    private var voiceTranscriptionDiagnostic: String? = null
+    private var activeVoiceTranscriptionId: Long? = null
+    private var activeVoiceTranscriptionFuture: Future<*>? = null
+    private var activeVoiceTranscriptionFile: File? = null
+    private var voiceTranscriptionWorkerStarted = false
     private var mealFoodCorrectionSequence = 0L
     private var assistantRequestId: Long? = null
     private var nextImageAnalysisAt = 0L
@@ -402,6 +418,7 @@ class ModelLifecycle(
 
     @Synchronized
     fun unloadRuntime(): ModelStatus {
+        val voiceWorkerRemains = invalidateContextualVoiceTranscriptionLocked()
         miniLmReadFollowUpScope = null
         miniLmRouteDiagnostic = null
         pendingMiniLmCompanion = null
@@ -409,19 +426,21 @@ class ModelLifecycle(
         runtimeGeneration += 1
         activeRuntimeLoad?.cancel(true)
         activeRuntimeLoad = null
-        activeInference?.cancel(true)
-        activeInference = null
+        if (!voiceWorkerRemains) {
+            activeInference?.cancel(true)
+            activeInference = null
+        }
         val correctionWorkerActive = activeMealFoodCorrectionWorkers > 0
-        if (!correctionWorkerActive) {
+        if (!correctionWorkerActive && !voiceWorkerRemains) {
             activeConversation?.takeIf { it !== privateAgentConversation }?.cancelProcess()
             if (activeConversation !== privateAgentConversation) activeConversation?.close()
         }
-        activeConversation = null
+        if (!voiceWorkerRemains) activeConversation = null
         clearPrivateAgentConversationLocked()
         val retiredEngine = engine
         engine = null
         if (retiredEngine != null) {
-            if (activePrivateAgentWorkers == 0 && activeMealFoodCorrectionWorkers == 0) retiredEngine.close()
+            if (activePrivateAgentWorkers == 0 && activeMealFoodCorrectionWorkers == 0 && !voiceWorkerRemains) retiredEngine.close()
             else deferredEngineClose += retiredEngine
         }
         assistantRequestId = null
@@ -435,7 +454,7 @@ class ModelLifecycle(
         coachToolCall = null
         coachReply = null
         coachStreamingReply = null
-        if (modelFile().isFile) {
+        if (modelFile().isFile && !voiceWorkerRemains) {
             state = "ready"
             reason = "Model verified; LiteRT runtime unloaded."
         }
@@ -445,24 +464,29 @@ class ModelLifecycle(
     /** Stops only the current assistant response; the verified local model stays available. */
     fun cancelAssistantRequest(): ModelStatus {
         val workersIdle = synchronized(this) {
+            val voiceWorkerRemains = invalidateContextualVoiceTranscriptionLocked()
             miniLmReadFollowUpScope = null
             miniLmRouteDiagnostic = null
             pendingMiniLmCompanion = null
             companionNavigation = null
             val cancellingFoodNameCorrection = assistantOperation == "meal_food_name_correction"
             assistantTraceStore?.record("cancelled", assistantOperation ?: "unknown", "cancelled")
-            activeInference?.cancel(true)
-            activeInference = null
+            if (!voiceWorkerRemains) {
+                activeInference?.cancel(true)
+                activeInference = null
+            }
             if (cancellingFoodNameCorrection) {
                 // The inference worker owns its Conversation and closes it in finally.
                 activeConversation = null
             } else {
-                activeConversation?.takeIf { it !== privateAgentConversation }?.cancelProcess()
-                if (activeConversation !== privateAgentConversation) activeConversation?.close()
+                if (!voiceWorkerRemains) {
+                    activeConversation?.takeIf { it !== privateAgentConversation }?.cancelProcess()
+                    if (activeConversation !== privateAgentConversation) activeConversation?.close()
+                }
             }
-            activeConversation = null
+            if (!voiceWorkerRemains) activeConversation = null
             clearPrivateAgentConversationLocked()
-            if (engine?.isInitialized() == true) {
+            if (engine?.isInitialized() == true && !voiceWorkerRemains) {
                 state = "loaded"
                 reason = "Local assistant response cancelled."
             }
@@ -515,7 +539,7 @@ class ModelLifecycle(
     @Synchronized
     fun setAssistantStyle(style: AssistantStyle): ModelStatus {
         if (assistantStyle == style && pendingAssistantStyle == null) return statusLocked()
-        if (activeInference?.isDone == false || pendingPrivateAgentToolName != null) {
+        if (activeVoiceTranscriptionId != null || activeInference?.isDone == false || pendingPrivateAgentToolName != null) {
             pendingAssistantStyle = style
             reason = "Assistant style will apply after this response."
             return statusLocked()
@@ -532,12 +556,13 @@ class ModelLifecycle(
     /** Vault lock boundary: discard chat KV state and any in-flight native chat turn only. */
     @Synchronized
     fun lockPrivateAgentConversation(): ModelStatus {
+        val voiceWorkerRemains = invalidateContextualVoiceTranscriptionLocked()
         miniLmReadFollowUpScope = null
         pendingMiniLmCompanion = null
         companionNavigation = null
         miniLmRouteDiagnostic = null
         assistantTraceStore?.record("locked", assistantOperation ?: "unknown", "cleared")
-        if (assistantOperation == "meal_food_name_correction") {
+        if (!voiceWorkerRemains && assistantOperation == "meal_food_name_correction") {
             mealFoodCorrectionSequence += 1
             activeInference?.cancel(true)
             activeInference = null
@@ -548,13 +573,13 @@ class ModelLifecycle(
             mealFoodCorrectionDiagnostic = null
         }
         val conversation = privateAgentConversation
-        if (assistantOperation == "agent_turn" && conversation == null) {
+        if (!voiceWorkerRemains && assistantOperation == "agent_turn" && conversation == null) {
             // MiniLM selection runs before a native conversation exists. Invalidate
             // queued work and interrupt its worker as well as clearing the request below.
             activeInference?.cancel(true)
             activeInference = null
         }
-        if (activeConversation === conversation && conversation != null) {
+        if (!voiceWorkerRemains && activeConversation === conversation && conversation != null) {
             activeInference?.cancel(true)
             activeInference = null
         }
@@ -567,7 +592,7 @@ class ModelLifecycle(
         coachReply = null
         coachStreamingReply = null
         coachDiagnostic = null
-        if (engine?.isInitialized() == true) {
+        if (engine?.isInitialized() == true && !voiceWorkerRemains) {
             state = "loaded"
             reason = "Private conversation cleared on vault lock."
         }
@@ -1164,6 +1189,201 @@ class ModelLifecycle(
         return statusLocked()
     }
 
+    /** Transcribes only reviewed Chat voice input without changing the active assistant turn. */
+    @Synchronized
+    fun transcribeContextualChatAudio(audioFile: File, captureToken: Long): ModelStatus {
+        val loadedEngine = engine
+        if (state != "loaded" || loadedEngine == null || !loadedEngine.isInitialized() ||
+            activeInference?.isDone == false || activeVoiceTranscriptionId != null
+        ) {
+            audioFile.delete()
+            voiceTranscriptionId = ++voiceTranscriptionSequence
+            voiceTranscriptionCaptureToken = captureToken
+            voiceTranscriptionState = "failed"
+            voiceTranscriptionText = null
+            voiceTranscriptionDiagnostic = "Voice recognition is busy. Try again when Metria is ready."
+            return statusLocked()
+        }
+        if (!audioFile.isFile || audioFile.length() !in 45..5_000_000) {
+            audioFile.delete()
+            voiceTranscriptionId = ++voiceTranscriptionSequence
+            voiceTranscriptionCaptureToken = captureToken
+            voiceTranscriptionState = "failed"
+            voiceTranscriptionText = null
+            voiceTranscriptionDiagnostic = "That local voice clip could not be used. Try a shorter request."
+            return statusLocked()
+        }
+        val transcriptionId = ++voiceTranscriptionSequence
+        voiceTranscriptionId = transcriptionId
+        voiceTranscriptionCaptureToken = captureToken
+        voiceTranscriptionState = "processing"
+        voiceTranscriptionText = null
+        voiceTranscriptionDiagnostic = null
+        assistantTraceStore?.record(
+            "voice_transcription", "voice_transcription", "started", "contextual_started",
+            requestId = transcriptionId,
+        )
+        activeVoiceTranscriptionId = transcriptionId
+        activeVoiceTranscriptionFile = audioFile
+        voiceTranscriptionWorkerStarted = false
+        state = "thinking"
+        reason = "Recognizing voice locally."
+        val future = executor.submit {
+            transcribeContextualChatAudio(loadedEngine, audioFile, transcriptionId)
+        }
+        activeVoiceTranscriptionFuture = future
+        activeInference = future
+        return statusLocked()
+    }
+
+    /** Revokes one transcription result while leaving its original Chat draft untouched. */
+    @Synchronized
+    fun cancelContextualChatTranscription(transcriptionId: Long): ModelStatus {
+        if (voiceTranscriptionId != transcriptionId || voiceTranscriptionState != "processing") return statusLocked()
+        voiceTranscriptionState = "cancelled"
+        voiceTranscriptionText = null
+        voiceTranscriptionDiagnostic = "Voice recognition stopped. You can try again or type your request."
+        if (voiceTranscriptionWorkerStarted) {
+            activeVoiceTranscriptionFuture?.cancel(true)
+            activeVoiceTranscriptionFuture = null
+            activeVoiceTranscriptionFile?.delete()
+            activeConversation?.takeIf { it !== privateAgentConversation }?.let(::cancelPrivateAgentConversation)
+        }
+        // If the worker has not started, let its token check exit normally; cancelling a
+        // Future before its callable runs would skip the only owner responsible for cleanup.
+        return statusLocked()
+    }
+
+    @Synchronized
+    fun clearContextualChatTranscription(transcriptionId: Long): ModelStatus {
+        if (voiceTranscriptionId != transcriptionId || voiceTranscriptionState == "processing") return statusLocked()
+        voiceTranscriptionId = null
+        voiceTranscriptionCaptureToken = null
+        voiceTranscriptionState = "idle"
+        voiceTranscriptionText = null
+        voiceTranscriptionDiagnostic = null
+        return statusLocked()
+    }
+
+    private fun transcribeContextualChatAudio(loadedEngine: Engine, audioFile: File, transcriptionId: Long) {
+        var conversation: Conversation? = null
+        var transcript: String? = null
+        var failure: String? = null
+        var failureTraceReason: String? = null
+        var acceptedForPreview = false
+        var rejectedForTrace: String? = null
+        val startedAt = SystemClock.elapsedRealtime()
+        try {
+            synchronized(this) {
+                if (activeVoiceTranscriptionId != transcriptionId || voiceTranscriptionState != "processing") return
+                voiceTranscriptionWorkerStarted = true
+            }
+            conversation = createVoiceTranscriptionConversation(loadedEngine)
+            synchronized(this) {
+                if (activeVoiceTranscriptionId != transcriptionId || voiceTranscriptionState != "processing" ||
+                    engine !== loadedEngine || Thread.currentThread().isInterrupted
+                ) return
+                activeConversation = conversation
+            }
+            val response = conversation.sendMessage(Contents.of(
+                Content.Text("Transcribe the spoken words in this audio. Return only the words spoken, with no quotation marks, explanation, or formatting. Preserve the spoken wording; do not answer or reinterpret it. Write spoken numbers as digits and include any spoken units."),
+                Content.AudioFile(audioFile.absolutePath),
+            ))
+            val output = response.contents.contents.filterIsInstance<Content.Text>().joinToString("") { it.text }
+            when (val parsed = VoiceTranscriptParser.classify(output)) {
+                is VoiceTranscriptParseResult.Accepted -> {
+                    transcript = parsed.text
+                }
+                VoiceTranscriptParseResult.NoText -> {
+                    failure = "Metria could not produce readable speech. Try again or type instead."
+                    failureTraceReason = "contextual_no_text"
+                }
+                VoiceTranscriptParseResult.StructuredOutput -> {
+                    failure = "Metria could not produce readable speech. Try again or type instead."
+                    failureTraceReason = "contextual_structured_output"
+                }
+                VoiceTranscriptParseResult.InvalidTranscript -> {
+                    failure = "Metria could not produce readable speech. Try again or type instead."
+                    failureTraceReason = "contextual_invalid_transcript"
+                }
+            }
+        } catch (_: Exception) {
+            failure = "Local voice recognition failed. Try again or type your request."
+            failureTraceReason = "contextual_runtime_exception"
+        } finally {
+            conversation?.close()
+            audioFile.delete()
+            val retiredEngines = synchronized(this) {
+                if (activeConversation === conversation) activeConversation = null
+                if (activeVoiceTranscriptionId == transcriptionId) {
+                    if (voiceTranscriptionState == "processing") {
+                        val currentAttempt = engine === loadedEngine && !Thread.currentThread().isInterrupted
+                        val accepted = currentAttempt && failure == null
+                        if (currentAttempt && !accepted) rejectedForTrace = failureTraceReason
+                        acceptedForPreview = accepted
+                        voiceTranscriptionText = transcript.takeIf { accepted }
+                        voiceTranscriptionState = if (accepted) "ready" else "failed"
+                        voiceTranscriptionDiagnostic = if (accepted) null else failure
+                            ?: "Voice recognition stopped. You can try again or type your request."
+                        if (accepted) reason = measurement("local voice transcription", startedAt)
+                    }
+                    activeVoiceTranscriptionId = null
+                    activeVoiceTranscriptionFuture = null
+                    activeVoiceTranscriptionFile = null
+                    voiceTranscriptionWorkerStarted = false
+                    if (state == "thinking") {
+                        state = if (engine?.isInitialized() == true) "loaded"
+                        else if (modelFile().isFile) "ready" else "absent"
+                        reason = "Voice recognition finished locally."
+                    }
+                    activeInference = null
+                }
+                takeDeferredEnginesIfIdleLocked()
+            }
+            if (acceptedForPreview) {
+                assistantTraceStore?.record(
+                    "voice_transcription", "voice_transcription", "accepted", "contextual_accepted",
+                    requestId = transcriptionId,
+                )
+            }
+            rejectedForTrace?.let { fixedReason ->
+                val outcome = if (fixedReason == "contextual_runtime_exception") "failed" else "rejected"
+                assistantTraceStore?.record(
+                    "voice_transcription", "voice_transcription", outcome, fixedReason,
+                    requestId = transcriptionId,
+                )
+            }
+            closeRetiredEngines(retiredEngines)
+        }
+    }
+
+    /** Invalidates voice authority before lock, generic Stop, or runtime unload. */
+    private fun invalidateContextualVoiceTranscriptionLocked(): Boolean {
+        val activeId = activeVoiceTranscriptionId
+        val transcriptionId = activeId ?: voiceTranscriptionId
+        val workerRemains = activeId != null
+        if (workerRemains && voiceTranscriptionWorkerStarted) {
+            activeVoiceTranscriptionFuture?.cancel(true)
+            activeVoiceTranscriptionFile?.delete()
+            activeConversation?.takeIf { it !== privateAgentConversation }?.let(::cancelPrivateAgentConversation)
+        }
+        // Revoke visible text and capture identity on lock/unload/reset. Runtime ownership
+        // remains in activeVoiceTranscriptionId until the worker's finally block releases it.
+        if (transcriptionId != null) clearVoiceTranscriptionLocked()
+        // Keep the shared inference slot occupied until a queued callable observes revocation
+        // and performs finally cleanup. Callers must not cancel that Future.
+        return workerRemains
+    }
+
+    @Synchronized
+    private fun clearVoiceTranscriptionLocked() {
+        voiceTranscriptionId = null
+        voiceTranscriptionCaptureToken = null
+        voiceTranscriptionState = "idle"
+        voiceTranscriptionText = null
+        voiceTranscriptionDiagnostic = null
+    }
+
     @Synchronized
     fun clearMealDraft(): ModelStatus {
         miniLmReadFollowUpScope = null
@@ -1388,6 +1608,8 @@ class ModelLifecycle(
     override fun close() {
         val router = synchronized(this) {
             lifecycleClosed = true
+            // shutdownNow may remove a queued callable before it can own clip cleanup.
+            activeVoiceTranscriptionFile?.delete()
             createdMiniLmMealRouter
         }
         unloadRuntime()
@@ -1590,6 +1812,13 @@ class ModelLifecycle(
     private fun createMetriaConversation(loadedEngine: Engine): Conversation =
         loadedEngine.createConversation(
             ConversationConfig(systemInstruction = Contents.of(Content.Text(metriaSystemPrompt))),
+        )
+
+    private fun createVoiceTranscriptionConversation(loadedEngine: Engine): Conversation =
+        loadedEngine.createConversation(
+            ConversationConfig(
+                automaticToolCalling = false,
+            ),
         )
 
     /** Both entry paths use the same tool-free structured meal task, separate from coach chat. */
@@ -3194,6 +3423,9 @@ class ModelLifecycle(
                 debugLatestModelResponse = output.take(16_000).takeIf { BuildConfig.DEBUG }
                 state = "loaded"
                 coachToolCall = parseCoachToolCall(output)
+                if (coachToolCall?.spokenText == null) {
+                    assistantTraceStore?.recordReplyDelivery(requestId, "legacy_voice_no_transcript")
+                }
                 coachDiagnostic = if (coachToolCall == null) "I could not safely understand that voice request. Try again or type it." else null
                 reason = if (coachToolCall == null) "Local voice request was rejected safely." else measurement("local Gemma audio request", startedAt)
             }
@@ -3664,6 +3896,11 @@ class ModelLifecycle(
         companionNavigation,
         assistantPortionOverride,
         assistantFoodReplacementOverride,
+        voiceTranscriptionId,
+        voiceTranscriptionCaptureToken,
+        voiceTranscriptionState,
+        voiceTranscriptionText,
+        voiceTranscriptionDiagnostic,
     )
 
     private fun recordImageAuditLocked(

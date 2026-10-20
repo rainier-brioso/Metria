@@ -334,4 +334,24 @@ class AssistantTraceStoreTest {
             assertFalse(root.resolve(AssistantTraceStore.relativePath).readText().contains("basmati"))
         }
     }
+
+    @Test
+    fun `voice trace stores only fixed stages and rejects unknown reason text`() {
+        val root = Files.createTempDirectory("trace-test").toFile()
+        AssistantTraceStore(root, true, { 1_000L }).use { trace ->
+            trace.setEnabled(true)
+            trace.record("voice_transcription", "voice_transcription", "started", "contextual_started", requestId = 31L)
+            trace.record("voice_transcription", "voice_transcription", "rejected", "contextual_structured_output", requestId = 31L)
+            trace.record("voice_transcription", "voice_transcription", "accepted", "contextual_accepted", requestId = 32L)
+            trace.record("voice_transcription", "voice_transcription", "failed", "private dish name", requestId = 33L)
+            trace.recordReplyDelivery(34L, "legacy_voice_no_transcript")
+            trace.flush()
+            val text = root.resolve(AssistantTraceStore.relativePath).readText()
+            assertTrue(text.contains("voice_transcription\tvoice_transcription\tstarted\tcontextual_started"))
+            assertTrue(text.contains("voice_transcription\tvoice_transcription\trejected\tcontextual_structured_output"))
+            assertTrue(text.contains("reply_delivery\tagent_turn\trejected\tlegacy_voice_no_transcript"))
+            assertFalse(text.contains("private dish name"))
+            assertFalse(text.contains("rice"))
+        }
+    }
 }

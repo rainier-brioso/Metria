@@ -19,8 +19,8 @@ class AssistantTraceStore(
         private const val maxEvents = 100
         private const val maxBytes = 64 * 1024L
         private const val retentionMillis = 24 * 60 * 60 * 1000L
-        private val allowedKinds = setOf("turn_started", "tool_required", "tool_continued", "reply_audited", "reply_fallback", "reply_rejected", "reply_delivery", "cancelled", "failed", "locked", "route_decision", "route_selected", "spell_check")
-        private val allowedOperations = setOf("agent_turn", "agent_tool_result", "coach", "coach_intent", "coach_audio", "meal", "unknown")
+        private val allowedKinds = setOf("turn_started", "tool_required", "tool_continued", "reply_audited", "reply_fallback", "reply_rejected", "reply_delivery", "cancelled", "failed", "locked", "route_decision", "route_selected", "spell_check", "voice_transcription")
+        private val allowedOperations = setOf("agent_turn", "agent_tool_result", "coach", "coach_intent", "coach_audio", "meal", "voice_transcription", "unknown")
         private val allowedOutcomes = setOf("started", "accepted", "rejected", "cancelled", "failed", "waiting", "cleared")
         private val allowedReasons = setOf("none", "required_tool_missing", "unsupported_personal_fact", "reply_policy", "multiple_tools", "unsupported_tool", "timeout", "runtime_failure", "continuation_expired", "minilm_accepted", "today_overview", "goal_remaining", "saved_dish_recall", "saved_dish_draft", "navigation", "scope", "scope_text", "scope_selected", "scope_host", "scope_context", "similarity", "margin", "runtime", "inference", "interrupted", "native_gemma", "legacy_gemma", "host_reply", "accepted", "no_candidate", "unavailable", "disabled", "no_suggestions", "ambiguous") + setOf(
             "empty_response", "segment_mismatch", "request_mismatch", "dictionary_word", "unmarked_typo", "no_match",
@@ -33,6 +33,9 @@ class AssistantTraceStore(
             "food_replacement_retry", "food_replacement_not_selected",
             "food_replacement_local_applied",
             "meal_confirmation_used", "meal_confirmation_missing", "meal_confirmation_declined",
+            "contextual_started", "contextual_accepted", "contextual_no_text",
+            "contextual_structured_output", "contextual_invalid_transcript", "contextual_runtime_exception",
+            "legacy_voice_no_transcript",
         )
         private val allowedTools = setOf("none", "read_progress_overview", "read_nutrition_summary", "read_day_nutrition", "read_weight", "read_meals", "read_latest_meal", "search_saved_dishes")
         private val allowedPeriods = setOf("none", "today", "yesterday", "week")
@@ -107,6 +110,7 @@ class AssistantTraceStore(
                 "food_replacement_not_selected",
                 "food_replacement_local_applied",
                 "meal_confirmation_used", "meal_confirmation_missing", "meal_confirmation_declined",
+                "legacy_voice_no_transcript",
             )) return
         val shouldRecord = synchronized(this) {
             if (!enabled || closed || !replyDeliveryObservations.add(requestId to reason)) return@synchronized false
