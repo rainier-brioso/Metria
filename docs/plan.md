@@ -1,6 +1,100 @@
 # Metria product plan
 
-Active checkpoint (2026-10-20): shared Chat voice preview after pushed commit
+## Current checkpoint - 2026-10-21
+
+Automatic Chat speech, pencil Edit, continuous inline activity, post-cancellation
+typed delivery, cooking-report confirmation and manual-stop silence admission are
+implemented. Final installed APK passes 661 tests, debug/release assembly, release
+vital lint and diff check. Samsung SM-S928B / Android 16 updates preserved storage.
+Member confirms named read/Edit/inline/Stop/lock, retained spoken food+gram Review,
+weight Review dismissed without saving, quiet/original-background silence rejection,
+normal speech and Today Speak with correct section and retained Chat history.
+Final integrated review found no confirmed material introduced defect; member
+explicitly approved committing and pushing this reviewed checkpoint. Save that
+approved baseline before implementing the newly reported Chat dinner-label gap.
+
+Open: wider noise/VAD accuracy, recorder/native timing, other failure/permission
+paths, full visual evidence, rotation/keyboard/font/TalkBack/reduced-motion coverage.
+This is a development checkpoint, not full UI/release acceptance. Next bounded task:
+commit/push the approved baseline, then carry explicit Chat meal types into Review.
+The entries below preserve earlier progression; this summary supersedes their
+historical pending-gate statements. Full evidence: `m4-assistant-checkpoints.md`.
+
+## Earlier checkpoint progression
+
+Accepted focused repair (2026-10-21): member's two silent-recording checks with background
+sound sent invented Chat messages. Empty-speech gate failed. Recorder manual Stop
+hard-codes detectedSpeech=true, bypassing the existing caller rejection. Repair
+manual/automatic stop parity using actual per-capture evidence; do not claim the
+existing single-peak heuristic is a robust speech/noise classifier. Implementation
+and independent review complete; 661 tests, both builds, release vital lint and
+diff check pass. In-place update/cold launch succeeded. Member confirms quiet and
+the same background silence are rejected, with normal speech working. Named retry
+passes; broader noise/VAD and recorder timing remain unverified. Next: Today entry
+regression, then checkpoint review; broader layout/accessibility gaps stay open.
+
+Current focused repair (2026-10-21): `i have cooked rice` followed by an offer and
+`yes` failed with no draft. The original report is excluded by consumption-only
+confirmation candidate admission. Extend transient candidate admission to completed
+cooking/preparation reports; keep native confirmation, source/session binding and
+Review/Save. Implementation and independent review complete; all 658 tests,
+debug/release builds, release vital lint and diff check pass. Authorized in-place
+update/cold launch succeeded, preserving private storage. Member confirms `yes`
+opens the correct rice Review, then Discard. Safe trace corroborates
+`meal_confirmation_used` and delivery. Named confirmation retry passes. Member also
+confirms automatic spoken food/gram edits and both retained Reviews are correct.
+Member confirms spoken weight opens editable Review and dismissal creates no
+record. Named read/edit/confirmation/weight/Stop/lock checks pass. Empty/error
+speech recovery, Today regression and broader layout/accessibility gates remain
+open; this is not full release acceptance. No commit/push approval for this work.
+
+Current UI extension (2026-10-21): member requested and chose continuous activity
+inside Chat. Focused Stop→Type phone check found the typed meals read remained
+Thinking after MiniLM selected its tool. Voice-isolation result effects lacked
+guard inputs in their keys; coherent keyed guard + terminal-voice retirement at
+accepted idle text start is being repaired/reviewed/tested. Original timing is
+not established; scoped review and 657-test/debug/release/vital-lint/diff gate
+pass. In-place update/cold launch succeeded with private storage preserved;
+member confirms focused retry correct with no late result. Safe events corroborate
+MiniLM read, host handler, audit/continuation/delivery. Member also confirms
+lock/history retention and fresh correct read with no late voice result; safe
+events corroborate start/lock then fresh MiniLM delivery. Later 658-test build
+passes member-observed spoken draft edits and weight review/no-save. Broader
+visual/accessibility/Today and empty/error recovery gates remain pending.
+
+Continuous activity baseline: member requested and chose continuous activity
+inside Chat. Research/decision: `design/chat-activity.md`. Ordinary voice uses
+the same inline activity surface as typed response/draft loading, with one keyed
+stage, subtle standard motion and explicit controls. Today entry stays separate;
+submission/record review guards remain. Implementation and scoped independent
+review complete; final gate passes 655 tests, debug/release assembly, release vital
+lint and diff check. In-place installation/cold launch succeeded on Samsung,
+preserving private storage. Member confirms one inline flow and Type instead
+keyboard/no old text. Latest safe events corroborate transcription/Chat/delivery
+via Gemma, not a MiniLM or meal-read claim. Stop/lock, draft/weight review and
+broader visual/accessibility/Today gates remain pending.
+No commit/push authorization for this extension.
+
+Active extension (2026-10-20): automatic ordinary Chat speech submission after
+pushed checkpoint `70aa743`. Member approved removing mandatory transcript
+confirmation: show Listening/Transcribing, submit bounded recognized words once
+through guarded normal text Chat, then show the actual response/draft stage.
+Keep one-use capture/session/request and exact draft proofs, Stop/lock/disposal
+revocation, native busy ownership and explicit Review/Save. Latest member message
+Edit copies words to the composer for a new explicit Send, without rewriting
+history or replaying actions. Today meal entry is unchanged. Implementation and
+independent review are complete. Final gate passes 653 tests, zero failures/errors/
+skips, debug/release assembly, release vital lint and diff check. Samsung
+in-place installation/cold launch succeeded (2026-10-21), preserving private
+storage. Member confirms automatic spoken read answers once and Edit fills the
+composer without sending. Latest safe metadata corroborates MiniLM read/delivery.
+Spoken draft edit, weight review/no-save, Stop/lock/failure and broader phone
+gates remain pending. No new
+dependency, model, vault format, record-save authority or commit/push approval.
+Member-requested pencil-only Edit refinement passes the same 653-test/build/
+vital-lint gate and is installed in place; pencil interaction acceptance pending.
+
+Previous accepted checkpoint (2026-10-20): shared Chat voice preview after pushed commit
 `8e985dc`. All ordinary Chat microphone input uses history-free, local plain
 transcription, editable words and explicit Continue through typed Chat routing.
 One-use capture/session/request authority applies even without a draft; eligible

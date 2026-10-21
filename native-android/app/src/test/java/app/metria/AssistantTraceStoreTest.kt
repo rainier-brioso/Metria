@@ -108,11 +108,15 @@ class AssistantTraceStoreTest {
             trace.recordReplyDelivery(12L, "active_request_mismatch")
             trace.recordReplyDelivery(12L, "chat_consumed")
             trace.recordReplyDelivery(13L, "reply=private")
+            trace.recordReplyDelivery(12L, "voice_result_isolated")
+            trace.recordReplyDelivery(12L, "voice_result_isolated")
+            trace.recordReplyDelivery(12L, "host_tool_handler_entered")
             trace.flush()
 
             val rows = root.resolve(AssistantTraceStore.relativePath).readLines().map { it.split('\t') }
-            assertEquals(listOf("lifecycle_ready", "chat_consumed", "active_request_mismatch"), rows.map { it[4] })
-            assertEquals(listOf("accepted", "accepted", "rejected"), rows.map { it[3] })
+            assertEquals(listOf("lifecycle_ready", "chat_consumed", "active_request_mismatch",
+                "voice_result_isolated", "host_tool_handler_entered"), rows.map { it[4] })
+            assertEquals(listOf("accepted", "accepted", "rejected", "rejected", "accepted"), rows.map { it[3] })
             assertTrue(rows.all { it.size == 8 && it[1] == "reply_delivery" && it[7] == "12" })
 
             trace.clear()

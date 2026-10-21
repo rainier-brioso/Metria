@@ -45,6 +45,47 @@ class NativeMealDraftPolicyTest {
         ))
     }
 
+    @Test fun `completed first person cooking reports retain original source through confirmation`() {
+        val reports = listOf(
+            "i have cooked rice",
+            "I've cooked rice",
+            "I cooked rice",
+            "I prepared rice",
+            "I've prepared rice",
+            "I have prepared rice",
+        )
+        reports.forEachIndexed { index, source ->
+            val requestId = 80L + index
+            val candidate = NativeMealDraftPolicy.candidate(requestId, 12L, source)
+            assertEquals(source, candidate?.originalMemberText)
+            val consumed = NativeMealDraftPolicy.consumeCandidate(
+                candidate, previousRequestId = requestId, conversationGeneration = 12L,
+                previousMemberText = source, unlocked = true, stopping = false,
+            )
+            assertEquals(source, consumed?.originalMemberText)
+            assertEquals(source, NativeMealDraftPolicy.confirmationDescription(
+                PrivateCoachToolCall("confirm_meal_draft"), null, consumed,
+                previousRequestId = requestId, conversationGeneration = 12L,
+            ))
+            assertNotEquals("yes", consumed?.originalMemberText)
+        }
+        assertNotNull(NativeMealDraftPolicy.candidate(90L, 12L, "I cooked rice for later"))
+
+        val cooked = NativeMealDraftPolicy.candidate(91L, 12L, "i have cooked rice")!!
+        assertNull(NativeMealDraftPolicy.consumeCandidate(
+            cooked, previousRequestId = 90L, conversationGeneration = 12L,
+            previousMemberText = "i have cooked rice", unlocked = true, stopping = false,
+        ))
+        assertNull(NativeMealDraftPolicy.consumeCandidate(
+            cooked, previousRequestId = 91L, conversationGeneration = 13L,
+            previousMemberText = "i have cooked rice", unlocked = true, stopping = false,
+        ))
+        assertNull(NativeMealDraftPolicy.consumeCandidate(
+            cooked, previousRequestId = 91L, conversationGeneration = 12L,
+            previousMemberText = "I cooked something else", unlocked = true, stopping = false,
+        ))
+    }
+
     @Test fun `candidate requires eligible source and the current unlocked host session`() {
         val source = "I had cooked rice"
         listOf(
@@ -62,7 +103,16 @@ class NativeMealDraftPolicyTest {
             "What did I eat yesterday?",
             "I did not eat rice",
             "I had rice, what should I eat next?",
+            "I haven't cooked rice",
+            "I have not cooked rice",
+            "I could cook rice",
+            "I would cook rice",
+            "I will prepare rice",
+            "I prepared a presentation",
+            "I cooked the books",
+            "I prepared for a meeting",
         ).forEach { assertNull(NativeMealDraftPolicy.candidate(41L, 7L, it)) }
+        assertNotNull(NativeMealDraftPolicy.candidate(41L, 7L, "I had rice after my exam"))
         assertNotNull(NativeMealDraftPolicy.candidate(41L, 7L, "I had cold rice"))
         val valid = NativeMealDraftPolicy.candidate(41L, 7L, source)!!
         listOf(

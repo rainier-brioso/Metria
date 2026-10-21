@@ -1,5 +1,110 @@
 # Local assistant companion bundle — 2026-10-12
 
+## Silent recording admission - 2026-10-21
+
+Two member silence tests with background sound produced automatically sent words.
+Manual recording Stop incorrectly reports speech unconditionally, bypassing the
+existing reject/delete path. The bounded repair makes both stop paths read the
+same fresh per-recording evidence, with tests for no evidence, threshold crossing,
+retention through later quiet frames and capture reset. The unchanged peak check
+is not a speech classifier and background sound can still pass; quiet/background
+silence and normal-speech retries are required before broader claims. On the
+installed 661-test APK, member confirms quiet and the original background silence
+are rejected and normal speech works. This passes those named conditions only;
+no robust VAD or general background-noise guarantee is established.
+
+A stronger future option is a local VAD rather than transcript-word filtering.
+The [Silero reference](https://github.com/snakers4/silero-vad/blob/master/src/silero_vad/utils_vad.py)
+provides ONNX inference at 16 kHz with 512-sample input windows, and its
+[Java example](https://github.com/snakers4/silero-vad/blob/master/examples/java-wav-file-example/src/main/java/org/example/SileroVadOnnxModel.java)
+demonstrates the runtime interface. This has not been adopted or evaluated in
+Metria. It would add a model and require a production-runtime/dependency decision:
+the repository currently includes ONNX Runtime only for debug builds. No such
+dependency/model change is included in this recorder bug repair. VAD would also
+need explicit evaluation of speech from a TV or another person; it cannot be
+assumed to identify the intended speaker.
+
+## Cooking-report confirmation repair - 2026-10-21
+
+Member reported that `i have cooked rice`, followed by the assistant's offer and
+`yes`, returned "No meal draft was prepared." Safe metadata confirms native
+reply delivery then `meal_confirmation_missing`. The exact original wording is
+excluded by the consumption-only candidate frame, although the assistant may
+offer to prepare it. Extend candidate admission to bounded completed first-person
+cooking/preparation reports, retaining the original text and all request/session,
+history, exclusion and one-turn guards. Only Gemma's validated confirmation tool
+may reuse that candidate; acknowledgement text never becomes meal details.
+This does not change direct draft routing or final Review/Save. Implementation and
+independent scoped review are complete. Regression coverage retains the exact
+source through confirmation, rejects stale context and keeps existing eating-report
+admission unchanged. The full gate passes 658 tests, debug/release assembly,
+release vital lint and diff check. On the installed Samsung build, member confirms
+the offer followed by `yes` produces the correct rice Review, then Discard.
+Content-free events corroborate `meal_confirmation_used` and Chat delivery.
+This passes the named confirmation retry, not the separate spoken-edit gates.
+
+## Continuous Chat activity - 2026-10-21
+
+Member requested research into the voice-popup/Chat-loading transition and chose
+one in-Chat activity surface. Primary sources, alternatives, decision and exact
+visual/cancellation contract: `design/chat-activity.md`. Listening/transcription
+and typed thinking/meal preparation share a stable botanical card and progress
+style. One presentation state wins, Cancel stays in Chat, and Type instead
+focuses the composer without stale words. Busy Chat cannot start a competing mic.
+Automatic submission/source/weight-review guards and Today entry stay separate
+from this presentation change. Scoped review and the 655-test/debug/release/
+vital-lint/diff gate pass; new physical-layout and interaction acceptance pending.
+Member confirms one inline flow and Type instead keyboard/no old words. Safe
+metadata confirms transcription/ordinary Chat/Gemma delivery for the latest turn;
+it does not establish a recorded-meal read. Remaining physical matrix stays open.
+
+## Automatic ordinary Chat voice submission - 2026-10-20
+
+Member approved removing the recognized-words confirmation after checkpoint
+`70aa743`. Explicit Start recording leads through Listening and Transcribing;
+the first bounded valid transcript in the current unlocked capture/session
+submits once through normal text Chat. Audio actions never dispatch. An eligible
+draft still requires its exact original source/proposal/name/gram handoff.
+Stop, lock, disposal, newer work and stale request/session revoke before send.
+Native inference ownership must release before a new text operation starts.
+Empty/error results offer Retry and Type instead without submitting. No new
+model, dependency, persistence format or automatic record Save.
+Spoken weight writes require explicit confirmation before persistence, because
+the typed direct-save shortcut must not save an unchecked recognized value.
+
+The latest member message gets an idle-only Edit action that copies words into
+the keyboard-focused composer. It requires explicit Send as a new turn, leaves
+history intact and grants no old tool authority. Edit itself does nothing beyond
+typing recovery; Send is a new command and may create a new draft, without undoing
+an earlier completed action. Long-press selection remains.
+Known work gets truthful stage text; uncertain intent keeps general response
+loading. Meal Review/Discard and final Save remain unchanged. Today meal entry
+is separate. Design contracts: `design/FLOWS.md`, `design/SCREEN-SPECS.md`.
+
+Acceptance pending: spoken fresh read auto-submits exactly once; spoken food/
+gram edits keep current draft context and Review; latest-message Edit waits for
+explicit Send; no-speech/error Retry/Type; Stop and lock suppress late submission;
+history retention, keyboard, rotation/font/TalkBack and Today regression. Unit
+tests cannot establish native timing or physical UI acceptance. Implementation
+and focused independent review are complete with no scoped blocker. Final gate
+passes 653 tests, zero failures/errors/skips, debug/release assembly, release vital
+lint and diff check. Debug APK SHA-256:
+`b4d4c13f3cf5adfa4176a744524aecba0f96398f7dad0837ff3cd3e936d73d2f`.
+In-place installation and cold launch succeeded on Samsung SM-S928B / Android 16
+on 2026-10-21, preserving private storage. First automatic spoken read and Edit
+acceptance requested; remaining physical gates above stay open. No source changes
+after the final gate; no record saved or commit/push authorized.
+Member confirms automatic answer once and Edit holding words in the keyboard
+composer without sending. Latest safe trace corroborates accepted transcription,
+normal Chat, MiniLM today-meals read, accepted audit and delivery; another earlier
+turn used Gemma. No words inspected or per-attempt wording attribution. Named
+automatic-submit/Edit gate passes; the remaining physical matrix stays open.
+Member requested a pencil-only Edit control on 2026-10-21. Keep its 48 dp target
+and "Edit as new message" accessibility label; copy-to-composer behavior is
+unchanged. Updated gate passes the same 653 tests, both builds and release vital
+lint; new APK `688353d1ad75a86fc823d9998e04ae9747c7e5a07cab1bba08562d78848d6da5`.
+Pencil-specific acceptance remains pending.
+
 ## Dedicated voice contextual edits — 2026-10-19
 
 Current checkpoint status (2026-10-20): implemented, independently reviewed and

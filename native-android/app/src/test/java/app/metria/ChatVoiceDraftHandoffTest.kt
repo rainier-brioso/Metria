@@ -154,6 +154,66 @@ class ChatVoiceRequestProofTest {
     }
 }
 
+class ChatVoiceAutoSubmitTest {
+    @Test fun `waits for runtime release then submits exactly once`() {
+        val handoff = OneUseChatVoiceAutoSubmit(captureToken = 12, transcriptionId = 31)
+
+        assertFalse(handoff.claim(12, 31, "Show meals today", runtimeReleased = false))
+        assertTrue(handoff.claim(12, 31, "Show meals today", runtimeReleased = true))
+        assertFalse(handoff.claim(12, 31, "Show meals today", runtimeReleased = true))
+    }
+
+    @Test fun `a stale capture or transcript cannot claim the automatic send`() {
+        assertFalse(OneUseChatVoiceAutoSubmit(12, 31).claim(
+            13, 31, "Show meals today", runtimeReleased = true,
+        ))
+        assertFalse(OneUseChatVoiceAutoSubmit(12, 31).claim(
+            12, 32, "Show meals today", runtimeReleased = true,
+        ))
+        assertFalse(OneUseChatVoiceAutoSubmit(12, 31).claim(
+            12, 31, "   ", runtimeReleased = true,
+        ))
+    }
+
+    @Test fun `revoked transcription cannot be sent`() {
+        val handoff = OneUseChatVoiceAutoSubmit(12, 31)
+        handoff.revoke()
+        assertFalse(handoff.claim(12, 31, "Show meals today", runtimeReleased = true))
+    }
+}
+
+class CurrentReadyChatTranscriptTest {
+    @Test fun `Type instead uses only text from the current ready capture`() {
+        assertEquals(
+            "Show meals today",
+            currentReadyChatTranscript("Show meals today", 12, 12, 12, "ready", "Show meals today"),
+        )
+        assertNull(currentReadyChatTranscript("Old question", 13, 12, 12, "ready", "Old question"))
+        assertNull(currentReadyChatTranscript("Old question", 12, 12, 12, "processing", "Old question"))
+        assertNull(currentReadyChatTranscript("Old question", 12, 12, null, "ready", "Old question"))
+        assertNull(currentReadyChatTranscript("Old question", 12, 12, 12, "ready", "New question"))
+        assertNull(currentReadyChatTranscript(null, 12, 12, 12, "ready", "Old question"))
+    }
+}
+
+class AutomaticVoiceWeightReviewTest {
+    @Test fun `mismatched probes preserve the bound request review obligation`() {
+        val review = OneUseAutomaticVoiceWeightReview(requestId = 42, conversationGeneration = 7)
+
+        assertFalse(review.consume(41, 7))
+        assertFalse(review.consume(42, 8))
+        assertTrue(review.consume(42, 7))
+        assertFalse(review.consume(42, 7))
+    }
+
+    @Test fun `matching spoken weight action is intercepted once for explicit review`() {
+        val review = OneUseAutomaticVoiceWeightReview(requestId = 42, conversationGeneration = 7)
+
+        assertTrue(review.consume(42, 7))
+        assertFalse(review.consume(42, 7))
+    }
+}
+
 class VoiceTranscriptParserTest {
     @Test fun `accepts natural plain transcriptions including food corrections and portions`() {
         assertEquals("Actually, it was brown rice", VoiceTranscriptParser.parse("Actually, it was brown rice"))

@@ -621,7 +621,11 @@ class ModelLifecycle(
             coachDiagnostic = "Prepare the local assistant before chatting."
             return statusLocked()
         }
-        if (activeInference?.isDone == false || pendingPrivateAgentToolName != null) return statusLocked()
+        if (activeInference?.isDone == false || activeVoiceTranscriptionId != null ||
+            pendingPrivateAgentToolName != null) return statusLocked()
+        // A newly accepted typed turn owns result delivery. Retire only finished voice metadata;
+        // active/cancelled workers still retain the runtime and are rejected above.
+        voiceTranscriptionId?.let(::clearContextualChatTranscription)
         val previousRequestId = assistantRequestId
         val previousVisibleMessages = history.filterNot(PrivateConversationMessage::localEvidence)
         val previousMemberMessage = previousVisibleMessages.lastOrNull(PrivateConversationMessage::fromMember)

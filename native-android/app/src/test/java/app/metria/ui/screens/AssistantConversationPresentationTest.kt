@@ -23,6 +23,23 @@ import kotlinx.coroutines.runBlocking
 
 class AssistantConversationPresentationTest {
     @Test
+    fun `microphone cannot obscure an active response but recording can always stop`() {
+        assertFalse(canUseChatMicrophone(ready = true, busy = true, recording = false))
+        assertFalse(canUseChatMicrophone(ready = false, busy = false, recording = false))
+        assertTrue(canUseChatMicrophone(ready = true, busy = false, recording = false))
+        assertTrue(canUseChatMicrophone(ready = false, busy = true, recording = true))
+    }
+    @Test
+    fun `one activity state takes precedence over overlapping lifecycle flags`() {
+        assertEquals(ChatActivity.VOICE, chatActivity(true, true, true, true, true))
+        assertEquals(ChatActivity.STOPPING, chatActivity(false, true, true, true, true))
+        assertEquals(ChatActivity.PREPARING_MEAL, chatActivity(false, false, true, true, true))
+        assertEquals(ChatActivity.THINKING, chatActivity(false, false, false, true, true))
+        assertEquals(ChatActivity.STOPPED, chatActivity(false, false, false, false, true))
+        assertEquals(ChatActivity.NONE, chatActivity(false, false, false, false, false))
+    }
+
+    @Test
     fun `current completed rejection becomes one retained assistant message`() {
         assertEquals("Metria could not verify that answer.", retainableFailure())
         assertEquals("That local answer took too long.", retainableFailure(

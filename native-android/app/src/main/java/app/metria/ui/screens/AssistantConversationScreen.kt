@@ -68,7 +68,10 @@ import androidx.compose.runtime.setValue
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
@@ -81,6 +84,7 @@ import app.metria.SafeMarkdownText
 import app.metria.WeightEntry
 import app.metria.ui.theme.MetriaColors
 import app.metria.ui.components.SelectableChatText
+import app.metria.ui.components.AssistantActivityCard
 
 data class MetriaChatMessage(
     val text: String,
@@ -90,6 +94,22 @@ data class MetriaChatMessage(
     val savedMealAvailable: Boolean = false,
     val announcePolitely: Boolean = false,
 )
+
+internal enum class ChatActivity { VOICE, STOPPING, PREPARING_MEAL, THINKING, STOPPED, NONE }
+
+internal fun chatActivity(
+    voiceActive: Boolean, stopping: Boolean, preparingMeal: Boolean, thinking: Boolean, stopped: Boolean,
+): ChatActivity = when {
+    voiceActive -> ChatActivity.VOICE
+    stopping -> ChatActivity.STOPPING
+    preparingMeal -> ChatActivity.PREPARING_MEAL
+    thinking -> ChatActivity.THINKING
+    stopped -> ChatActivity.STOPPED
+    else -> ChatActivity.NONE
+}
+
+internal fun canUseChatMicrophone(ready: Boolean, busy: Boolean, recording: Boolean): Boolean =
+    recording || (ready && !busy)
 
 data class MetriaSavedDishChoice(
     val id: String,
@@ -229,27 +249,50 @@ fun MetriaAssistantConversationScreen(
     onReviewSavedDish: (String) -> Unit = {},
     onDiscardMealDraft: () -> Unit,
     onToggleVoice: () -> Unit,
+    onEditLatestMemberMessage: (String) -> Unit,
     onSend: () -> Unit,
+    voiceActivity: (@Composable () -> Unit)? = null,
+    composerFocusRequest: Long = 0L,
 ) {
     BackHandler(onBack = onBack)
     val listState = rememberLazyListState()
+    val composerFocusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+    var focusComposerAfterEdit by remember { mutableStateOf(false) }
+    var editingMessageAsNewTurn by rememberSaveable { mutableStateOf(false) }
     var confirmNewConversation by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val activity = chatActivity(voiceActivity != null, assistantStopping, mealDraftThinking, assistantThinking, responseStopped)
     val transientCount = listOfNotNull(
-        assistantThinking.takeIf { it },
-        assistantStopping.takeIf { it },
-        responseStopped.takeIf { it },
-        mealDraftThinking.takeIf { it },
+        activity.takeUnless { it == ChatActivity.NONE },
         savedWeight,
         mealProposal,
         savedDishChoices.takeIf { it.isNotEmpty() },
         assistantDiagnostic,
         coachDiagnostic,
     ).size
-    LaunchedEffect(messages.size, streamingReply, transientCount, assistantDiagnostic, coachDiagnostic) {
+    LaunchedEffect(messages.size, streamingReply, transientCount, activity, assistantDiagnostic, coachDiagnostic) {
         val lastIndex = messages.size + transientCount - 1
         if (lastIndex >= 0) listState.animateScrollToItem(lastIndex)
     }
+    LaunchedEffect(focusComposerAfterEdit) {
+        if (focusComposerAfterEdit) {
+            androidx.compose.runtime.withFrameNanos { }
+            composerFocusRequester.requestFocus()
+            keyboardController?.show()
+            focusComposerAfterEdit = false
+        }
+    }
+    LaunchedEffect(composerFocusRequest) {
+        if (composerFocusRequest > 0L) {
+            androidx.compose.runtime.withFrameNanos { }
+            composerFocusRequester.requestFocus()
+            keyboardController?.show()
+        }
+    }
+    val latestMemberMessageIndex = messages.indexOfLast { it.fromMember && !it.localEvidence }
+    val canEditMessage = !assistantThinking && !assistantStopping && !mealDraftThinking &&
+        !recordingVoice && !preparingVoice && voiceActivity == null
 
     Surface(
         color = MetriaColors.Canvas,
@@ -269,26 +312,17 @@ fun MetriaAssistantConversationScreen(
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 20.dp, vertical = 18.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                itemsIndexed(messages) { _, message -> ChatBubble(message, onOpenSavedMeal) }
-                if (assistantThinking) {
-                    item {
-                        ThinkingBubble(streamingReply = streamingReply, onCancel = onCancelAssistant)
-                    }
-                }
-                if (assistantStopping) {
-                    item { StoppingBubble() }
-                }
-                if (responseStopped) {
-                    item { StatusCard("Response stopped", "You can send another message.") }
-                }
-                if (mealDraftThinking) {
-                    item {
-                        ThinkingBubble(
-                            streamingReply = null,
-                            onCancel = onCancelAssistant,
-                            preparingMeal = true,
-                        )
-                    }
+                itemsIndexed(messages) { index, message ->
+                    ChatBubble(
+                        message = message,
+                        onOpenSavedMeal = onOpenSavedMeal,
+                        showEdit = canEditMessage && index == latestMemberMessageIndex,
+                        onEdit = {
+                            editingMessageAsNewTurn = true
+                            onEditLatestMemberMessage(message.text)
+                            focusComposerAfterEdit = true
+                        },
+                    )
                 }
                 savedWeight?.let { entry ->
                     item {
@@ -307,6 +341,18 @@ fun MetriaAssistantConversationScreen(
                 }
                 assistantDiagnostic?.let { message -> item { ErrorMessage(message, allowCopy = true) } }
                 coachDiagnostic?.let { message -> item { ErrorMessage(message, allowCopy = true) } }
+                if (activity != ChatActivity.NONE) {
+                    item(key = "metria_activity") {
+                        when (activity) {
+                            ChatActivity.VOICE -> voiceActivity?.invoke()
+                            ChatActivity.STOPPING -> StoppingBubble()
+                            ChatActivity.STOPPED -> StatusCard("Response stopped", "You can send another message.")
+                            ChatActivity.PREPARING_MEAL -> ThinkingBubble(null, onCancelAssistant, preparingMeal = true)
+                            ChatActivity.THINKING -> ThinkingBubble(streamingReply, onCancelAssistant)
+                            ChatActivity.NONE -> Unit
+                        }
+                    }
+                }
             }
             selectedMealContextTitle?.let { title ->
                 Surface(color = MetriaColors.PrimarySoft, shape = MaterialTheme.shapes.medium) {
@@ -327,14 +373,23 @@ fun MetriaAssistantConversationScreen(
             }
             AssistantComposer(
                 input = input,
-                onInputChange = onInputChange,
-                recordingVoice = recordingVoice,
-                preparingVoice = preparingVoice,
-                voiceMessage = voiceMessage,
-                modelReady = modelReady,
-                assistantBusy = assistantThinking || assistantStopping || mealDraftThinking,
+                recordingVoice = recordingVoice && voiceActivity == null,
+                preparingVoice = preparingVoice && voiceActivity == null,
+                voiceMessage = voiceMessage.takeIf { voiceActivity == null },
+                modelReady = modelReady && voiceActivity == null,
+                assistantBusy = assistantThinking || assistantStopping || mealDraftThinking || voiceActivity != null,
+                focusRequester = composerFocusRequester,
+                editingMessageAsNewTurn = editingMessageAsNewTurn,
+                inputEnabled = voiceActivity == null,
                 onToggleVoice = onToggleVoice,
-                onSend = onSend,
+                onInputChange = {
+                    onInputChange(it)
+                    editingMessageAsNewTurn = false
+                },
+                onSend = {
+                    onSend()
+                    editingMessageAsNewTurn = false
+                },
             )
         }
     }
@@ -394,23 +449,7 @@ private fun SavedDishChoicesCard(choices: List<MetriaSavedDishChoice>, onReview:
 
 @Composable
 private fun StoppingBubble() {
-    Surface(
-        color = MetriaColors.Surface,
-        shape = MaterialTheme.shapes.medium,
-        modifier = Modifier.widthIn(max = 340.dp).semantics {
-            liveRegion = LiveRegionMode.Polite
-            contentDescription = "Stopping Metria's response"
-        },
-    ) {
-        Row(
-            Modifier.fillMaxWidth().padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-            Text("Stopping…", color = MetriaColors.Ink)
-        }
-    }
+    AssistantActivityCard("Stopping…", busy = true) { }
 }
 
 @Composable
@@ -442,7 +481,12 @@ private fun AssistantHeader(onBack: () -> Unit, onNewConversation: () -> Unit) {
 }
 
 @Composable
-private fun ChatBubble(message: MetriaChatMessage, onOpenSavedMeal: (String) -> Unit) {
+private fun ChatBubble(
+    message: MetriaChatMessage,
+    onOpenSavedMeal: (String) -> Unit,
+    showEdit: Boolean = false,
+    onEdit: () -> Unit = {},
+) {
     var evidenceExpanded by rememberSaveable(message.text) { mutableStateOf(false) }
     Box(
         Modifier.fillMaxWidth(),
@@ -461,6 +505,11 @@ private fun ChatBubble(message: MetriaChatMessage, onOpenSavedMeal: (String) -> 
                 ) {
                     SelectableChatText {
                         Text(message.text, modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp))
+                    }
+                }
+                if (showEdit) {
+                    IconButton(onClick = onEdit, modifier = Modifier.size(48.dp)) {
+                        Icon(Icons.Rounded.Edit, contentDescription = "Edit as new message", tint = MetriaColors.InkMuted)
                     }
                 }
             }
@@ -524,31 +573,19 @@ internal fun evidenceStateDescription(expanded: Boolean): String =
 
 @Composable
 private fun ThinkingBubble(streamingReply: String?, onCancel: () -> Unit, preparingMeal: Boolean = false) {
-    Surface(
-        color = MetriaColors.Surface,
-        shape = MaterialTheme.shapes.medium,
-        modifier = Modifier.widthIn(max = 340.dp).semantics {
-            liveRegion = LiveRegionMode.Polite
-            contentDescription = if (preparingMeal) "Metria is preparing a meal draft" else "Metria is thinking locally"
-        },
+    AssistantActivityCard(
+        title = if (preparingMeal) "Preparing a meal draft…"
+            else if (streamingReply.isNullOrBlank()) "Thinking…" else "Finishing your reply…",
+        busy = true,
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            if (preparingMeal) {
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                    Text("Preparing a meal draft", modifier = Modifier.weight(1f), color = MetriaColors.Ink)
-                }
-                Text("You will review it before anything is saved.", color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall)
-            } else {
-                streamingReply?.takeIf(String::isNotBlank)?.let { SafeMarkdownText(it, MetriaColors.Ink) } ?: TypingDots()
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text(if (preparingMeal) "Preparing locally" else if (streamingReply.isNullOrBlank()) "Thinking locally" else "Finishing this reply", color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall)
-                FilledTonalButton(onClick = onCancel, modifier = Modifier.heightIn(min = 48.dp)) {
-                    Icon(Icons.Rounded.Stop, contentDescription = null, modifier = Modifier.padding(end = 4.dp).size(18.dp))
-                    Text("Stop response")
-                }
-            }
+        if (preparingMeal) {
+            Text("You will review it before anything is saved.", color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall)
+        } else {
+            streamingReply?.takeIf(String::isNotBlank)?.let { SafeMarkdownText(it, MetriaColors.Ink) }
+        }
+        FilledTonalButton(onClick = onCancel, modifier = Modifier.heightIn(min = 48.dp)) {
+            Icon(Icons.Rounded.Stop, contentDescription = null, modifier = Modifier.padding(end = 4.dp).size(18.dp))
+            Text("Stop")
         }
     }
 }
@@ -643,6 +680,9 @@ private fun AssistantComposer(
     voiceMessage: String?,
     modelReady: Boolean,
     assistantBusy: Boolean,
+    focusRequester: FocusRequester,
+    editingMessageAsNewTurn: Boolean,
+    inputEnabled: Boolean,
     onToggleVoice: () -> Unit,
     onSend: () -> Unit,
 ) {
@@ -652,6 +692,18 @@ private fun AssistantComposer(
                 .fillMaxWidth()
                 .padding(start = 12.dp, top = 10.dp, end = 12.dp),
         ) {
+            if (editingMessageAsNewTurn) {
+                Text(
+                    "Ready to send as a new message.",
+                    color = MetriaColors.InkMuted,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.semantics {
+                        liveRegion = LiveRegionMode.Polite
+                        contentDescription = "Edited text copied to the message box. Send to start a new message."
+                    },
+                )
+                Spacer(Modifier.height(7.dp))
+            }
             when {
                 recordingVoice -> {
                     ListeningStatus()
@@ -672,13 +724,16 @@ private fun AssistantComposer(
                     onValueChange = onInputChange,
                     placeholder = { Text("Message Metria") },
                     maxLines = 4,
-                    modifier = Modifier.weight(1f),
+                    enabled = inputEnabled,
+                    modifier = Modifier.weight(1f).focusRequester(focusRequester),
                 )
                 Surface(
                     color = if (recordingVoice) MetriaColors.AccentSoft else MetriaColors.SurfaceSubtle,
                     shape = MaterialTheme.shapes.medium,
                 ) {
-                    IconButton(onClick = onToggleVoice, enabled = modelReady, modifier = Modifier.size(56.dp)) {
+                    IconButton(onClick = onToggleVoice,
+                        enabled = canUseChatMicrophone(modelReady, assistantBusy, recordingVoice),
+                        modifier = Modifier.size(56.dp)) {
                         Icon(
                             if (recordingVoice) Icons.Rounded.Stop else Icons.Rounded.Mic,
                             contentDescription = if (recordingVoice) "Stop listening" else "Speak to Metria",

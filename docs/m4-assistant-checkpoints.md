@@ -4385,3 +4385,273 @@ target-phone interaction recheck pending.
 - Member explicitly approved commit and push of the reviewed voice checkpoint.
   Earlier pending-approval notes are superseded. Preserve the documented broader
   acceptance limitations; no source changes or new test claims accompany saving.
+
+### Automatic spoken Chat submission - 2026-10-20
+
+- Baseline `70aa743` is pushed and main starts clean. Member approved replacing
+  mandatory ordinary Chat transcript confirmation with Listening/Transcribing,
+  recognized member bubble and automatic shared text submission. Keep exact
+  one-use capture/session/request/draft authority and Stop/lock/disposal revocation;
+  no audio action dispatch, automatic Save, new model/dependency or vault format.
+- Approved recovery: latest-member Edit copies text into the focused composer
+  for explicit Send as a new turn; history is not rewritten and old actions
+  cannot be replayed. Known stages get truthful loading text. Empty/failed
+  transcription retains Retry/Type instead. Today meal entry stays separate.
+- Design/spec/architecture updated before implementation. Explorer mapped the
+  existing preview effect/shared submit boundary; one worker owns Kotlin/tests,
+  parent owns docs/gate/device handoff, independent review follows. Automated
+  and physical gates pending; no replacement APK or commit/push authorization.
+- Design review identified the existing typed DraftWeight direct-save path as
+  unsuitable for unchecked ASR. Preserve speech origin in the unlocked session,
+  bind it to the submitted request and route spoken weight actions to the existing
+  editable weight review before Save. Typed behavior is unchanged. Implementation
+  review also caught early provenance clearing on rejected Send; repair must
+  preserve the review obligation through busy/fallback paths. Final gate and
+  phone checks remain pending; no installation or new acceptance claim yet.
+- First complete gate caught a missing weight-review callback in the Chat
+  signature (debug/release Kotlin compilation). Review additionally found a new
+  failed recording could retain prior recognized words for Type instead; clear
+  capture text at the fresh-recording boundary. Grouped repair and final gate
+  pending. No failed build was installed and no physical pass is claimed.
+- Grouped repair is implemented and independently re-reviewed with no scoped
+  blocker. Automatic submit requires captured and fresh loaded/ready status with
+  matching transcript/capture before its one-shot claim; busy fallback retains
+  session-bound words and weight-review provenance. New recording clears old
+  words; Type instead accepts only a matching ready capture. Speech weight actions
+  open existing editable weight review, never direct-save. Latest-member Edit
+  focuses the composer and waits for Send. Pure tests cover helper gates; no
+  Compose instrumentation infrastructure exists and no dependency was added.
+- Final complete gate passes 653 tests, zero failures/errors/skips, debug/release
+  assembly, release vital lint and clean diff check. Debug APK SHA-256:
+  `b4d4c13f3cf5adfa4176a744524aecba0f96398f7dad0837ff3cd3e936d73d2f`.
+  On 2026-10-21 member reconnected Samsung SM-S928B for authorized in-place
+  installation. Installation/launch and named microphone acceptance pending;
+  broader lifecycle, keyboard/font/rotation/TalkBack, Today and recognition gates
+  remain open. No record Save, raw capture, commit or push performed.
+- Verified APK installed in place (`Success`) and cold-launched (`Status: ok`)
+  on the same Samsung, preserving app identity/private storage with install-r.
+  Member biometric unlock and first fresh spoken read/automatic-once/Edit-to-
+  composer acceptance requested. No acceptance is inferred from installation;
+  no source changes after the passing gate and no commit/push authorization.
+- Member confirms fresh spoken meals read automatically sends/answers once and
+  Edit fills the keyboard composer without sending. Named automatic-submit/Edit
+  interaction passes on installed 653-test build. Safe tail shows two accepted
+  transcription-to-Chat turns; the latest uses accepted MiniLM today-meals read,
+  audit and delivery. The earlier uses Gemma/read_meals; words were not inspected
+  and neither is attributed beyond that metadata. User observation, not event
+  count, establishes the named once-only UI behavior. No record Save or source
+  changes. Spoken draft edits, weight review/no-save, failure/Stop/lock and broader
+  UI/accessibility/Today checks remain open. Next: fresh draft spoken edits.
+- Member requested icon-only Edit (2026-10-21). Replace the visible label with
+  the shared rounded pencil icon in a 48 dp IconButton, keeping "Edit as new
+  message" as the accessibility label. Behavior is unchanged. Design contract
+  updated; replacement build/install and physical acceptance pending. Earlier
+  653-test phone results apply to the preceding text-labelled control.
+- Icon-only source gate passes 653 tests, zero failures/errors/skips,
+  debug/release assembly, release vital lint and diff check. Debug APK SHA-256:
+  `688353d1ad75a86fc823d9998e04ae9747c7e5a07cab1bba08562d78848d6da5`.
+  Authorized in-place installation underway; named automatic-submit/Edit check
+  passed on the prior build, pencil control and remaining physical gates pending.
+- Pencil APK installed in place (`Success`) and cold-launched (`Status: ok`) on
+  the same Samsung with private storage preserved. Member unlock/pencil check
+  and the previously requested fresh spoken food/portion edit test remain next.
+  No source changes after this gate, record Save, raw capture or commit/push.
+
+### Cooking-report confirmation repair - 2026-10-21
+
+- Member's next draft check failed after answering `yes`. Exact source copied by
+  member: `i have cooked rice`. Safe trace records native reply delivery followed
+  by `meal_confirmation_missing`; no proposal was prepared. Source review confirms
+  this wording cannot create the consumption-only one-turn candidate. Broaden only
+  candidate admission to completed cooking/preparation reports, preserving native
+  confirmation selection, original-source binding and explicit Review/Save.
+  Implementation/review/build/install/exact retry pending. The earlier automatic
+  spoken draft-edit test remains incomplete; do not mark it passed from this turn.
+- Policy/test-only implementation now admits completed cooking/preparation reports
+  as transient original-source candidates. Existing consumption behavior is retained;
+  native confirmation, stale-source/session rejection and final Review/Save remain.
+  Independent scoped review has no material finding. Full gate passes 658 tests,
+  zero failures/errors/skips, debug/release assembly, release vital lint and clean
+  diff check. Debug APK SHA-256:
+  `434af73890bbe705a7f7a9fab832e5d5853fb25e885ddb6c6e3b6a3c416bb3bb`.
+  Authorized in-place update underway; exact phone retry pending. No source change
+  after gate, record Save, raw capture, commit or push.
+- Repair APK installed in place (`Success`) and cold-launched (`Status: ok`) on
+  Samsung SM-S928B / Android 16, preserving private app storage through install-r.
+  Member unlock/exact cooking-report confirmation retry requested. Physical
+  acceptance is pending; automatic spoken edits and weight review/no-save remain
+  open. No biometric automation or record save performed.
+- Member confirms exact retry: after `i have cooked rice` and the offer, `yes`
+  produced rice in Review; member discarded it. Safe events corroborate native
+  confirmation via `meal_confirmation_used`, lifecycle-ready and Chat consumption.
+  Named confirmation gate passes on the 658-test APK. No source changes after
+  build. Next: automatic spoken food/gram edits and retained Review, then spoken
+  weight review without Save; broader layout/accessibility/Today gates stay open.
+- Member confirms automatic spoken food and portion edits, no Continue step,
+  with brown rice, 200 g and no selected match retained in both Reviews; discarded.
+  Named visible spoken-edit/Review gate passes on the installed 658-test build.
+  Safe trace shows two accepted transcriptions and local food replacement. It also
+  contains a native portion rejection in this interval; fixed/deduplicated metadata
+  cannot prove the exact spoken words or every amount. Correct final values and
+  restoration are member-observed evidence. No source/build change or record Save.
+  Next: spoken weight entry must open editable Review and dismiss without Save.
+- Member confirms spoken fictional weight opened editable 70 kg Review; dismissal
+  left no new history entry. Named spoken-weight confirmation/no-save gate passes
+  on the same Samsung/658-test APK. Safe metadata corroborates accepted local
+  transcription, legacy intent selection and host handler entry, not the weight
+  value or absence of vault writes; those are member-observed acceptance. No source
+  changes or new build. Empty/error speech recovery, Today entry regression,
+  difficult layout/font/TalkBack/reduced-motion and broader native timing coverage
+  remain open. Next bounded check: empty speech recovery into typing.
+
+### Silent manual-stop recording rejection - 2026-10-21
+
+- Member reports two silence tests sent invented messages; background sound was
+  present. Safe metadata corroborates two accepted transcriptions followed by
+  normal assistant turns, not the audio content. This is a failed recovery gate.
+- Source inspection finds manual GemmaAudioRecorder.stop() always returns
+  detectedSpeech=true, unlike auto-stop's actual heardSpeech flag. All Chat
+  submission paths already reject/delete clips without detected speech. Preserve
+  real per-capture evidence on manual Stop; keep existing text/action/Save guards.
+  The current peak threshold is only a coarse heuristic and can admit background
+  sound. This bounded bug repair is not proof of robust noise rejection. No raw
+  audio, transcript or vault content inspected. Implementation/review/gate and
+  quiet/background silence plus normal-speech phone checks pending.
+- Recorder now uses a fresh thread-visible evidence object per capture and reads
+  it for both manual and automatic Clip completion. The peak heuristic remains
+  unchanged. Scoped independent review has no material finding. Helper tests cover
+  quiet evidence, threshold crossing, monotonic evidence after quiet and reset;
+  they do not exercise Android recorder stop/callback races. Complete gate passes
+  661 tests, zero failures/errors/skips, debug/release builds, release vital lint
+  and diff check. Debug APK SHA-256:
+  `008c37179930eb8b32847cc268435a2563bab5de7073e8e01872281c2849b274`.
+  No new dependency/model/prompt or source change after gate. Authorized in-place
+  install and quiet/background/ordinary-speech physical retry pending; the reported
+  background false positive remains open. VAD research/limits recorded in the
+  companion bundle; no VAD model or runtime dependency adopted.
+- Verified recorder APK installed with install-r (`Success`) and cold-launched
+  (`Status: ok`) on Samsung SM-S928B / Android 16. Private storage preserved;
+  biometric unlock is the member's action. No new phone acceptance yet. Request
+  quiet manual-stop silence, then same background condition, followed by a normal
+  spoken read. No raw audio/transcript captured, record Save, commit or push.
+- Member confirms quiet manual-stop silence and the previous background condition
+  are both rejected, while normal speech works. Named observed silence/speech retry
+  passes on the Samsung/661-test APK. Safe metadata includes an accepted ordinary
+  transcription/Chat delivery and a contextual_no_text rejection, but cannot bind
+  words/conditions or show that every silent clip was rejected before inference.
+  Do not claim a robust VAD, all-noise rejection or complete recorder timing coverage.
+  No source changes after gate. Next: dedicated Today Speak regression, then
+  checkpoint review; visual/font/TalkBack/reduced-motion gaps remain open.
+- Member confirms dedicated Today meal-section Speak opens rice Review with the
+  correct section selected; Discard preserves Chat history. Named Today regression
+  passes on the same Samsung/661-test APK, by member observation. No source changes
+  after full gate. Final integrated review running across current uncommitted voice,
+  inline activity and repair changes. Broader noise/native/recorder timing, error/
+  permission, visual/font/rotation/TalkBack/reduced-motion gaps remain documented;
+  this is not a release-complete gate. Commit/push still requires explicit approval.
+- Final independent integrated review found no confirmed material defect introduced
+  across automatic submission/provenance, spoken-weight Review, confirmation source
+  binding, voice result isolation/wakeup, recorder evidence and inline cancel/Type
+  handoff. No source changes after the 661-test/debug/release/vital-lint gate.
+  Final diff check clean. Current development checkpoint is ready for explicit
+  commit/push approval, with the above broader acceptance gaps retained. Nothing
+  staged, committed or pushed for this checkpoint yet.
+- Member explicitly approves commit and push of this reviewed 661-test checkpoint.
+  This supersedes its pending-approval notes. A newly reported follow-up remains
+  open: Chat `I had rice, beand and chicken breast for dinner` creates correct food
+  drafts, but Dinner is not preselected/saved without later member editing. No
+  dinner-label implementation is included in this approved baseline. Commit/push
+  it first, then investigate/fix the separate metadata handoff with review/gates.
+
+### Continuous in-Chat activity - 2026-10-21
+
+- Member requested research/unification of the voice loading popup and Chat
+  loading, and explicitly chose inside Chat. Primary Material/Apple/Compose
+  sources, alternatives and decision recorded in `design/chat-activity.md`;
+  flow/spec updated. Keep one inline activity surface and stable botanical mark,
+  truthful stage, indeterminate progress and accessible controls. No fake progress,
+  new dependency, model or persistence change.
+- Ordinary voice no longer replaces Chat with the modal. One keyed activity row
+  prioritizes voice, stopping, meal preparation and normal thinking. The same
+  shared card styles voice and typed work; composer cannot compete during voice.
+  Cancel stays in Chat; Today meal-entry modal stays separate. Proofs and automatic
+  submission/weight Review are unchanged. Type instead requests keyboard focus,
+  uses only matching current transcript text and quietly exits before capture.
+- Added presentation regression for overlapping activity flags. Independent
+  review/full Android gate running; installation, visual/layout/accessibility,
+  Stop/lock and spoken draft-edit acceptance remain pending. No record Save,
+  raw device capture, commit or push performed.
+- First compile caught the existing Compose version requiring FlowRow opt-in;
+  added the local annotation without a dependency change. Review found busy
+  model-ready Chat could open voice and hide its Stop; mic now rejects busy
+  starts, with a focused regression, while recording can always Stop. Text input
+  is disabled only during inline voice; Type instead focuses it. Scoped re-review
+  has no remaining blocker. Cancelled native voice work also presents Stopping
+  after Type/Cancel until release. Final frozen-source gate running; no new APK
+  installed or acceptance claimed yet.
+- Final gate passes 655 unit tests, zero failures/errors/skips, debug/release
+  assembly, release vital lint and clean diff check. Frozen debug APK SHA-256:
+  `21d96defc6433634c5628114cdbfc51eef18972a84a68eba7948fe527c24f8be`.
+  Authorized in-place installation underway on Samsung SM-S928B / Android 16.
+  New continuous voice/typed activity, Type instead keyboard, Stop/Cancel/lock,
+  draft Review, weight review/no-save, visual/font/TalkBack/Today gates pending.
+  Prior automatic-submit/Edit evidence does not establish the new layout.
+- Verified continuous-activity APK installed in place (`Success`) and
+  cold-launched (`Status: ok`) on the same Samsung, preserving app identity/private
+  storage. Member biometric unlock, fresh spoken read with no popup/one activity,
+  and Type instead keyboard/no-stale-text check requested. No source changes
+  after final gate. New-layout visual/interaction acceptance remains pending;
+  no raw screen capture, record Save, commit or push.
+- Member confirms one inline spoken flow with no popup and Type instead opening
+  the keyboard without old words. Named continuous-presentation/typing check
+  passes on the installed 655-test build. Latest safe metadata confirms accepted
+  transcription, ordinary Chat, native Gemma selection, accepted audit/delivery;
+  no record-read tool appears for that turn, so do not claim MiniLM routing or
+  factual meal correctness from this visual check. No words/output inspected.
+  Stop/lock, food/gram Review, spoken weight review/no-save and broader visual/
+  accessibility/Today gates remain open. Next: inline transcription Stop to typing.
+- Inline Stop/Type check partially failed: member reports cancellation/typing
+  work, but the typed request remained Thinking. Safe metadata confirms two voice
+  starts without completions, then accepted/reconciled typed MiniLM today-meals
+  read and tool_required waiting, with no continuation/audit/delivery. This is not
+  a successful post-cancellation read. No words or private records inspected.
+- Read-only discovery confirms all four voice-isolation-gated Compose result
+  effects omit that guard's inputs from their effect keys. A metadata-only clear
+  can leave an already-blocked tool/reply/failure effect asleep. This fits the
+  trace; precise original ordering is not proven. Repair uses one immutable key
+  for both effect identity and isolation across tool/reply/failure/diagnostic.
+  New accepted idle native text turns retire terminal voice metadata, while
+  active workers remain rejected. Current-request/handled gates stay unchanged.
+- Added pure key-transition/one-delivery regressions and fixed content-free
+  voice_result_isolated/host_tool_handler_entered monitoring stages. These do not
+  establish real Compose scheduling or native cancellation. Independent review,
+  full gate, in-place update and exact phone retry pending; no new acceptance or
+  commit/push. Continue broader gates only after this focused retry passes.
+- Independent scoped review finds no material defect in coherent effect keys,
+  guarded terminal retirement or fixed trace markers. Complete final gate passes
+  657 tests, zero failures/errors/skips, debug/release assembly, release vital
+  lint and clean diff check. Debug APK SHA-256:
+  `ee4d11d06b349fc280eb2a035dafb29d6ee2940a95fd4292056127d9d62cd3b4`.
+  In-place update underway on the same Samsung. Physical Stop→Type→typed-read
+  retry remains pending; helper tests do not prove the native timing or original
+  failure cause. No source changes after gate; no record Save or commit/push.
+- Verified repair APK installed in place (`Success`) and cold-launched (`Status:
+  ok`) on the same Samsung with private storage preserved. Member unlock and
+  exact inline Stop→Type instead→typed meals-read retry requested. No new phone
+  acceptance claimed; monitoring now distinguishes guarded tool from host handler.
+- Member confirms repaired Stop→Type→typed-read sequence finishes with correct
+  records and no late voice result/draft after the wait. Safe trace corroborates
+  voice start without acceptance followed by typed MiniLM today-meals routing,
+  host_tool_handler_entered, accepted audit, continuation and Chat delivery.
+  Named visible post-cancellation read gate passes on the installed 657-test APK.
+  This supports the repair without proving the earlier exact race timing. No
+  source changes. Next: inline lock/unlock cleanup/fresh request; draft food/gram,
+  spoken weight review/no-save, visual/font/TalkBack/Today gates remain open.
+- Member confirms inline lock/unlock check: history retained, interrupted activity
+  gone, fresh typed answer correct and no old voice result/draft after the wait.
+  Safe trace shows transcription start, lock with no accepted transcription, then
+  fresh MiniLM today-meals read/host handler/audit/continuation/delivery. Named
+  visible lock/fresh-request gate passes on the 657-test APK; this does not prove
+  every native shutdown timing. No source changes. Next: automatic spoken food/
+  gram draft edits and retained Review; spoken weight review/no-save and broader
+  layout/accessibility/Today gates remain open.

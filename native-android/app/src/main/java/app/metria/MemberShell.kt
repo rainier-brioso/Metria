@@ -769,6 +769,10 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                             status = vault.addWeightEntry(entry)
                             if (status is EncryptedVault.Status.Unlocked) entry else null
                         },
+                        onReviewVoiceWeightDraft = { kilograms, date ->
+                            voiceDraft = VoiceWeightDraft(kilograms, date)
+                            addSheet = true
+                        },
                         editSavedWeight = { editEntry = it; quickAssistantOpen = false },
                         undoSavedWeight = { entry -> status = vault.deleteWeight(entry.id) },
                         reviewMeal = { proposal, portionOverride, foodReplacementOverride ->
@@ -1649,6 +1653,8 @@ internal data class PendingAssistantSubmission(
     val previousRequestId: Long?,
 )
 
+private enum class AutomaticVoiceWeightActionDisposition { ORDINARY, REVIEW, REJECT }
+
 @Stable
 private class PrivateAssistantConversationSession(
     val recoverableDiagnostic: MutableState<String?>,
@@ -1678,6 +1684,12 @@ private class PrivateAssistantConversationSession(
     val acceptedFoodReplacementOverride = mutableStateOf<ChatFoodReplacementOverride?>(null)
     /** One accepted meal candidate; never reconstructed from persisted Chat history. */
     val pendingMealConfirmation = mutableStateOf<NativeMealDraftPolicy.MealConfirmationContext?>(null)
+    /** Transient speech origin carried across Chat composition until its request ID is known. */
+    val pendingAutomaticVoiceSubmission = mutableStateOf<PendingAutomaticVoiceSubmission?>(null)
+    /** Exact unsent transcript retained across Chat recreation when automatic send must wait. */
+    val automaticVoiceComposerText = mutableStateOf<String?>(null)
+    /** Spoken weight actions must be presented as an editable draft before saving. */
+    val automaticVoiceWeightReview = mutableStateOf<OneUseAutomaticVoiceWeightReview?>(null)
     val conversationGeneration = mutableStateOf(0L)
     val retainedFailureAnnouncementRequestId = mutableStateOf<Long?>(null)
     val savedWeightId = mutableStateOf(initialSavedWeightId)
@@ -1732,6 +1744,7 @@ private class PrivateAssistantConversationSession(
 
     fun invalidateForConversationClear() {
         conversationGeneration.value += 1
+        clearAutomaticVoiceWriteOrigin()
         writeReceipts.invalidate()
         acceptedPortionOverride.value = null
         acceptedFoodReplacementOverride.value = null
@@ -1750,11 +1763,38 @@ private class PrivateAssistantConversationSession(
         pendingContinuationToken = null
     }
 
+    fun clearAutomaticVoiceWriteOrigin() {
+        pendingAutomaticVoiceSubmission.value = null
+        automaticVoiceWeightReview.value = null
+        automaticVoiceComposerText.value = null
+    }
+
+    fun guardAutomaticVoiceWeightAction(
+        requestId: Long,
+        currentConversationGeneration: Long,
+    ): AutomaticVoiceWeightActionDisposition {
+        val review = automaticVoiceWeightReview.value
+        if (review?.consume(requestId, currentConversationGeneration) == true) {
+            automaticVoiceWeightReview.value = null
+            return AutomaticVoiceWeightActionDisposition.REVIEW
+        }
+        if (review != null) return AutomaticVoiceWeightActionDisposition.REJECT
+        val pending = pendingAutomaticVoiceSubmission.value ?: return AutomaticVoiceWeightActionDisposition.ORDINARY
+        val matchesCurrentSubmission = pending.conversationGeneration == currentConversationGeneration &&
+            pending.submissionToken == pendingSubmission.value?.token
+        if (matchesCurrentSubmission) {
+            pendingAutomaticVoiceSubmission.value = null
+            return AutomaticVoiceWeightActionDisposition.REVIEW
+        }
+        return AutomaticVoiceWeightActionDisposition.REJECT
+    }
+
     fun beginPendingSubmission(text: String, previousRequestId: Long?): PendingAssistantSubmission? {
         if (assistantCancellationGate.isInFlight()) return null
         acceptedPortionOverride.value = null
         acceptedFoodReplacementOverride.value = null
         val token = pendingSubmissionGate.begin() ?: return null
+        clearAutomaticVoiceWriteOrigin()
         retainedFailureAnnouncementRequestId.value = null
         responseStopped.value = false
         return PendingAssistantSubmission(token, text, previousRequestId).also { pendingSubmission.value = it }
@@ -1762,6 +1802,7 @@ private class PrivateAssistantConversationSession(
 
     fun beginAssistantCancellation(): Long? {
         val token = assistantCancellationGate.begin() ?: return null
+        clearAutomaticVoiceWriteOrigin()
         acceptedPortionOverride.value = null
         acceptedFoodReplacementOverride.value = null
         pendingMealConfirmation.value = null
@@ -1882,6 +1923,7 @@ private class PrivateAssistantConversationSession(
 
     fun reset() {
         conversationGeneration.value += 1
+        clearAutomaticVoiceWriteOrigin()
         writeReceipts.invalidate()
         acceptedPortionOverride.value = null
         acceptedFoodReplacementOverride.value = null
@@ -1951,6 +1993,7 @@ private class PrivateAssistantConversationSession(
             persistence.invalidatePendingWrites()
             writeReceipts.invalidate()
             conversationGeneration.value += 1
+            clearAutomaticVoiceWriteOrigin()
             acceptedPortionOverride.value = null
             acceptedFoodReplacementOverride.value = null
             pendingMealConfirmation.value = null
@@ -2005,6 +2048,7 @@ private fun PrivateAssistantChat(
     onNewConversation: suspend () -> Boolean,
     modelStatus: ModelStatus,
     recordReplyDelivery: (Long, String) -> Unit,
+    onReviewVoiceWeightDraft: (Double, Instant) -> Unit,
     entries: List<WeightEntry>,
     meals: List<MealEntry>,
     personalDishes: List<PersonalDish>,
@@ -2059,7 +2103,9 @@ private fun PrivateAssistantChat(
     var voicePermissionCaptureToken by remember { mutableStateOf<Long?>(null) }
     var voiceContextHandoff by remember { mutableStateOf<OneUseChatVoiceDraftHandoff?>(null) }
     var voiceRequestProof by remember { mutableStateOf<OneUseChatVoiceRequestProof?>(null) }
+    var voiceAutoSubmitGate by remember { mutableStateOf<OneUseChatVoiceAutoSubmit?>(null) }
     var voiceTypingExit by remember { mutableStateOf<OneUseChatVoiceTypingExit?>(null) }
+    var composerFocusRequest by remember { mutableStateOf(0L) }
     var contextualVoiceMode by remember { mutableStateOf(false) }
     var suppressVoiceDraftContextOnce by remember { mutableStateOf(false) }
     var voiceMessage by conversationSession.voiceMessage
@@ -2128,6 +2174,15 @@ private fun PrivateAssistantChat(
     }
     fun trackPendingRequest(token: Long, result: ModelStatus) {
         activeAssistantRequestId = conversationSession.reconcilePendingSubmission(token, result)
+        val voiceOrigin = conversationSession.pendingAutomaticVoiceSubmission.value
+        if (voiceOrigin?.submissionToken == token) {
+            conversationSession.pendingAutomaticVoiceSubmission.value = null
+            conversationSession.automaticVoiceWeightReview.value = result.assistantRequestId?.let { requestId ->
+                if (voiceOrigin.conversationGeneration == conversationSession.conversationGeneration.value) {
+                    OneUseAutomaticVoiceWeightReview(requestId, voiceOrigin.conversationGeneration)
+                } else null
+            }
+        }
         result.assistantRequestId?.let {
             recordReplyDelivery(it, if (activeAssistantRequestId == it) "submission_reconciled" else "submission_rejected")
         }
@@ -2310,6 +2365,8 @@ private fun PrivateAssistantChat(
         }
         val handoff = voiceContextHandoff
         val proof = voiceRequestProof
+        voiceAutoSubmitGate?.revoke()
+        voiceAutoSubmitGate = null
         voiceTypingExit?.revoke()
         voiceTypingExit = null
         handoff?.revoke()
@@ -2345,6 +2402,9 @@ private fun PrivateAssistantChat(
             }
             voiceMessage = null
             val status = transcribeContextualVoice(clip.file, capture)
+            voiceAutoSubmitGate = if (status.voiceTranscriptionCaptureToken == capture &&
+                status.voiceTranscriptionId != null && status.voiceTranscriptionState in setOf("processing", "ready")
+            ) OneUseChatVoiceAutoSubmit(capture, status.voiceTranscriptionId) else null
             if (status.voiceTranscriptionCaptureToken != capture || status.voiceTranscriptionState == "failed") {
                 voiceMessage = status.voiceTranscriptionDiagnostic
                     ?: "Voice recognition could not start. Try again or type your request."
@@ -2412,6 +2472,10 @@ private fun PrivateAssistantChat(
         }
     }
     fun startVoiceCapture() {
+        voiceAutoSubmitGate?.revoke()
+        voiceAutoSubmitGate = null
+        conversationSession.automaticVoiceComposerText.value = null
+        voiceText = ""
         voiceTypingExit?.revoke()
         voiceTypingExit = null
         voiceMessage = null
@@ -2465,41 +2529,6 @@ private fun PrivateAssistantChat(
             onVoiceListeningChanged(false)
         }
     }
-    var previewedVoiceTranscriptionId by remember { mutableStateOf<Long?>(null) }
-    LaunchedEffect(
-        modelStatus.voiceTranscriptionId, modelStatus.voiceTranscriptionCaptureToken,
-        modelStatus.voiceTranscriptionState, modelStatus.voiceTranscriptionText,
-        modelStatus.voiceTranscriptionDiagnostic, voiceCaptureGeneration,
-        modelStatus.assistantRequestId, modelStatus.assistantOperation,
-        activeAssistantRequestId, handledReplyRequestId,
-        conversationSession.conversationGeneration.value,
-        isVaultUnlocked(), conversationSession.assistantStopping.value,
-        conversationSession.pendingSubmission.value != null, conversationSession.pendingContinuation.value,
-    ) {
-        val handoff = voiceContextHandoff
-        val proof = voiceRequestProof
-        if (proof != null && !voiceRequestProofIsCurrent(proof, proof.captureToken(), modelStatus)) {
-            revokeVoiceHandoff(cancelRecognition = true)
-            return@LaunchedEffect
-        }
-        if (proof == null || modelStatus.voiceTranscriptionCaptureToken != proof.captureToken()) return@LaunchedEffect
-        when (modelStatus.voiceTranscriptionState) {
-            "ready" -> {
-                if (previewedVoiceTranscriptionId != modelStatus.voiceTranscriptionId &&
-                    voiceRequestProofIsCurrent(proof, proof.captureToken(), modelStatus) &&
-                    (handoff == null || handoffIsCurrent(handoff, handoff.captureToken(), modelStatus))
-                ) {
-                    previewedVoiceTranscriptionId = modelStatus.voiceTranscriptionId
-                    voiceText = VoiceEntryText.validated(modelStatus.voiceTranscriptionText).orEmpty()
-                    voiceMessage = modelStatus.voiceTranscriptionDiagnostic
-                } else {
-                    revokeVoiceHandoff(cancelRecognition = false)
-                    voiceMessage = "Chat changed during voice recognition. Review your words and try again before sending."
-                }
-            }
-            "failed", "cancelled" -> voiceMessage = modelStatus.voiceTranscriptionDiagnostic
-        }
-    }
     LaunchedEffect(
         modelStatus.assistantRequestId, modelStatus.assistantOperation,
         activeAssistantRequestId, handledReplyRequestId,
@@ -2551,14 +2580,20 @@ private fun PrivateAssistantChat(
             startVoiceCapture()
         }
     }
-    LaunchedEffect(modelStatus.assistantRequestId, modelStatus.coachToolCall, submittedQuestion, activeAssistantRequestId) {
-        if (ContextualVoiceResultPolicy.isolatesAssistantResult(
-                modelStatus.voiceTranscriptionState,
-                voiceRequestProof?.captureToken() ?: modelStatus.voiceTranscriptionCaptureToken
-                    .takeIf { modelStatus.voiceTranscriptionState != "idle" },
-                modelStatus.voiceTranscriptionCaptureToken,
-            )
-        ) return@LaunchedEffect
+    val voiceResultEffectKey = ContextualVoiceResultPolicy.EffectKey(
+        modelStatus.voiceTranscriptionState,
+        voiceRequestProof?.captureToken() ?: modelStatus.voiceTranscriptionCaptureToken
+            .takeIf { modelStatus.voiceTranscriptionState != "idle" },
+        modelStatus.voiceTranscriptionCaptureToken,
+    )
+    LaunchedEffect(modelStatus.assistantRequestId, modelStatus.coachToolCall, submittedQuestion,
+        activeAssistantRequestId, voiceResultEffectKey) {
+        if (voiceResultEffectKey.isolatesAssistantResults) {
+            if (modelStatus.coachToolCall != null) modelStatus.assistantRequestId?.let {
+                recordReplyDelivery(it, "voice_result_isolated")
+            }
+            return@LaunchedEffect
+        }
         val requestId = modelStatus.assistantRequestId ?: return@LaunchedEffect
         val call = modelStatus.coachToolCall ?: return@LaunchedEffect
         if (!shouldConsumeAssistantResult(activeAssistantRequestId, handledToolRequestId, requestId)) return@LaunchedEffect
@@ -2577,6 +2612,7 @@ private fun PrivateAssistantChat(
         val validatedCall = AssistantActionGuard.validate(call, submittedQuestion, submittedConversationContext)
         val action = AssistantActionDispatcher.resolve(validatedCall)
         val nativeAgentTool = modelStatus.assistantOperation == "agent_waiting_tool"
+        recordReplyDelivery(requestId, "host_tool_handler_entered")
         if (action is AssistantAction.QueryWeightHistory && call.spokenText?.let(::soundsLikeMealHistoryQuestion) == true) {
             messages = messages + PrivateChatMessage("I heard a meal-history question, but could not safely match the action. Please try again or type it.", false)
             return@LaunchedEffect
@@ -2948,9 +2984,29 @@ private fun PrivateAssistantChat(
                 }
             }
             is AssistantAction.DraftWeight -> {
-                val entry = saveWeightDirect(action.kilograms, Instant.now())
-                savedWeightId = entry?.id
-                messages = messages + PrivateChatMessage(if (entry != null) "${"%.1f".format(action.kilograms)} kg saved locally." else "Weight could not be saved. Try again.", false)
+                when (conversationSession.guardAutomaticVoiceWeightAction(
+                    requestId, conversationSession.conversationGeneration.value,
+                )) {
+                    AutomaticVoiceWeightActionDisposition.REVIEW -> {
+                        onReviewVoiceWeightDraft(action.kilograms, Instant.now())
+                        messages = messages + PrivateChatMessage(
+                            "I prepared a weight entry for review. Nothing has been saved yet.", false,
+                        )
+                    }
+                    AutomaticVoiceWeightActionDisposition.REJECT -> {
+                        messages = messages + PrivateChatMessage(
+                            "I could not verify that spoken weight request, so I did not save it. Please send it again.", false,
+                        )
+                    }
+                    AutomaticVoiceWeightActionDisposition.ORDINARY -> {
+                        val entry = saveWeightDirect(action.kilograms, Instant.now())
+                        savedWeightId = entry?.id
+                        messages = messages + PrivateChatMessage(
+                            if (entry != null) "${"%.1f".format(action.kilograms)} kg saved locally."
+                            else "Weight could not be saved. Try again.", false,
+                        )
+                    }
+                }
             }
             AssistantAction.DraftMeal -> trackRequest(askMeal(submittedQuestion))
             is AssistantAction.Respond -> trackRequest(askCoach("""MEMBER_LANGUAGE: ${coachReplyLanguage(submittedQuestion, submittedConversationContext)}
@@ -2976,14 +3032,9 @@ private fun PrivateAssistantChat(
         modelStatus.assistantProposal, modelStatus.assistantPortionOverride,
         modelStatus.assistantFoodReplacementOverride, modelStatus.state,
         modelStatus.companionNavigation?.requestId,
+        voiceResultEffectKey,
     ) {
-        if (ContextualVoiceResultPolicy.isolatesAssistantResult(
-                modelStatus.voiceTranscriptionState,
-                voiceRequestProof?.captureToken() ?: modelStatus.voiceTranscriptionCaptureToken
-                    .takeIf { modelStatus.voiceTranscriptionState != "idle" },
-                modelStatus.voiceTranscriptionCaptureToken,
-            )
-        ) return@LaunchedEffect
+        if (voiceResultEffectKey.isolatesAssistantResults) return@LaunchedEffect
         val requestId = modelStatus.assistantRequestId ?: return@LaunchedEffect
         val reply = modelStatus.coachReply ?: mealDraftTranscriptAcknowledgement(
             activeAssistantRequestId, handledReplyRequestId, requestId, modelStatus.state,
@@ -3099,14 +3150,9 @@ private fun PrivateAssistantChat(
         conversationSession.pendingSubmission.value,
         conversationSession.pendingContinuation.value,
         conversationSession.assistantStopping.value,
+        voiceResultEffectKey,
     ) {
-        if (ContextualVoiceResultPolicy.isolatesAssistantResult(
-                modelStatus.voiceTranscriptionState,
-                voiceRequestProof?.captureToken() ?: modelStatus.voiceTranscriptionCaptureToken
-                    .takeIf { modelStatus.voiceTranscriptionState != "idle" },
-                modelStatus.voiceTranscriptionCaptureToken,
-            )
-        ) return@LaunchedEffect
+        if (voiceResultEffectKey.isolatesAssistantResults) return@LaunchedEffect
         val requestId = modelStatus.assistantRequestId ?: return@LaunchedEffect
         val failure = retainableAssistantFailure(
             activeRequestId = activeAssistantRequestId,
@@ -3135,14 +3181,8 @@ private fun PrivateAssistantChat(
     }
     LaunchedEffect(modelStatus.assistantRequestId, modelStatus.coachDiagnostic, activeAssistantRequestId,
         handledReplyRequestId, conversationSession.pendingSubmission.value,
-        conversationSession.pendingContinuation.value) {
-        if (ContextualVoiceResultPolicy.isolatesAssistantResult(
-                modelStatus.voiceTranscriptionState,
-                voiceRequestProof?.captureToken() ?: modelStatus.voiceTranscriptionCaptureToken
-                    .takeIf { modelStatus.voiceTranscriptionState != "idle" },
-                modelStatus.voiceTranscriptionCaptureToken,
-            )
-        ) return@LaunchedEffect
+        conversationSession.pendingContinuation.value, voiceResultEffectKey) {
+        if (voiceResultEffectKey.isolatesAssistantResults) return@LaunchedEffect
         if (shouldLatchAssistantDiagnostic(
                 activeRequestId = activeAssistantRequestId,
                 resultRequestId = modelStatus.assistantRequestId,
@@ -3255,6 +3295,7 @@ private fun PrivateAssistantChat(
         val reply = ChatPortionClarificationPolicy.parseReply(text)
         if (reply == ChatPortionReply.Unrelated) return false
         if (reply == ChatPortionReply.InvalidQuantity) {
+            conversationSession.automaticVoiceComposerText.value = null
             input = ""
             messages = messages + listOf(
                 PrivateChatMessage(text, true),
@@ -3278,6 +3319,7 @@ private fun PrivateAssistantChat(
         val updated = ChatPortionClarificationPolicy.overrideForCurrentDraft(
             context, context.sourceRequestId, grams,
         ) ?: return false
+        conversationSession.automaticVoiceComposerText.value = null
         input = ""
         messages = messages + listOf(
             PrivateChatMessage(text, true),
@@ -3300,6 +3342,8 @@ private fun PrivateAssistantChat(
     fun submitText() {
         val text = input.trim()
         if (text.isBlank()) return
+        val fromAutomaticVoice = conversationSession.automaticVoiceComposerText.value == text
+        if (!fromAutomaticVoice) conversationSession.automaticVoiceComposerText.value = null
         val requestProof = voiceRequestProof
         if (requestProof != null && modelStatus.state == "thinking" &&
             modelStatus.voiceTranscriptionCaptureToken == requestProof.captureToken()
@@ -3408,6 +3452,7 @@ private fun PrivateAssistantChat(
                             portionOffer.proposal, portionOffer.requestId, portionOffer.conversationGeneration,
                             portionOffer.target, reply,
                         ) ?: return
+                        conversationSession.automaticVoiceComposerText.value = null
                         input = ""
                         messages = messages + listOf(
                             PrivateChatMessage(text, true),
@@ -3424,6 +3469,7 @@ private fun PrivateAssistantChat(
                         return
                     }
                     ChatPortionReply.InvalidQuantity -> {
+                        conversationSession.automaticVoiceComposerText.value = null
                         input = ""
                         messages = messages + listOf(
                             PrivateChatMessage(text, true),
@@ -3468,6 +3514,7 @@ private fun PrivateAssistantChat(
             if (localReplacement != null) {
                 val previousName = frozenFoodEditContext.currentReplacementName
                     ?: frozenFoodEditContext.originalItemName
+                conversationSession.automaticVoiceComposerText.value = null
                 input = ""
                 messages = messages + listOf(
                     PrivateChatMessage(text, true),
@@ -3520,6 +3567,12 @@ private fun PrivateAssistantChat(
             conversationSession.beginPendingSubmission(text, activeAssistantRequestId)
         }
         if (pending == null) return
+        if (fromAutomaticVoice) {
+            conversationSession.pendingAutomaticVoiceSubmission.value = PendingAutomaticVoiceSubmission(
+                submissionToken = pending.token,
+                conversationGeneration = conversationSession.conversationGeneration.value,
+            )
+        }
         val mealConfirmation = NativeMealDraftPolicy.consumeCandidate(
             candidate = conversationSession.pendingMealConfirmation.value,
             previousRequestId = pending.previousRequestId,
@@ -3571,6 +3624,72 @@ private fun PrivateAssistantChat(
             }
         })
     }
+    LaunchedEffect(
+        modelStatus.voiceTranscriptionId, modelStatus.voiceTranscriptionCaptureToken,
+        modelStatus.voiceTranscriptionState, modelStatus.voiceTranscriptionText,
+        modelStatus.voiceTranscriptionDiagnostic, voiceCaptureGeneration,
+        modelStatus.assistantRequestId, modelStatus.assistantOperation,
+        activeAssistantRequestId, handledReplyRequestId,
+        modelStatus.state, voiceAutoSubmitGate, voiceEntryOpen,
+        conversationSession.conversationGeneration.value,
+        isVaultUnlocked(), conversationSession.assistantStopping.value,
+        conversationSession.pendingSubmission.value != null, conversationSession.pendingContinuation.value,
+    ) {
+        if (!voiceEntryOpen) return@LaunchedEffect
+        val latest = readCurrentModelStatus()
+        val handoff = voiceContextHandoff
+        val proof = voiceRequestProof
+        if (proof != null && !voiceRequestProofIsCurrent(proof, proof.captureToken(), latest)) {
+            revokeVoiceHandoff(cancelRecognition = true)
+            return@LaunchedEffect
+        }
+        if (proof == null || latest.voiceTranscriptionCaptureToken != proof.captureToken()) return@LaunchedEffect
+        when (latest.voiceTranscriptionState) {
+            "ready" -> {
+                val transcriptionId = latest.voiceTranscriptionId
+                val recognized = VoiceEntryText.validated(latest.voiceTranscriptionText)
+                val gate = voiceAutoSubmitGate
+                if (transcriptionId == null || recognized == null || gate == null) {
+                    voiceMessage = "Metria could not produce readable speech. Try again or type instead."
+                    return@LaunchedEffect
+                }
+                if (latest.state == "thinking" || modelStatus.state != "loaded") {
+                    // Keep the one-shot claim available while this same capture still owns native inference.
+                    gate.claim(proof.captureToken(), transcriptionId, recognized, runtimeReleased = false)
+                    return@LaunchedEffect
+                }
+                if (latest.state != "loaded" || !voiceRequestProofIsCurrent(proof, proof.captureToken(), latest) ||
+                    modelStatus.state != latest.state ||
+                    modelStatus.voiceTranscriptionState != latest.voiceTranscriptionState ||
+                    modelStatus.voiceTranscriptionId != transcriptionId ||
+                    modelStatus.voiceTranscriptionCaptureToken != proof.captureToken() ||
+                    VoiceEntryText.validated(modelStatus.voiceTranscriptionText) != recognized ||
+                    (handoff != null && !handoffIsCurrent(handoff, handoff.captureToken(), latest))
+                ) {
+                    revokeVoiceHandoff(cancelRecognition = false)
+                    voiceMessage = "Chat changed during voice recognition. Start a new voice request or type your message."
+                    return@LaunchedEffect
+                }
+                if (!gate.claim(proof.captureToken(), transcriptionId, recognized, runtimeReleased = true)) {
+                    revokeVoiceHandoff(cancelRecognition = false)
+                    voiceMessage = "This voice request has already been handled. Start a new recording if you still need help."
+                    return@LaunchedEffect
+                }
+                input = recognized
+                voiceText = recognized
+                conversationSession.automaticVoiceComposerText.value = recognized
+                voiceMessage = null
+                voiceEntryOpen = false
+                contextualVoiceMode = false
+                onVoiceEntryHandled()
+                submitText()
+                if (input.isNotBlank()) {
+                    voiceMessage = "Your words are in the message box. Review them and tap Send when Chat is ready."
+                }
+            }
+            "failed", "cancelled" -> voiceMessage = latest.voiceTranscriptionDiagnostic
+        }
+    }
     val voiceTranscriptionOwnsRuntime = voiceRequestProof?.let { proof ->
         modelStatus.voiceTranscriptionCaptureToken == proof.captureToken() &&
             modelStatus.voiceTranscriptionState in setOf("processing", "cancelled") &&
@@ -3595,17 +3714,23 @@ private fun PrivateAssistantChat(
             }
         }.orEmpty()
 
-    if (voiceEntryOpen) {
+    val voiceEntryContent: (@Composable () -> Unit)? = if (voiceEntryOpen) { {
         val chatVoiceCapture = contextualVoiceMode && !voiceMealEntry
         val matchingTranscript = chatVoiceCapture && voiceRequestProof?.captureToken() != null &&
             modelStatus.voiceTranscriptionCaptureToken == voiceRequestProof?.captureToken()
         app.metria.ui.screens.VoiceEntrySheet(
             mealEntry = voiceMealEntry,
             recording = recordingVoice,
-            processing = if (chatVoiceCapture) matchingTranscript && modelStatus.voiceTranscriptionState == "processing"
+            processing = if (chatVoiceCapture) matchingTranscript &&
+                (modelStatus.voiceTranscriptionState == "processing" ||
+                    (modelStatus.voiceTranscriptionState == "ready" && modelStatus.state == "thinking"))
                 else modelResultIsCurrent && modelStatus.state == "thinking",
             ready = modelStatus.state == "loaded",
             unavailable = modelStatus.state in setOf("failed", "absent", "removed"),
+            automaticChatSubmission = chatVoiceCapture,
+            inlineChat = !voiceMealEntry,
+            stopping = chatVoiceCapture && modelStatus.state == "thinking" &&
+                modelStatus.voiceTranscriptionState == "cancelled",
             text = voiceText,
             error = voiceMessage ?: if (chatVoiceCapture && matchingTranscript) modelStatus.voiceTranscriptionDiagnostic
                 else if (contextualVoiceMode) modelStatus.voiceTranscriptionDiagnostic
@@ -3636,13 +3761,30 @@ private fun PrivateAssistantChat(
                 if (contextualVoiceMode) revokeVoiceHandoff(cancelRecognition = true)
                 else if (voiceMealEntry) stopAssistant(showConfirmation = false)
                 contextualVoiceMode = false
+                voiceEntryOpen = false
                 onVoiceEntryHandled()
-                onBack()
+                if (voiceMealEntry) onBack()
             },
             onTypeInstead = {
+                val transcriptStatus = readCurrentModelStatus()
+                val transcriptCapture = voiceCaptureGeneration
+                val transcriptProof = voiceRequestProof
+                val currentTranscript = if (voiceMealEntry) null else currentReadyChatTranscript(
+                    voiceText = voiceText,
+                    captureToken = transcriptCapture,
+                    transcriptCaptureToken = transcriptStatus.voiceTranscriptionCaptureToken,
+                    proofCaptureToken = transcriptProof?.captureToken(),
+                    transcriptionState = transcriptStatus.voiceTranscriptionState,
+                    transcriptText = transcriptStatus.voiceTranscriptionText,
+                )
                 voiceCaptureGeneration += 1
                 audioRecorder.cancel()
                 setVoiceRecording(false)
+                currentTranscript?.let {
+                    conversationSession.automaticVoiceComposerText.value = it
+                }
+                voiceAutoSubmitGate?.revoke()
+                voiceAutoSubmitGate = null
                 if (contextualVoiceMode) {
                     val handoff = voiceContextHandoff
                     val proof = voiceRequestProof
@@ -3658,7 +3800,8 @@ private fun PrivateAssistantChat(
                         conversationSession.assistantStopping.value,
                         conversationSession.pendingSubmission.value != null || conversationSession.pendingContinuation.value,
                     )
-                    if (intentionalStopExit) {
+                    val idleTypingExit = proof == null && exit == null && latest.voiceTranscriptionState == "idle"
+                    if (intentionalStopExit || idleTypingExit) {
                         voiceTypingExit = null
                     } else if (!validProof) {
                         exit?.revoke()
@@ -3679,7 +3822,8 @@ private fun PrivateAssistantChat(
                         }
                     }
                 } else if (voiceMealEntry) stopAssistant(showConfirmation = false)
-                input = voiceText
+                input = if (voiceMealEntry) voiceText else currentTranscript.orEmpty()
+                composerFocusRequest += 1
                 voiceEntryOpen = false
                 contextualVoiceMode = false
                 onVoiceEntryHandled()
@@ -3708,6 +3852,9 @@ private fun PrivateAssistantChat(
                 submitText()
             },
         )
+    } } else null
+    if (voiceEntryOpen && voiceMealEntry) {
+        voiceEntryContent?.invoke()
         return
     }
 
@@ -3749,6 +3896,8 @@ private fun PrivateAssistantChat(
         } ?: proposal
     }
     MetriaAssistantConversationScreen(
+        voiceActivity = voiceEntryContent,
+        composerFocusRequest = composerFocusRequest,
         messages = messages.mapIndexed { index, message -> MetriaChatMessage(
             text = message.text,
             fromMember = message.fromMember,
@@ -3764,7 +3913,12 @@ private fun PrivateAssistantChat(
             ),
         ) },
         input = input,
-        onInputChange = { input = it },
+        onInputChange = {
+            input = it
+            if (conversationSession.automaticVoiceComposerText.value != it.trim()) {
+                conversationSession.automaticVoiceComposerText.value = null
+            }
+        },
         assistantThinking = shouldPresentAssistantThinking(
             localPending = conversationSession.pendingSubmission.value != null ||
                 conversationSession.pendingContinuation.value,
@@ -3772,7 +3926,8 @@ private fun PrivateAssistantChat(
             modelState = modelStatus.state,
             operation = modelStatus.assistantOperation,
         ),
-        assistantStopping = conversationSession.assistantStopping.value,
+        assistantStopping = conversationSession.assistantStopping.value ||
+            (modelStatus.state == "thinking" && modelStatus.voiceTranscriptionState == "cancelled"),
         responseStopped = conversationSession.responseStopped.value,
         mealDraftThinking = modelResultIsCurrent && modelStatus.state == "thinking" &&
             modelStatus.assistantOperation?.let { !it.startsWith("coach") && !it.startsWith("agent") } == true,
@@ -3909,6 +4064,7 @@ private fun PrivateAssistantChat(
             discardMealDraft()
         },
         onToggleVoice = ::toggleVoice,
+        onEditLatestMemberMessage = { editedText -> input = editedText },
         onSend = ::submitText,
     )
 }

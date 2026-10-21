@@ -202,23 +202,12 @@ recording until the pending clip arrives. Another recording cannot start during
 that handoff; Type instead, Back and background cancellation still discard it.
 Local audio understanding supplies recognized words. Today meal entry sends a
 successful transcript directly to draft generation; proposed audio actions are
-never dispatched. Generic Speak retains explicit editing and submission.
-For an eligible current ordinary Chat meal draft, its microphone uses the same
-editable words preview. Transcription has a separate transient identity and
-preserves the current draft request, name and grams. Continue in Chat submits the
-checked words through normal Chat correction handling; recognition itself never
-dispatches an audio-proposed action. Cancel/Stop, lock, newer work and disposal
-revoke the one-use handoff. Unknown food names retain normal assistant handling.
-Contextual recognition requests plain words rather than a model-generated action
-or JSON envelope; the host validates bounded text for preview only. Continue still
-requires the same source/current-draft checks before normal text submission.
-Chat microphone revision (2026-10-20): the same plain-transcription preview and
-explicit Continue apply when there is no eligible draft. A capture is bound to
-the unlocked conversation generation and request state before recording; only
-current one-use words can continue through normal typed Chat routing. Recent
-Chat history is not supplied to transcription. No Chat audio intent/action is
-executed directly. Lock/Stop/newer work revoke both ordinary and draft captures.
-Dedicated Today meal entry remains a separate flow.
+never dispatched. Ordinary Chat speech follows the automatic-submission revision
+in Ask Metria below. History-free plain transcription uses a separate transient
+identity; exact current-draft bindings preserve eligible name/gram edits.
+Current one-use words enter normal typed routing once. Cancel/Stop, lock, newer
+work and disposal revoke ordinary and draft captures. Unknown food names retain
+normal assistant handling. Dedicated Today meal entry remains a separate flow.
 No new barcode or cloud route is enabled.
 Available catalog nutrients expand on demand, with their own coverage and
 source units; unavailable nutrient rows are not manufactured.
@@ -381,6 +370,36 @@ is introduced. All history retains its separate date-grouped view.
 **States:** no data, partial estimates only, goal absent, one-day history, selected day, all history, empty history tab, changed range, cycle-aware context enabled/disabled.
 
 ## 6. Ask Metria
+
+**Continuous activity - 2026-10-21:** ordinary Chat voice stays in the timeline,
+using one activity card from Ready/Listening through Transcribing and the normal
+Thinking/Preparing response. No voice loading popup replaces Chat. Keep one
+visible activity state, explicit microphone start and cancellation, and existing
+automatic-submit/source guards. Cancel stays in Chat. Today meal entry is separate.
+Research, styling and pending acceptance: `chat-activity.md`.
+
+**Automatic spoken Chat submission - 2026-10-20 (implemented, phone gates pending):**
+ordinary Chat speech shows Listening, then Transcribing, then places validated
+recognized words in the member bubble and enters normal Chat routing once,
+without a preview/Continue step. Start recording remains explicit. Explain before
+recording that spoken words send automatically. Stop, Cancel, lock, disposal,
+changed session/request or newer work revoke the capture before submission.
+No usable words shows Retry/Type instead without sending. Waiting for native
+runtime release must not lose words or replay a turn. Response stages describe
+only known work (responding, checking records, preparing a draft).
+The latest member message offers Edit when idle: copy its words into the focused
+composer for explicit Send as a new turn; retain history and never replay an old
+tool merely by tapping Edit. Send is a new command and may prepare a new draft;
+it does not undo a prior completed action. During work, Stop remains the cancellation action. Audio
+actions remain ignored, draft source guards remain exact, and Review/Save still
+govern records. Today meal entry keeps its separate existing flow. This decision
+supersedes earlier ordinary Chat preview/Continue requirements below.
+Spoken weight writes must retain an explicit confirmation before saving; the
+existing typed weight shortcut does not authorize saving an unchecked ASR value.
+Transcription success is published only after native runtime release. If the
+same token remains busy, retain its transient text in Transcribing until ready;
+Stop/lock/new work revoke it. If capacity changes unexpectedly at submission,
+leave words unsent in the composer with a retry explanation, never replay them.
 
 **Explicit local food-label edit - 2026-10-19:** when the sole current draft food
 has an unambiguous correction phrase recognized conservatively by the packaged

@@ -36,6 +36,7 @@ class AssistantTraceStore(
             "contextual_started", "contextual_accepted", "contextual_no_text",
             "contextual_structured_output", "contextual_invalid_transcript", "contextual_runtime_exception",
             "legacy_voice_no_transcript",
+            "voice_result_isolated", "host_tool_handler_entered",
         )
         private val allowedTools = setOf("none", "read_progress_overview", "read_nutrition_summary", "read_day_nutrition", "read_weight", "read_meals", "read_latest_meal", "search_saved_dishes")
         private val allowedPeriods = setOf("none", "today", "yesterday", "week")
@@ -111,6 +112,7 @@ class AssistantTraceStore(
                 "food_replacement_local_applied",
                 "meal_confirmation_used", "meal_confirmation_missing", "meal_confirmation_declined",
                 "legacy_voice_no_transcript",
+                "voice_result_isolated", "host_tool_handler_entered",
             )) return
         val shouldRecord = synchronized(this) {
             if (!enabled || closed || !replyDeliveryObservations.add(requestId to reason)) return@synchronized false
@@ -127,7 +129,8 @@ class AssistantTraceStore(
                         "continuation_reconciled", "chat_active_request", "portion_applied", "portion_skipped",
                         "food_replacement_applied",
                         "food_replacement_local_applied",
-                        "meal_confirmation_used", "meal_confirmation_declined")) "accepted" else "rejected",
+                        "meal_confirmation_used", "meal_confirmation_declined",
+                        "host_tool_handler_entered")) "accepted" else "rejected",
                 reason = reason,
                 requestId = requestId,
             )

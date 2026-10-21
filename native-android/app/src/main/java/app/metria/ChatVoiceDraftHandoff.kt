@@ -194,6 +194,75 @@ internal class OneUseChatVoiceRequestProof private constructor(
     }
 }
 
+/**
+ * Claims one validated ordinary-Chat transcript only after the native transcription worker
+ * has released the model runtime. Request/draft authority remains in the separate proofs.
+ */
+internal class OneUseChatVoiceAutoSubmit(
+    private val captureToken: Long,
+    private val transcriptionId: Long,
+) {
+    private var consumed = false
+
+    fun claim(
+        currentCaptureToken: Long,
+        currentTranscriptionId: Long?,
+        text: String?,
+        runtimeReleased: Boolean,
+    ): Boolean {
+        if (consumed) return false
+        if (currentCaptureToken != captureToken || currentTranscriptionId != transcriptionId ||
+            VoiceEntryText.validated(text) == null
+        ) {
+            consumed = true
+            return false
+        }
+        if (!runtimeReleased) return false
+        consumed = true
+        return true
+    }
+
+    fun revoke() {
+        consumed = true
+    }
+}
+
+/** Returns only words proven to belong to this capture's completed ordinary-Chat transcript. */
+internal fun currentReadyChatTranscript(
+    voiceText: String?,
+    captureToken: Long,
+    transcriptCaptureToken: Long?,
+    proofCaptureToken: Long?,
+    transcriptionState: String,
+    transcriptText: String?,
+): String? {
+    val recognized = VoiceEntryText.validated(voiceText) ?: return null
+    if (captureToken != transcriptCaptureToken || captureToken != proofCaptureToken ||
+        transcriptionState != "ready" || VoiceEntryText.validated(transcriptText) != recognized
+    ) return null
+    return recognized
+}
+
+/** Marks the one model request whose spoken weight action must open review before any save. */
+internal class OneUseAutomaticVoiceWeightReview(
+    private val requestId: Long,
+    private val conversationGeneration: Long,
+) {
+    private var consumed = false
+
+    fun consume(currentRequestId: Long?, currentConversationGeneration: Long): Boolean {
+        if (consumed) return false
+        if (currentRequestId != requestId || currentConversationGeneration != conversationGeneration) return false
+        consumed = true
+        return true
+    }
+}
+
+internal data class PendingAutomaticVoiceSubmission(
+    val submissionToken: Long,
+    val conversationGeneration: Long,
+)
+
 internal class OneUseChatVoiceTypingExit private constructor(
     private val captureToken: Long,
     private val modelRequestId: Long?,

@@ -309,34 +309,53 @@ label macro values are not automatically scaled. Source/coverage stays visible.
 
 ## Voice entry
 
-**Purpose:** recognize and check a short spoken request before submission.
+**Continuous Chat activity - 2026-10-21:** ordinary Chat capture uses one inline
+activity card rather than the modal below. The same compact botanical mark,
+indeterminate progress and surface continue into response/draft loading. Display
+one activity state at a time; preserve Stop/Cancel/Type, idle-only pencil editing,
+48 dp controls and keyboard insets. See `chat-activity.md`. The modal description
+below remains for the separate meal-entry branch.
+
+**Approved ordinary Chat revision - 2026-10-20 (implemented, phone gates pending):** keep
+explicit Start recording; tell the member that recognized words send automatically.
+Listening and Transcribing have clear accessible status and Stop. A valid current
+transcript closes the sheet, appears as the member message and submits once through
+normal Chat, without editable preview or Continue. Empty/invalid speech stays in
+the sheet with Retry and Type instead. Revoked/stale speech cannot send or revive
+a draft. Keep native runtime busy until worker exit. Ordinary response/loading
+then uses the existing Chat timeline; state labels must reflect known work.
+The latest member bubble offers a secondary Edit action when idle.
+This action is a pencil icon without visible text, with a 48 dp touch target
+and the accessibility label "Edit as new message" (member decision 2026-10-21).
+It focuses the composer with that text; Send submits a new turn and leaves history intact.
+Edit itself performs no action; Send is a new command and can prepare a new draft.
+It does not undo an already completed action.
+No automatic record save; meal Review and final Save remain required. Preserve
+long-press text selection/copy, keyboard insets and 48 dp controls. Today meal
+entry is unchanged. Earlier ordinary Chat preview/Continue is superseded.
+For a spoken weight write, require explicit confirmation of the interpreted
+weight before persistence; ordinary transcription completion cannot save it.
+
+**Purpose:** recognize a short spoken request and continue the current Chat task.
 Speak opens a dedicated sheet without starting the mic. Start recording requests
 permission; Listening and Stop recording stay explicit. The existing recorder
-stops after speech pause or 12 seconds. Local recognition returns editable words,
+stops after speech pause or 12 seconds. Local recognition returns plain words,
 bounded to 600 characters; audio-returned actions are withheld from dispatch.
 Today meal entry automatically submits a successful validated transcript to draft
-generation, with no intermediate correction screen. Generic Speak uses
-Continue in Chat. No draft is saved by recognition alone. Retry, Type instead,
+generation, with no intermediate correction screen. Ordinary Chat follows the
+automatic typed-routing contract above. No record is saved by recognition alone. Retry, Type instead,
 Stop processing and Cancel remain available; errors/empty speech keep typing.
 Cancellation/disposal invalidates late capture callbacks and deletes temporary
-audio. Lock clears entry presentation; rotation retains editable unlocked text
-under the current orientation handling. No new transcription dependency or cloud
+audio. Lock clears entry presentation. No new transcription dependency or cloud
 speech service is introduced. Recognition accuracy and physical gates are open.
 
-For a live eligible ordinary Chat draft, the microphone also opens this preview
-and preserves the draft while transcription runs through a separate transient
-request. Explicit Continue uses the existing Chat correction rules and Review;
-audio actions cannot change the draft. Cancel/Stop, lock, newer work and disposal
-revoke the handoff. No request identity is rewound or restored from history.
-The contextual recognizer returns bounded plain words for preview, with empty,
-invalid or structured output rejected. It supplies no executable audio action;
-explicit Continue retains the normal text-routing and current-draft checks.
-All ordinary Chat microphone input uses this preview, including a fresh request
-after lock. The recognizer receives no Chat history and returns no executable
-intent. Continue requires current unlocked capture/session authority and sends
-only the member-checked text through normal Chat routing. A source draft, when
-present, additionally requires the exact one-use draft binding. Recognition alone
-never adds a "Voice request received" message or creates a draft.
+For a live eligible ordinary Chat draft, preserve the draft while transcription
+runs through a separate transient request. Shared text submission requires the
+exact source/current-draft checks; audio actions cannot change the draft. All
+ordinary Chat captures require current one-use unlocked capture/session authority.
+No request identity is rewound or restored from history. The recognizer receives
+no Chat history and rejects empty, invalid or structured output. Only accepted
+normal text routing can create a draft; no placeholder voice message is added.
 After explicit Stop, Type instead quietly opens the composer if the unlocked
 conversation/request is unchanged. Cancellation grants no authority to submit
 recognized words or revive a draft. A real changed/stale source still explains

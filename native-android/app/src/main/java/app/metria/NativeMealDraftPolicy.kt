@@ -25,8 +25,10 @@ object NativeMealDraftPolicy {
     }
 
     /**
-     * Accept only a closed first-person consumption frame for a possible one-turn meal candidate.
-     * This is intentionally conservative: uncertain language stays in ordinary Chat.
+     * Accept only a closed first-person meal report for a possible one-turn meal candidate.
+     * Completed cooking/preparation reports are eligible because members may describe food
+     * before eating it. This only retains source context; the model still chooses the typed
+     * confirmation tool, and uncertain language stays in ordinary Chat.
      */
     fun isEligibleConsumptionStatement(text: String): Boolean {
         val normalized = text.trim().lowercase(java.util.Locale.ROOT)
@@ -35,9 +37,13 @@ object NativeMealDraftPolicy {
                 .containsMatchIn(normalized)) return false
         if (Regex("\\b(no|none|nothing|not|never|didn't|didnt|haven't|havent|hadn't|hadnt|without|allergic|reaction|sleep|slept|headache|pain|migraine|fever|flu|medicine|medication|symptom|appointment|meeting|workout|exercise|walked|ran)\\b")
                 .containsMatchIn(normalized)) return false
-        val frame = Regex("^(?:i had|i ate|i just had|i just ate|i've had|i've eaten|i've just had|i've just eaten|i have had|i have eaten|i have just had|i have just eaten)\\s+(.+)$")
-        val match = frame.find(normalized) ?: return false
+        val consumptionFrame = Regex("^(?:i had|i ate|i just had|i just ate|i've had|i've eaten|i've just had|i've just eaten|i have had|i have eaten|i have just had|i have just eaten)\\s+(.+)$")
+        val preparationFrame = Regex("^(?:i cooked|i've cooked|i have cooked|i prepared|i've prepared|i have prepared)\\s+(.+)$")
+        val preparationMatch = preparationFrame.find(normalized)
+        val match = consumptionFrame.find(normalized) ?: preparationMatch ?: return false
         val tail = match.groupValues[1].trim()
+        if (preparationMatch != null && Regex("\\b(?:presentation|interview|homework|assignment|exam|test|meeting|trip|speech|project)\\b|^(?:the books|up a plan)\\b")
+                .containsMatchIn(tail)) return false
         return tail.isNotEmpty() && tail.trimEnd('.', '!') !in setOf("cold", "a cold", "the cold") &&
             !Regex("^(?:a |an |the )?(?:long day|hard time|bad night|chance|choice|question|problem|to work|to leave)\\b").containsMatchIn(tail)
     }

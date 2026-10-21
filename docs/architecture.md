@@ -2,34 +2,52 @@
 
 ## Shared routing recognition
 
-Dedicated voice contextual edits (2026-10-19, in development): for an eligible
-live ordinary Chat draft, recognition uses a separate transient capture/request
-channel while preserving assistant request/operation/proposal and member edits.
-Only a matching current-session transcript can populate the editable preview;
-audio actions have no dispatch authority. Explicit Continue consumes the handoff
-and enters ordinary text submission with all current draft checks unchanged.
-Stop/lock/reset/disposal/newer work revoke the handoff; no request ID rewinding,
-history reconstruction, saved-record mutation or new speech dependency.
-Contextual audio uses transcript-only instructions with automatic tool calling
-disabled, with the English ASR task alongside the audio as Google recommends.
-After seven of eight phone attempts failed JSON envelope validation, contextual
-preview transport now requests bounded plain transcript text rather than JSON.
-Empty/control/structured output is rejected; no audio action is interpreted.
-Recognized words remain untrusted until member preview and explicit Continue
-through the guarded text route. Opt-in debug tracing records fixed stages/rejections
-only, never recognized words, model output, audio or exception text. Rejected
-output must be attributed only while the transcription remains current; a
-revoked or cancelled worker must not be reported as a recognition failure.
-The 2026-10-20 phone lock variant exposed generic Chat microphone still using
-history-conditioned audio intent with direct action dispatch. Replace that split:
-all ordinary Chat captures use history-free transcript-only preview and explicit
-Continue through normal text routing. Bind capture/generation/current request
-even when no eligible draft exists; draft editing adds its exact source proof.
-No generated audio action can dispatch. Stop/lock/new work revoke the proof and
-retain Chat history under its existing encrypted persistence contract. Dedicated
-Today entry remains separate. This extension is implemented and independently
-reviewed; 645-test/debug/release/vital-lint gate passes. No physical
-generic-voice/lifecycle pass is claimed.
+Meal confirmation context also admits bounded completed cooking/preparation
+reports such as "I have cooked rice". Admission retains only a one-turn original
+source; the native confirmation tool and existing request/history/session guards
+are still required before an unsaved proposal can be prepared. It does not infer
+consumption, select a direct draft route or save a record.
+
+Continuous activity (2026-10-21): ordinary Chat voice presentation is an inline
+slot in the existing timeline, sharing an activity surface with normal response,
+meal preparation and stopping. Presentation selects one activity at a time;
+capture/transcription/session authority is unchanged. Composer microphone is
+disabled during assistant work; Type instead cancels capture, reopens typing and
+focuses the keyboard. Native voice cancellation still shows Stopping after the
+capture card closes until the worker releases. Today entry stays separate.
+Research/design/physical gates: `design/chat-activity.md`.
+Post-cancellation repair (2026-10-21): result effects use one immutable voice
+isolation key as both Compose effect identity and guard. Clearing voice metadata
+must wake an otherwise unchanged pending tool/reply/failure/diagnostic. Accepted
+idle native text turns retire only completed voice metadata; active native voice
+workers still block new inference. Existing current-request and handled-once
+gates remain; fixed opt-in trace stages distinguish isolation from host handling.
+
+Approved automatic Chat voice submission (2026-10-20, implemented; phone gates pending):
+after bounded plain transcription completes and native inference releases, a
+current one-use capture/session/request proof authorizes one ordinary text turn.
+Eligible draft edits additionally consume the unchanged exact draft handoff.
+Recognition output is untrusted text, never an executable audio action; shared
+text tools, validation and explicit Review/Save remain authoritative. Stop/lock/
+disposal/new work revoke before submission. Replace ordinary preview/Continue,
+not proof validation. Latest-message Edit copies text to the composer for a new
+explicit turn; history cannot restore old tool authority or mutate a saved record.
+Edit itself never executes anything. A later explicit Send is a new command,
+not a replacement of or undo for the original turn.
+No new persistence representation, dependency, model or speech service.
+The existing typed direct-weight save is not authority to save an unchecked
+spoken value: spoken weight writes require explicit member confirmation first.
+
+All ordinary Chat recognition uses a separate transient request while preserving
+the assistant request/operation/proposal and member edits. History-free English
+ASR runs with transcript-only instructions beside audio and automatic tool
+calling disabled. Bounded plain words replace the unreliable JSON envelope;
+empty/control/structured output is rejected. Transcription has no tool authority.
+Opt-in tracing records fixed stages/rejections only, never recognized words,
+model output, audio or exception text. Revoked/cancelled workers cannot report
+recognition failure for a later capture. Dedicated Today entry stays separate.
+Research and earlier preview/Continue acceptance are retained chronologically in
+`assistant-companion-bundle.md` and `m4-assistant-checkpoints.md`.
 Explicit Stop may leave a separate one-use identity receipt for quiet Type instead
 exit in the unchanged unlocked session. It grants no Continue/submission/draft
 authority, expires on request/session/capture changes, and leaves native runtime

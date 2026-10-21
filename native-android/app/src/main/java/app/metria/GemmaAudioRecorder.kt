@@ -22,6 +22,7 @@ class GemmaAudioRecorder(private val context: Context) {
     private var clipFile: File? = null
     private var startedAt = 0L
     @Volatile private var recording = false
+    @Volatile private var speechEvidence: RecordingSpeechEvidence? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private companion object {
         const val voiceThreshold = 700
@@ -39,9 +40,12 @@ class GemmaAudioRecorder(private val context: Context) {
         val localRecorder = AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, sampleRate,
             AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, minimum * 2)
         check(localRecorder.state == AudioRecord.STATE_INITIALIZED) { "Microphone recording could not start." }
+        val localSpeechEvidence = RecordingSpeechEvidence(voiceThreshold)
+        val localStartedAt = android.os.SystemClock.elapsedRealtime()
         clipFile = file
         recorder = localRecorder
-        startedAt = android.os.SystemClock.elapsedRealtime()
+        speechEvidence = localSpeechEvidence
+        startedAt = localStartedAt
         recording = true
         writer = thread(name = "metria-local-voice") {
             FileOutputStream(file).use { output ->
@@ -49,7 +53,6 @@ class GemmaAudioRecorder(private val context: Context) {
                 val buffer = ByteArray(minimum)
                 localRecorder.startRecording()
                 var bytes = 0
-                var heardSpeech = false
                 var lastVoiceAt = 0L
                 var autoStopped = false
                 while (recording) {
@@ -58,8 +61,8 @@ class GemmaAudioRecorder(private val context: Context) {
                         output.write(buffer, 0, count); bytes += count
                         val peak = peakAmplitude(buffer, count)
                         val now = android.os.SystemClock.elapsedRealtime()
-                        if (peak >= voiceThreshold) { heardSpeech = true; lastVoiceAt = now }
-                        if (now - startedAt >= maximumRecordingMs || (heardSpeech && now - lastVoiceAt >= silenceStopMs)) {
+                        if (localSpeechEvidence.observePeak(peak)) lastVoiceAt = now
+                        if (now - localStartedAt >= maximumRecordingMs || (localSpeechEvidence.detectedSpeech && now - lastVoiceAt >= silenceStopMs)) {
                             recording = false
                             autoStopped = true
                         }
@@ -69,8 +72,10 @@ class GemmaAudioRecorder(private val context: Context) {
                 writeWavHeader(file, bytes)
                 if (autoStopped) {
                     localRecorder.release()
-                    recorder = null; writer = null; clipFile = null
-                    val clip = Clip(file, (android.os.SystemClock.elapsedRealtime() - startedAt).coerceAtLeast(0L), heardSpeech)
+                    if (speechEvidence === localSpeechEvidence) {
+                        recorder = null; writer = null; clipFile = null; speechEvidence = null
+                    }
+                    val clip = Clip(file, (android.os.SystemClock.elapsedRealtime() - localStartedAt).coerceAtLeast(0L), localSpeechEvidence.detectedSpeech)
                     mainHandler.post { onAutoStop(clip) }
                 }
             }
@@ -79,6 +84,7 @@ class GemmaAudioRecorder(private val context: Context) {
 
     fun stop(): Clip? {
         if (!recording) return null
+        val localSpeechEvidence = speechEvidence
         recording = false
         runCatching { recorder?.stop() }
         writer?.join(1_000)
@@ -86,7 +92,12 @@ class GemmaAudioRecorder(private val context: Context) {
         recorder = null; writer = null
         val file = clipFile ?: return null
         clipFile = null
-        return Clip(file, (android.os.SystemClock.elapsedRealtime() - startedAt).coerceAtLeast(0L), true)
+        if (speechEvidence === localSpeechEvidence) speechEvidence = null
+        return Clip(
+            file,
+            (android.os.SystemClock.elapsedRealtime() - startedAt).coerceAtLeast(0L),
+            localSpeechEvidence?.detectedSpeech == true,
+        )
     }
 
     fun cancel() { stop()?.file?.delete() }
