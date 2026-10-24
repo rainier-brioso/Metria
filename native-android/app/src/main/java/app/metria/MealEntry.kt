@@ -42,6 +42,8 @@ data class MealEntryItem(
     val groupLabel: String? = null,
     val description: String? = null,
     val role: String = "main_food",
+    /** Optional source-bound drink quantity; [grams] remains the nutrition input. */
+    val drinkPortion: DrinkPortion? = null,
 )
 
 /** Encrypted ranking hint; null provenance denotes a legacy hint that is retained but never ranked. */
@@ -129,7 +131,8 @@ object MealEntryValidation {
                     (item.description == null || item.description.length <= 280) &&
                     item.role in setOf("main_food", "side", "drink", "sauce_oil", "dry_seasoning") &&
                     ((item.catalogFoodId == null && item.catalogRelease == null) ||
-                        (item.catalogFoodId != null && !item.catalogRelease.isNullOrBlank()))
+                        (item.catalogFoodId != null && !item.catalogRelease.isNullOrBlank())) &&
+                    DrinkPortionPolicy.valid(item)
             } &&
             entry.assumptions.size <= 12 && entry.assumptions.all { it.length <= 280 } &&
             entry.confidence in setOf("low", "medium", "high") &&

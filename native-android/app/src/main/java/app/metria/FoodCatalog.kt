@@ -29,7 +29,11 @@ data class CatalogFood(
 
 data class CatalogNutrientDefinition(val name: String, val unit: String)
 
-data class CatalogPortion(val grams: Double, val label: String?)
+data class CatalogPortion(
+    val grams: Double,
+    val label: String?,
+    val volumeMilliliters: Double? = null,
+)
 
 data class CatalogNutrition(
     val caloriesKcal: Double?,
@@ -204,7 +208,10 @@ object FoodCatalog {
             val prepared = context.assets.open("usda-prepared-sr-2018-v1.json").bufferedReader(Charsets.UTF_8).use {
                 fromJson(it.readText())
             }
-            merge(foundation, prepared).also { cached = it }
+            val beverages = context.assets.open("usda-beverages-sr-2018-v1.json").bufferedReader(Charsets.UTF_8).use {
+                fromJson(it.readText())
+            }
+            merge(merge(foundation, prepared), beverages).also { cached = it }
         }
     }
 
@@ -399,9 +406,16 @@ object FoodCatalog {
                         CatalogPortion(
                             grams = row.getDouble("gram_weight"),
                             label = listOfNotNull(
-                                row.optDouble("amount").takeIf { !it.isNaN() }?.let { "%g".format(it) },
-                                row.optString("measure").takeIf(String::isNotBlank),
+                                row.optDouble("amount").takeIf { it.isFinite() }?.let {
+                                    java.math.BigDecimal.valueOf(it).stripTrailingZeros().toPlainString()
+                                },
+                                row.optString("measure").takeIf { it.isNotBlank() && it != "undetermined" },
+                                row.optString("modifier").takeIf { it.isNotBlank() && it != "null" &&
+                                    it != row.optString("measure") },
                             ).joinToString(" ").ifBlank { null },
+                            volumeMilliliters = if (row.has("volume_milliliters")) {
+                                row.getDouble("volume_milliliters").also { require(it.isFinite() && it > 0.0) }
+                            } else null,
                         )
                     )
                 }

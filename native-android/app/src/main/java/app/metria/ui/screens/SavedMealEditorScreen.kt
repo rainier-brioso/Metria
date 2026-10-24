@@ -1,5 +1,10 @@
 package app.metria.ui.screens
 
+import app.metria.DrinkPortion
+import app.metria.DrinkPortionCodec
+import app.metria.DrinkPortionPolicy
+import app.metria.ui.components.DrinkPortionEditor
+
 import android.graphics.BitmapFactory
 import android.util.Base64
 import androidx.compose.foundation.Image
@@ -77,11 +82,25 @@ private data class EditableSavedFood(
     val preparation: String,
     val groupLabel: String? = null,
     val role: String = "main_food",
+    val drinkPortion: DrinkPortion? = null,
+    val portionInput: String? = null,
 )
 
+private fun EditableSavedFood.resolvedDrink() = DrinkPortionPolicy.edited(drinkPortion, portionInput)
+private fun EditableSavedFood.validDrinkInput() = if (drinkPortion == null)
+    grams.isBlank() || grams.toIntOrNull()?.let { it in 1..2_000 } == true else resolvedDrink() != null
+
 private val EditableSavedFoodsSaver = listSaver<List<EditableSavedFood>, String>(
-    save = { foods -> foods.flatMap { listOf(it.name, it.description, it.grams, it.preparation, it.groupLabel.orEmpty(), it.role) } },
-    restore = { values -> values.chunked(6).filter { it.size == 6 }.map { EditableSavedFood(it[0], it[1], it[2], it[3], it[4].takeIf(String::isNotEmpty), it[5]) } },
+    save = { foods -> listOf("drink-v1") + foods.flatMap { listOf(it.name, it.description, it.grams, it.preparation, it.groupLabel.orEmpty(), it.role,
+        it.drinkPortion?.let(DrinkPortionCodec::encode)?.toString().orEmpty(), it.portionInput ?: "~") } },
+    restore = { values ->
+        val modern = values.firstOrNull() == "drink-v1"
+        (if (modern) values.drop(1) else values).chunked(if (modern) 8 else 6).filter { it.size == if (modern) 8 else 6 }.map {
+            EditableSavedFood(it[0], it[1], it[2], it[3], it[4].takeIf(String::isNotEmpty), it[5],
+                if (modern && it[6].isNotBlank()) DrinkPortionCodec.decode(org.json.JSONObject(it[6])) else null,
+                if (modern) it[7].takeUnless { text -> text == "~" } else null)
+        }
+    },
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -98,7 +117,10 @@ fun SavedMealEditorScreen(
     onSave: (MealEntry) -> String?,
     onDelete: () -> String?,
 ) {
-    var items by rememberSaveable(meal.id, stateSaver = EditableSavedFoodsSaver) { mutableStateOf(meal.items.map { EditableSavedFood(it.name, it.description.orEmpty(), it.grams?.toString().orEmpty(), it.preparation.orEmpty(), it.groupLabel, it.role) }) }
+    var items by rememberSaveable(meal.id, stateSaver = EditableSavedFoodsSaver) { mutableStateOf(meal.items.map {
+        EditableSavedFood(it.name, it.description.orEmpty(), it.grams?.toString().orEmpty(), it.preparation.orEmpty(), it.groupLabel, it.role,
+            it.drinkPortion?.let { portion -> DrinkPortionPolicy.forCatalog(portion, catalog) })
+    }) }
     var title by rememberSaveable(meal.id) { mutableStateOf(meal.title ?: MealIdentity.titleFor(meal.items)) }
     var date by rememberSaveable(meal.id) { mutableStateOf(meal.recordedAt.atZone(ZoneId.systemDefault()).toLocalDate().toString()) }
     val recordedTime = remember(meal) { meal.recordedAt.atZone(ZoneId.systemDefault()).toLocalTime().withSecond(0).withNano(0) }
@@ -142,7 +164,8 @@ fun SavedMealEditorScreen(
     val latestCorrectionStatus by rememberUpdatedState(foodNameCorrection)
     val latestCancelCorrection by rememberUpdatedState(onCancelFoodNameCorrection)
     val latestClearCorrection by rememberUpdatedState(onClearFoodNameCorrection)
-    val parsedCatalogGrams = items.map { it.grams.replace(',', '.').toIntOrNull()?.takeIf { grams -> grams in 1..2_000 } }
+    val parsedCatalogGrams = items.map { if (it.drinkPortion != null) it.resolvedDrink()?.let(DrinkPortionPolicy::canonicalGrams)
+        else it.grams.replace(',', '.').toIntOrNull()?.takeIf { grams -> grams in 1..2_000 } }
     val catalogValues = items.indices.map { index ->
         catalogMatches.getOrNull(index)?.let { food -> parsedCatalogGrams[index]?.let { FoodCatalog.calculate(food, it) } }
     }
@@ -180,7 +203,8 @@ fun SavedMealEditorScreen(
 
     fun editSnapshot() = listOf(title, date, mealSlot.orEmpty(), calories, protein, carbs, fat,
         removeReferenceThumbnail.toString(), calculateWithCatalog.toString()) +
-        items.flatMap { listOf(it.name, it.description, it.grams, it.preparation, it.groupLabel.orEmpty(), it.role) } + catalogMatchIds
+        items.flatMap { listOf(it.name, it.description, it.grams, it.preparation, it.groupLabel.orEmpty(), it.role,
+            it.drinkPortion?.let(DrinkPortionCodec::encode)?.toString().orEmpty(), it.portionInput.orEmpty()) } + catalogMatchIds
     val initialEditSnapshot by rememberSaveable(meal.id) { mutableStateOf(editSnapshot()) }
     val sheetState = rememberGuardedEditorSheetState(
         hasChanges = editSnapshot() != initialEditSnapshot,
@@ -243,12 +267,12 @@ fun SavedMealEditorScreen(
             }
             MealEntryItem(
                 item.name.trim(),
-                if (isCatalogMeal) parsedCatalogGrams[index] else item.grams.replace(',', '.').toIntOrNull(),
+                parsedCatalogGrams[index],
                 item.preparation.trim().takeIf(String::isNotEmpty),
                 catalogFoodId,
                 catalogFoodId?.let { catalog?.sourceRelease ?: original.catalogRelease ?: meal.nutrition?.catalogRelease },
                 item.groupLabel,
-                item.description.trim().takeIf(String::isNotEmpty), item.role,
+                item.description.trim().takeIf(String::isNotEmpty), item.role, item.resolvedDrink(),
             )
         }
         val rawNutrition = listOf(calories, protein, carbs, fat)
@@ -271,7 +295,7 @@ fun SavedMealEditorScreen(
             source = if (isCatalogMeal) "member_confirmed_catalog" else meal.source,
             nutrition = nutrition,
         ), referenceThumbnail)
-        if (invalidNutrition || updated == null || !MealEntryValidation.valid(updated)) {
+        if (items.any { !it.validDrinkInput() } || invalidNutrition || updated == null || !MealEntryValidation.valid(updated)) {
             error = "Choose at least one food and a valid portion, then review the date."
             return
         }
@@ -315,12 +339,21 @@ fun SavedMealEditorScreen(
             app.metria.ui.components.MealNutritionMetrics(displayed?.caloriesKcal, displayed?.proteinGrams, displayed?.carbohydrateGrams, displayed?.fatGrams)
             if (isCatalogMeal) app.metria.ui.components.MealPortionControl { factor ->
                 val scaled = app.metria.MealPortionScale.apply(items.map { it.grams }, factor)
-                if (scaled == null) false else {
-                    items = items.mapIndexed { index, item -> item.copy(grams = scaled[index]) }
+                val scaledDrinks = items.map { it.resolvedDrink()?.let { drink -> DrinkPortionPolicy.scale(drink, factor) } }
+                if (scaled == null || items.indices.any { items[it].drinkPortion != null && scaledDrinks[it] == null }) false else {
+                    items = items.mapIndexed { index, item ->
+                        val drink = scaledDrinks[index]
+                        item.copy(grams = drink?.let(DrinkPortionPolicy::canonicalGrams)?.toString() ?: scaled[index],
+                            drinkPortion = drink, portionInput = null)
+                    }
                     true
                 }
             }
             Text("Ingredients", style = MaterialTheme.typography.titleLarge)
+            if (meal.items.any { original -> original.drinkPortion?.let { DrinkPortionPolicy.forCatalog(it, catalog) == null } == true }) {
+                Text("A saved drink conversion is unavailable in this catalog. Its gram portion is shown; review the food and unit before saving.",
+                    style = MaterialTheme.typography.bodySmall, color = MetriaColors.InkMuted)
+            }
             }
             items.forEachIndexed { index, item ->
                 if (editingFoodIndex == null) {
@@ -331,7 +364,7 @@ fun SavedMealEditorScreen(
                     }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                         Column(Modifier.fillMaxWidth()) {
                             Text(item.name.ifBlank { "Unnamed food" }, style = MaterialTheme.typography.titleMedium)
-                            Text(listOfNotNull(item.grams.takeIf(String::isNotBlank)?.let { "$it g" }, item.preparation.takeIf(String::isNotBlank)).joinToString(" · ").ifBlank { "Portion needs review" })
+                            Text(listOfNotNull(item.resolvedDrink()?.let(DrinkPortionPolicy::format) ?: item.grams.takeIf(String::isNotBlank)?.let { "$it g" }, item.preparation.takeIf(String::isNotBlank)).joinToString(" · ").ifBlank { "Portion needs review" })
                             if (isCatalogMeal) catalogValues.getOrNull(index)?.caloriesKcal?.let { kcal ->
                                 Text("${java.text.NumberFormat.getNumberInstance().apply { maximumFractionDigits = 1 }.format(kcal)} kcal · estimate", style = MaterialTheme.typography.bodySmall)
                             }
@@ -339,7 +372,7 @@ fun SavedMealEditorScreen(
                     }
                 } else if (editingFoodIndex == index) {
                 OutlinedTextField(item.name, { value ->
-                    items = items.toMutableList().also { it[index] = item.copy(name = value) }
+                    items = items.toMutableList().also { it[index] = item.copy(name = value, drinkPortion = null, portionInput = null) }
                     catalogMatchIds = catalogMatchIds.toMutableList().also {
                         it[index] = SavedMealEditPolicy.catalogMatchAfterFoodNameEdit(item.name, value, it[index]).orEmpty()
                     }
@@ -372,7 +405,7 @@ fun SavedMealEditorScreen(
                             correctionRequestId = null
                         },
                         onApply = { replacement ->
-                            items = items.toMutableList().also { it[index] = it[index].copy(name = replacement) }
+                            items = items.toMutableList().also { it[index] = it[index].copy(name = replacement, drinkPortion = null, portionInput = null) }
                             catalogMatchIds = catalogMatchIds.toMutableList().also {
                                 it[index] = SavedMealEditPolicy.catalogMatchAfterFoodNameEdit(correctionOriginalName, replacement, it[index]).orEmpty()
                             }
@@ -395,9 +428,15 @@ fun SavedMealEditorScreen(
                     label = { Text("What Metria saw (optional)") },
                     modifier = Modifier.fillMaxWidth(),
                 )
-                OutlinedTextField(item.grams, { value -> items = items.toMutableList().also { it[index] = item.copy(grams = value) } }, label = { Text("Portion in grams") }, modifier = Modifier.fillMaxWidth())
+                if (item.role == "drink" || catalogMatches.getOrNull(index)?.let(DrinkPortionPolicy::isDrink) == true) {
+                    DrinkPortionEditor(item.grams, item.drinkPortion, item.portionInput, catalogMatches.getOrNull(index), catalog?.sourceRelease,
+                        onChange = { grams, drink, text ->
+                            items = items.toMutableList().also { it[index] = item.copy(grams = grams, drinkPortion = drink, portionInput = text, role = "drink") }
+                            if (drink != null) calculateWithCatalog = true
+                        })
+                } else OutlinedTextField(item.grams, { value -> items = items.toMutableList().also { it[index] = item.copy(grams = value, drinkPortion = null, portionInput = null) } }, label = { Text("Portion in grams") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(item.preparation, { value ->
-                    items = items.toMutableList().also { it[index] = item.copy(preparation = value) }
+                    items = items.toMutableList().also { it[index] = item.copy(preparation = value, drinkPortion = null, portionInput = null) }
                     if (item.preparation.trim() != value.trim()) catalogMatchIds = catalogMatchIds.toMutableList().also { it[index] = "" }
                 }, label = { Text("Preparation (optional)") }, modifier = Modifier.fillMaxWidth())
                 if (isCatalogMeal) {
@@ -480,7 +519,7 @@ fun SavedMealEditorScreen(
             } else {
                 Button(onClick = {
                     val item = items.getOrNull(editingFoodIndex ?: -1)
-                    if (item == null || item.name.isBlank() || (item.grams.isNotBlank() && item.grams.toIntOrNull()?.let { it in 1..2_000 } != true)) error = "Check the food name and portion in grams."
+                    if (item == null || !item.validDrinkInput() || item.name.isBlank() || (item.grams.isNotBlank() && item.grams.toIntOrNull()?.let { it in 1..2_000 } != true)) error = "Check the food name, amount and unit."
                     else closeFoodEditor(cancel = false)
                 }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Apply ingredient") }
                 TextButton(onClick = { closeFoodEditor(cancel = true) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Cancel ingredient changes") }
@@ -524,6 +563,7 @@ fun SavedMealEditorScreen(
         onDismiss = { catalogSearchIndex = null },
         onSelect = { food ->
             catalogMatchIds = catalogMatchIds.toMutableList().also { it[index] = food.fdcId.toString() }
+            items = items.toMutableList().also { it[index] = it[index].copy(drinkPortion = null, portionInput = null) }
             catalogSearchIndex = null
         },
     ) }
@@ -674,7 +714,7 @@ private fun SavedOfflineCatalogSearchSheet(catalog: OfflineFoodCatalog?, initial
                 Text("The local catalog could not be opened. You can still describe a meal or enter a label manually.", color = MetriaColors.Danger)
                 return@Column
             }
-            Text("${catalog.foods.size} foods available · USDA Foundation Foods", color = MetriaColors.InkMuted)
+            Text("${catalog.foods.size} foods available · USDA FoodData Central", color = MetriaColors.InkMuted)
             OutlinedTextField(query, { query = it }, label = { Text("Food name") }, placeholder = { Text("For example: rice or chicken") }, modifier = Modifier.fillMaxWidth())
             if (query.isNotBlank() && results.isEmpty()) {
                 Text("No matching food in this catalog.", style = MaterialTheme.typography.titleSmall)
@@ -689,7 +729,7 @@ private fun SavedOfflineCatalogSearchSheet(catalog: OfflineFoodCatalog?, initial
                         Text(FoodCatalog.memberDisplayName(food), style = MaterialTheme.typography.titleMedium)
                         if (FoodCatalog.memberDisplayName(food) != food.description) Text("USDA: ${food.description}", color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall)
                         food.category?.let { Text(it, color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall) }
-                        Text("USDA Foundation Foods · ${food.portions.firstOrNull()?.label ?: "100 g reference"}", color = MetriaColors.Primary, style = MaterialTheme.typography.labelSmall)
+                        Text("USDA FoodData Central · ${food.portions.firstOrNull()?.label ?: "100 g reference"}", color = MetriaColors.Primary, style = MaterialTheme.typography.labelSmall)
                     }
                 }
             }

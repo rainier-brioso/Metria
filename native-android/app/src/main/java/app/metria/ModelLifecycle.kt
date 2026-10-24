@@ -2274,6 +2274,20 @@ class ModelLifecycle(
                 if (engine !== loadedEngine || assistantRequestId != requestId) return
                 activeConversation = conversation
             }
+            NativeDrinkReportPolicy.description(
+                memberText,
+                noSavedDishMatch = suppressBareConsumptionProbe,
+                hasRequiredRead = requiredTool != null,
+                hasCurrentDraft = activePortionEditContext != null || activeFoodEditContext != null,
+                hasSelectedMeal = !selectedMealId.isNullOrBlank(),
+                hasPendingConfirmation = mealConfirmation != null,
+            )?.let { description ->
+                assistantTraceStore?.record("route_selected", "agent_turn", "accepted",
+                    reason = "host_drink_draft", requestId = requestId)
+                runNativeMealDraft(loadedEngine, conversation, description, requestId, startedAt,
+                    agentContinuation = true)
+                return
+            }
             val turnPrompt = NativeMealDraftPolicy.memberTurnMessage(memberText, mealConfirmation != null) +
                 activePortionEditContext?.let {
                     """
@@ -2703,7 +2717,7 @@ class ModelLifecycle(
             )
             val output = response.contents.contents.filterIsInstance<Content.Text>().joinToString("") { it.text }.trim()
             val outcome = NativeMealDraftPolicy.outcome(output, response.toolCalls.isNotEmpty())
-            val proposal = outcome.proposal
+            val proposal = outcome.proposal?.let { ExplicitMealSlotPolicy.attach(it, description) }
             synchronized(this) {
                 if (engine !== loadedEngine || assistantRequestId != requestId || privateAgentConversation !== draftLifetime.conversation) return
                 debugLatestModelResponse = output.take(16_000).takeIf { BuildConfig.DEBUG }
@@ -3255,7 +3269,7 @@ class ModelLifecycle(
                 debugLatestModelResponse = output.take(16_000).takeIf { BuildConfig.DEBUG }
                 state = "loaded"
                 val outcome = NativeMealDraftPolicy.outcome(output, response.toolCalls.isNotEmpty())
-                assistantProposal = outcome.proposal
+                assistantProposal = outcome.proposal?.let { ExplicitMealSlotPolicy.attach(it, memberText) }
                 debugLatestMealDraftCategory = outcome.category.takeIf { BuildConfig.DEBUG }
                 assistantDiagnostic = if (assistantProposal == null) {
                     "Couldn't prepare a meal draft. Try again or enter it manually."

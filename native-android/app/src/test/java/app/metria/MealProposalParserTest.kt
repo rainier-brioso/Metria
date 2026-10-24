@@ -278,4 +278,13 @@ class MealProposalParserTest {
 
         assertNull(proposal)
     }
+
+    @Test
+    fun rejectsHostOnlyMealSlotWhenItAppearsInModelJson() {
+        val proposal = MealProposalParser.parse(
+            """{"kind":"meal_proposal","items":[{"name":"Rice","visible_portion":"bowl","estimated_grams_range":{"min":100,"max":180},"preparation":"cooked","confidence":"medium"}],"assumptions":[],"questions":[],"overall_confidence":"medium","member_meal_slot":"dinner"}"""
+        )
+
+        assertNull(proposal)
+    }
 }

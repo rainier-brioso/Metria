@@ -19,7 +19,7 @@ class AssistantTraceStore(
         private const val maxEvents = 100
         private const val maxBytes = 64 * 1024L
         private const val retentionMillis = 24 * 60 * 60 * 1000L
-        private val allowedKinds = setOf("turn_started", "tool_required", "tool_continued", "reply_audited", "reply_fallback", "reply_rejected", "reply_delivery", "cancelled", "failed", "locked", "route_decision", "route_selected", "spell_check", "voice_transcription")
+        private val allowedKinds = setOf("turn_started", "tool_required", "tool_continued", "reply_audited", "reply_fallback", "reply_rejected", "reply_delivery", "cancelled", "failed", "locked", "route_decision", "route_selected", "spell_check", "voice_transcription", "meal_persisted")
         private val allowedOperations = setOf("agent_turn", "agent_tool_result", "coach", "coach_intent", "coach_audio", "meal", "voice_transcription", "unknown")
         private val allowedOutcomes = setOf("started", "accepted", "rejected", "cancelled", "failed", "waiting", "cleared")
         private val allowedReasons = setOf("none", "required_tool_missing", "unsupported_personal_fact", "reply_policy", "multiple_tools", "unsupported_tool", "timeout", "runtime_failure", "continuation_expired", "minilm_accepted", "today_overview", "goal_remaining", "saved_dish_recall", "saved_dish_draft", "navigation", "scope", "scope_text", "scope_selected", "scope_host", "scope_context", "similarity", "margin", "runtime", "inference", "interrupted", "native_gemma", "legacy_gemma", "host_reply", "accepted", "no_candidate", "unavailable", "disabled", "no_suggestions", "ambiguous") + setOf(
@@ -37,6 +37,8 @@ class AssistantTraceStore(
             "contextual_structured_output", "contextual_invalid_transcript", "contextual_runtime_exception",
             "legacy_voice_no_transcript",
             "voice_result_isolated", "host_tool_handler_entered",
+            "review_save", "direct_entry_save", "existing_meal_edit",
+            "host_drink_draft",
         )
         private val allowedTools = setOf("none", "read_progress_overview", "read_nutrition_summary", "read_day_nutrition", "read_weight", "read_meals", "read_latest_meal", "search_saved_dishes")
         private val allowedPeriods = setOf("none", "today", "yesterday", "week")
@@ -72,6 +74,11 @@ class AssistantTraceStore(
     }
 
     fun status(): Status = if (debugBuild) snapshot else Status(false, 0, 0)
+
+    /** Called only after a durable meal write; no payload or record identity is accepted. */
+    fun recordMealWrite(origin: MealWriteOrigin) {
+        record("meal_persisted", "meal", "accepted", origin.traceReason)
+    }
 
     fun setEnabled(value: Boolean) {
         if (!debugBuild) return

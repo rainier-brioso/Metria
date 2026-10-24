@@ -23,7 +23,10 @@ import javax.crypto.spec.GCMParameterSpec
  * vault data key. The data key exists only for the foreground session and is
  * cleared on lock; encrypted files never contain a plaintext reusable key.
  */
-class EncryptedVault(context: Context) {
+class EncryptedVault(
+    context: Context,
+    private val onMealPersisted: (MealWriteOrigin) -> Unit = {},
+) {
     enum class AssistantStyle(val storageValue: String, val title: String, val description: String) {
         BALANCED("balanced", "Balanced", "Warm and clear, with concise answers."),
         COACH("coach", "Coach", "Encouraging and reflective, with one gentle next step."),
@@ -423,7 +426,8 @@ class EncryptedVault(context: Context) {
                             .put("catalogRelease", item.catalogRelease)
                             .put("groupLabel", item.groupLabel)
                             .put("description", item.description)
-                            .put("role", item.role)) }
+                            .put("role", item.role)
+                            .put("drinkPortion", item.drinkPortion?.let(DrinkPortionCodec::encode))) }
                     })
                     .put("nutrition", meal.nutrition?.let { nutrition -> JSONObject()
                         .put("caloriesKcal", nutrition.caloriesKcal).put("proteinGrams", nutrition.proteinGrams)
@@ -456,6 +460,7 @@ class EncryptedVault(context: Context) {
                             put(JSONObject()
                                 .put("name", item.name).put("grams", item.grams)
                                 .put("preparation", item.preparation).put("catalogFoodId", item.catalogFoodId)
+                                .put("drinkPortion", item.drinkPortion?.let(DrinkPortionCodec::encode))
                                 .put("catalogRelease", item.catalogRelease).put("groupLabel", item.groupLabel)
                                 .put("description", item.description).put("role", item.role))
                         }
@@ -561,6 +566,7 @@ class EncryptedVault(context: Context) {
                             groupLabel = entry.optString("groupLabel").takeIf(String::isNotEmpty),
                             description = entry.optString("description").takeIf(String::isNotEmpty),
                             role = entry.optString("role", "main_food"),
+                            drinkPortion = DrinkPortionCodec.readItem(entry),
                         ) }
                     } }, nutrition = nutrition,
                     referenceThumbnailBase64 = item.optString("referenceThumbnail").takeIf(String::isNotEmpty),
@@ -613,6 +619,7 @@ class EncryptedVault(context: Context) {
                                 groupLabel = item.optString("groupLabel").takeIf(String::isNotEmpty),
                                 description = item.optString("description").takeIf(String::isNotEmpty),
                                 role = item.optString("role", "main_food"),
+                                drinkPortion = DrinkPortionCodec.readItem(item),
                             )
                         },
                     )
@@ -828,6 +835,8 @@ class EncryptedVault(context: Context) {
                 }
             }
             persist()
+            // Diagnostics must never change whether an already-persisted write succeeds.
+            runCatching { onMealPersisted(MealWriteOrigin.REVIEW) }
             unlockedStatus()
         } catch (error: Exception) {
             meals = previousMeals.toMutableList()
@@ -962,6 +971,7 @@ class EncryptedVault(context: Context) {
         meals.add(entry)
         return try {
             persist()
+            runCatching { onMealPersisted(MealWriteOrigin.DIRECT_ENTRY) }
             unlockedStatus()
         } catch (_: Exception) {
             meals.remove(entry)
@@ -991,6 +1001,7 @@ class EncryptedVault(context: Context) {
         }
         return try {
             persist()
+            runCatching { onMealPersisted(MealWriteOrigin.EDIT) }
             unlockedStatus()
         } catch (_: Exception) {
             meals[index] = previous

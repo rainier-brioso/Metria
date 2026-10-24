@@ -2,6 +2,32 @@
 
 ## Shared routing recognition
 
+Drink portions (approved 2026-10-22): meals keep their
+canonical integer gram mass for deterministic per-100-g catalog calculation. An
+optional encrypted item snapshot records the member's mL/serving amount, unit and
+food/release-bound mass conversion. Only measured portions from the selected food
+may supply a conversion; explicit source volume units may be converted with the
+documented unit standard. A bare cup label is not a density. Missing conversion
+cannot produce mL-based nutrition. Snapshot validation checks finite bounds,
+source identity and reproducibility of canonical grams, including recovery input.
+Absent legacy fields default to grams; saved dishes preserve the same metadata.
+Changing food or entering grams retires the previous conversion. UI state and
+explicit Review/Save remain authoritative; no new network/runtime dependency.
+
+Drink defaults derive from confirmed encrypted meals, not an additional profile.
+Host-only proposal permission excludes explicit current quantity/size; Review
+reuses only a single matching name/catalog food with unchanged source conversion.
+Saved-dish and current overrides take priority; a reused portion remains editable.
+Display rounding never becomes calculation authority until the member edits text.
+
+Explicit meal-type handoff (2026-10-21): validated native/text meal proposals may
+carry optional host-only metadata extracted from a unique literal type in their
+exact member description. Confirmation uses the retained original description,
+not "yes" or assistant prose. Model JSON schema stays closed and cannot supply
+this field. The metadata travels with the immutable proposal through food/gram
+edits, then prefills Review below a Today-selected section. Review edits and the
+existing explicit Save remain authoritative; vault representation is unchanged.
+
 Meal confirmation context also admits bounded completed cooking/preparation
 reports such as "I have cooked rice". Admission retains only a one-turn original
 source; the native confirmation tool and existing request/history/session guards

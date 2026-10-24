@@ -4563,6 +4563,147 @@ target-phone interaction recheck pending.
   dinner-label implementation is included in this approved baseline. Commit/push
   it first, then investigate/fix the separate metadata handoff with review/gates.
 
+### Explicit Chat meal-type handoff - 2026-10-21
+
+- Approved 661-test voice baseline committed/pushed to main as `5919898`; working
+  tree was clean after push. Member separately reports `I had rice, beand and
+  chicken breast for dinner` produces correct foods, but Dinner is absent on the
+  saved meal until manually changed. No private record inspection was needed.
+- Source map: Review initial type receives only Today pendingMealSlot; Chat's
+  validated food proposal carries no literal member type. Add optional host-only
+  proposal metadata from the exact description, not model output or clock. Keep
+  strict model schema, Today section priority, member-editable Review and final
+  Save. Native confirmation must use its retained original meal description.
+  Implementation/review/build/install and phone acceptance pending. No approval
+  yet to commit/push this separate follow-up.
+- Implementation attaches host-only memberMealSlot after strict parsing in native
+  and direct text generation, using the exact source (including retained meal
+  confirmation). Review resolves valid Today section first, otherwise host type;
+  both initial state and exit snapshot agree. Existing member edits/clear and Save
+  are unchanged. Pure tests cover the reported typo sentence, absent/conflicting/
+  negated/long-negated text, stale metadata reset, retained proposal copies, valid
+  Today precedence and rejection of model-injected host fields. Narrow unsupported
+  or mixed phrasing abstains, including breakfast-food/type ambiguity.
+- Independent scoped review and final re-review found no material defect. Full
+  gate passes 669 tests, zero failures/errors/skips, debug/release assembly, release
+  vital lint and clean diff check. Debug APK SHA-256:
+  `10d519f8eadc223f94764d6a502269bc1c072ebc1cec40ebc0c33214c1ec24dc`.
+  No source changes after gate. Authorized in-place install underway on Samsung;
+  explicit Dinner prefill/portion edit/member type change phone checks pending.
+  No record Save, raw capture, new dependency or commit/push for this follow-up.
+- Verified meal-type APK installed with install-r (`Success`) and cold-launched
+  (`Status: ok`) on Samsung SM-S928B / Android 16, preserving private storage.
+  Member unlock and exact Dinner Review retry requested; physical acceptance is
+  pending. Check portion edits retain the type and an explicit member type change
+  stays selected; Discard afterward to avoid recording a duplicate test meal.
+
+### Drink quantity units - 2026-10-22
+
+- Member explicitly requests mL and serving sizes for drinks with correct nutrition
+  conversions after asking about a coffee draft. Scope/decision and test matrix:
+  `drink-portions.md`. Review and saved-meal editing should preserve chosen units
+  in encrypted meal/saved-dish/recovery metadata, while canonical grams continue
+  to drive deterministic calculation. No assumed water density or automatic Save.
+- Catalog inspection finds measured cup masses for some milk/juice references,
+  but no packaged coffee and no volume retained by the adapter. Acquire only
+  official USDA brewed coffee/espresso references with explicit volume wording;
+  preserve original data and source conversion provenance. Core, public data and
+  UI work delegated with disjoint files. Existing 669-test meal-type work remains
+  uncommitted and must be preserved. Review/full gate/install/phone acceptance
+  pending; no new dependency, private-data capture or commit/push performed.
+
+- Drink implementation complete. Optional encrypted quantity metadata is bounded
+  and tied to the selected source food; deterministic nutrition still uses grams.
+  Shared Review/saved-meal controls offer source-backed mL and measured servings.
+  Rebinding permits a new catalog release only with the same conversion basis;
+  unsupported old sources retain grams with a warning. Scaling rejects an invalid
+  selected-unit result rather than silently dropping the unit. Reviewer found no
+  remaining blocker after these fixes. Full gate passes 682 tests (zero failures,
+  errors or skips), debug/release builds and release vital lint; importer tests
+  pass 3/3 and diff check passes. Debug APK SHA-256:
+  `f6f55204921f959e1ff38f60031aadcb34939b3ab9a9c7ab62a67821936dd592`.
+  ADB lists no phone, so this APK is not installed. All new physical unit, saved
+  persistence/recovery, keyboard/accessibility and source-upgrade gates remain
+  pending. Chat/voice mL corrections are outside this Review/editor slice. No
+  private capture, record Save, commit or push performed.
+
+- Wireless pairing and discovered debugging connection succeeded. The verified
+  682-test drink APK installed in place (`Success`) and launched cold (`Status:
+  ok`) on Samsung SM-S928B / Android 16. No data clear/uninstall, biometric
+  automation, private capture or record Save occurred. Member coffee-unit Review
+  acceptance requested; no new physical interaction pass claimed yet.
+
+- Member confirms coffee appeared in records without Save after a Chat food
+  report. Discovery finds no automatic assistant write path, so cause remains
+  unresolved. Added opt-in debug-only fixed-origin events after successful vault
+  insert/edit persistence, without payloads/IDs/amounts; observer failures cannot
+  affect saving. Independent review finds no blocker. All 684 tests, both builds,
+  release vital lint and diff check pass. Diagnostic debug APK SHA-256:
+  `2a1a101a083d02e3b96349eba3d84d4fd0849ac3f92f4d1e6cd20ce81fd7fb3b`.
+  Phone disconnected and reconnection refused; diagnostic APK not installed.
+  No existing record altered, no automatic-save UX approved by this diagnostic
+  change, no cause or physical gate claimed. Next: reconnect/install, repeat the
+  exact coffee message without Save, inspect only fixed write/routing metadata.
+
+- Member sets aside the apparent auto-save report as possibly mistaken; no further
+  reproduction requested. The 684-test build installed in place and launched cold
+  on the same Samsung. Member then requests learning drink unit/portion for future
+  drinks and reports long cup decimals. Discovery confirms active Review and
+  saved editor persist the snapshot; reuse for new proposals was absent. Added
+  source-bound same-name/food defaults derived from existing confirmed meals,
+  host permission only for unspecified single-drink text, visible reuse note and
+  override precedence. Saved dishes/photo/manual/mixed foods retain own values.
+  Concise approximate display retains exact canonical mass until actual editing.
+  Review caught colloquial explicit quantities (couple/pair); guard/tests fixed,
+  re-review has no blockers. One missing import and an incorrect test expectation
+  for an exact tiny decimal were fixed before the final gate. Final gate and
+  physical saved/new-coffee round trip still pending; no auto-save behavior added.
+
+- Final remembered-drink gate passes 691 tests (zero failures/errors/skips),
+  debug/release assembly, release vital lint and diff check. Frozen APK SHA-256:
+  `981341e8d6327c49b19705480575f11c429855d9070e636adefb5f9e1a6b27c7`.
+  Installed in place (`Success`) and cold-launched (`Status: ok`) on Samsung
+  SM-S928B / Android 16 with storage preserved. Member existing-coffee Save/reopen,
+  new single-coffee default and concise serving display acceptance pending.
+  Broader mixed-drink learning, voice mL edits, physical recovery/catalog-upgrade,
+  rotation/font/TalkBack and keyboard gates remain open. No auto-save/record write
+  by automation, private capture, commit or push.
+
+- Exact coffee retry on the 691-test build produced no draft. Safe trace confirms
+  MiniLM saved-dish probing then no-match fallback and conversational Gemma reply.
+  Added closed literal drink-consumption no-match route into the existing unsaved
+  structured task; read/edit/selected/confirmation scopes retain priority. Member
+  confirms exact text "I had a coffee for breakfast"; it is covered. Unknown and
+  ask-first wording stays normal. Independent review finds no lifecycle blocker.
+  All 694 tests, both builds, release vital lint and diff check pass. Debug SHA-256:
+  `21a248d16cf89bd73951159d83551fce53209b163e9916f333e86569cbc4e60a`.
+  Installed in place (`Success`), cold-launched (`Status: ok`) on the same Samsung;
+  exact draft/portion phone retry pending. No auto-save, private capture or commit.
+
+- Member confirms exact "I had a coffee for breakfast" retry works, including the
+  requested saved-unit/portion Review check. Safe trace confirms accepted MiniLM
+  saved-dish probe, no-match continuation, guarded `host_drink_draft`, lifecycle
+  ready and Chat consumed. No portion/private text read; quantity acceptance is
+  member-observed. Named no-draft regression passes on the 694-test installed APK.
+  Explicit override/ask-first and wider recovery/accessibility gates remain open;
+  no new general routing, automatic Save, commit or push acceptance is inferred.
+
+- Member confirms active coffee draft explicit "150 g" correction overrides the
+  remembered portion in Review. Safe retained metadata shows `portion_applied`.
+  This named override gate passes on the 694-test build; no private quantity read
+  or generalized mL/serving Chat-parser acceptance inferred. Next: ask-first/
+  decline regression, then review this uncommitted checkpoint and retain gaps.
+
+- Member confirms the focused coffee ask-first/No-thanks regression works on the
+  installed 694-test Samsung build: asks first, clearly acknowledges decline and
+  leaves no draft. Member-observed acceptance; no additional private capture.
+  Named coffee/default/gram-override/decline checks pass. Wider saved-record,
+  readable-cup, recovery and accessibility gates remain open in drink-portions.md.
+  Documentation-only acceptance update; no commit/push approval yet.
+
+- On 2026-10-24 the member explicitly approved committing and pushing the reviewed
+  drink checkpoint. Named checks pass; wider physical gates remain documented.
+
 ### Continuous in-Chat activity - 2026-10-21
 
 - Member requested research/unification of the voice loading popup and Chat

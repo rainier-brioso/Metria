@@ -2,6 +2,7 @@ package app.metria
 
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.Locale
 
 data class GramRange(val min: Int, val max: Int)
 
@@ -26,7 +27,49 @@ data class MealProposal(
     val overallConfidence: String,
     val omittedItemCount: Int = 0,
     val partialCategory: MealProposalOmissionCategory? = null,
+    /** Explicit meal-time wording from the member, never parsed from model output. */
+    val memberMealSlot: String? = null,
+    /** Host permits a saved drink default only when the source text specifies no quantity. */
+    val memberDrinkDefaultsAllowed: Boolean = false,
 )
+
+/** Attaches only a uniquely and explicitly named meal slot from member-authored text. */
+object ExplicitMealSlotPolicy {
+    private val slotMentions = Regex("\\b(breakfast|lunch|dinner|snacks?)\\b", RegexOption.IGNORE_CASE)
+    private val explicitFrames = listOf(
+        Regex("\\bfor\\s+(?:a\\s+)?(breakfast|lunch|dinner|snacks?)\\b", RegexOption.IGNORE_CASE),
+        Regex("\\bas\\s+(?:a\\s+)?(breakfast|lunch|dinner|snacks?)\\b", RegexOption.IGNORE_CASE),
+    )
+    private val negationBefore = Regex(
+        "\\b(?:not|no|never|without|did\\s+not|didn't|do\\s+not|don't|instead\\s+of|rather\\s+than)\\b[^.!?;]*$",
+        RegexOption.IGNORE_CASE,
+    )
+
+    fun explicitSlot(memberText: String): String? {
+        if (memberText.length !in 1..600) return null
+        val mentions = slotMentions.findAll(memberText).toList()
+        if (mentions.size != 1) return null
+        val mention = mentions.single()
+        val frames = explicitFrames.mapNotNull { frame -> frame.findAll(memberText).singleOrNull() }
+        if (frames.size != 1) return null
+        val frame = frames.single()
+        if (frame.groups[1]?.range != mention.range) return null
+        val beforeFrame = memberText.substring(0, frame.range.first)
+        val clauseStart = beforeFrame.indexOfLast { it in ".!?;" } + 1
+        val preceding = beforeFrame.substring(clauseStart)
+        if (negationBefore.containsMatchIn(preceding)) return null
+        return frame.groups[1]?.value?.lowercase(Locale.ROOT)?.removeSuffix("s")
+    }
+
+    fun attach(proposal: MealProposal, memberText: String): MealProposal =
+        proposal.copy(memberMealSlot = explicitSlot(memberText),
+            memberDrinkDefaultsAllowed = DrinkDefaultsPolicy.allowsDefault(memberText))
+
+    /** A valid explicit Today section wins; otherwise use the member's wording. */
+    fun initialReviewSlot(todayMealSlot: String?, memberMealSlot: String?): String? =
+        todayMealSlot?.takeIf { it in MealSlots.allowed }
+            ?: memberMealSlot?.takeIf { it in MealSlots.allowed }
+}
 
 /** Closed, non-sensitive reasons a usable proposal omitted one or more foods. */
 enum class MealProposalOmissionCategory(val auditCode: String) {

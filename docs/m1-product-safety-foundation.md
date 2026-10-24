@@ -14,6 +14,24 @@ revised first.
 
 ## Data boundary
 
+**Drink quantity decision - 2026-10-22:** member approved mL and measured serving
+entry with correct nutrition conversions. Preserve the chosen amount/unit and
+validated source conversion in the existing encrypted meal item and saved-dish
+payload, including recovery. Canonical gram mass remains the nutrition input;
+rounding is deterministic and bounded rather than clamped. Only the selected
+food's measured serving mass and explicitly known volume can establish a factor.
+Never assume all liquids have water's density. Missing evidence leaves the
+conversion unavailable; changing food/name invalidates prior conversion authority.
+The model cannot supply this authority. Review and Save remain member actions;
+legacy gram-only records retain their meaning. Physical acceptance is separate.
+
+Drink-default extension (2026-10-22): member requests reuse of confirmed drink
+units and usual quantities. Derive an editable default only from existing saved
+matching drink records with valid source-bound conversion. Explicit current
+quantities/size, photos/manual and saved-dish/portion overrides take priority;
+discarded drafts cannot teach a default. Show reuse briefly in Review and retain
+explicit Save. Display rounding must not silently change calculated nutrition.
+
 **Chat correction revision - 2026-10-15:** member approved combining multiple
 spelling corrections and contextual abbreviations for natural Chat. Up to three
 candidate words may be checked individually with the selected Android service

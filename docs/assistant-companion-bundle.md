@@ -1,5 +1,24 @@
 # Local assistant companion bundle — 2026-10-12
 
+## Explicit meal-type handoff - 2026-10-21
+
+After the voice checkpoint was approved and pushed as `5919898`, the member
+reported that a correct multi-food draft from "I had rice, beand and chicken
+breast for dinner" lost Dinner on the saved meal. General Chat Review only
+received Today's pending section, not a type from its original description.
+
+Attach an optional host-only memberMealSlot to the validated proposal using a
+bounded explicit English frame (for/as breakfast, lunch, dinner or snack). Missing,
+negated or multiple meal-type mentions abstain. This is deliberately conservative:
+unqualified "dinner", "at dinner", or mixed food/type wording may remain unset.
+The source is the exact native/text description; confirmation uses the original
+report rather than "yes". Strict model JSON cannot provide this metadata. The
+immutable proposal carries it through food/portion edits without new persisted
+draft state or a changed vault schema. Review prefers a valid Today selection,
+otherwise prefills the host type; existing member edits/clearing and Save remain
+authoritative. Implementation and independent review complete; 669 tests, both
+builds, release vital lint and diff check pass. Exact phone acceptance pending.
+
 ## Silent recording admission - 2026-10-21
 
 Two member silence tests with background sound produced automatically sent words.

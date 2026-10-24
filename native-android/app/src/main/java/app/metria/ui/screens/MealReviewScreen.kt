@@ -86,6 +86,12 @@ import app.metria.CatalogNutrition
 import app.metria.ChatPortionOverride
 import app.metria.FoodCatalog
 import app.metria.FoodCorrection
+import app.metria.ExplicitMealSlotPolicy
+import app.metria.DrinkPortion
+import app.metria.DrinkDefaultsPolicy
+import app.metria.DrinkPortionCodec
+import app.metria.DrinkPortionPolicy
+import app.metria.ui.components.DrinkPortionEditor
 import app.metria.GramRange
 import app.metria.MealEntry
 import app.metria.MealEntryItem
@@ -130,21 +136,31 @@ internal data class MealReviewItemDraft(
     val preparation: String,
     val role: String,
     val evidence: String,
+    val drinkPortion: DrinkPortion? = null,
+    val portionInput: String? = null,
 )
+
+internal fun MealReviewItemDraft.resolvedDrink() = DrinkPortionPolicy.edited(drinkPortion, portionInput)
+internal fun MealReviewItemDraft.validDrinkInput() = if (drinkPortion == null)
+    grams.isBlank() || grams.toIntOrNull()?.let { it in 1..2_000 } == true else resolvedDrink() != null
 
 private val MealReviewItemsSaver = listSaver<List<MealReviewItemDraft>, String>(
     save = { items ->
-        items.flatMap { item ->
+        listOf("drink-v1") + items.flatMap { item ->
             listOf(
                 item.id, item.dishId, item.dishName, item.name, item.description,
                 item.grams, item.preparation, item.role, item.evidence,
+                item.drinkPortion?.let(DrinkPortionCodec::encode)?.toString().orEmpty(), item.portionInput ?: "~",
             )
         }
     },
     restore = { saved ->
-        saved.chunked(9).mapNotNull { values ->
-            values.takeIf { it.size == 9 }?.let {
-                MealReviewItemDraft(it[0], it[1], it[2], it[3], it[4], it[5], it[6], it[7], it[8])
+        val modern = saved.firstOrNull() == "drink-v1"
+        (if (modern) saved.drop(1) else saved).chunked(if (modern) 11 else 9).mapNotNull { values ->
+            values.takeIf { it.size == if (modern) 11 else 9 }?.let {
+                MealReviewItemDraft(it[0], it[1], it[2], it[3], it[4], it[5], it[6], it[7], it[8],
+                    if (modern && it[9].isNotBlank()) DrinkPortionCodec.decode(org.json.JSONObject(it[9])) else null,
+                    if (modern) it[10].takeUnless { text -> text == "~" } else null)
             }
         }
     },
@@ -320,11 +336,30 @@ internal fun savedDishInitialDrafts(
             name = item.name,
             description = item.description.orEmpty(),
             grams = item.grams?.toString().orEmpty(),
+            drinkPortion = item.drinkPortion,
             preparation = item.preparation.orEmpty(),
             role = item.role,
             evidence = "seen",
         )
     }
+}
+
+internal fun initialDraftsWithDrinkDefaults(
+    drafts: List<MealReviewItemDraft>,
+    proposal: MealProposal,
+    catalog: OfflineFoodCatalog?,
+    corrections: List<FoodCorrection>,
+    savedMeals: List<MealEntry>,
+    hasExplicitOverride: Boolean,
+): List<MealReviewItemDraft> {
+    if (!proposal.memberDrinkDefaultsAllowed || hasExplicitOverride || catalog == null ||
+        drafts.size != 1 || proposal.items.size != 1) return drafts
+    val draft = drafts.single()
+    if (draft.evidence != "seen" || draft.drinkPortion != null || FoodCatalog.isAmbiguousModelFood(draft.name)) return drafts
+    val food = FoodCatalog.suggest(catalog, draft.name, draft.description, corrections) ?: return drafts
+    val portion = DrinkDefaultsPolicy.previousPortion(draft.name, food, catalog, savedMeals) ?: return drafts
+    val grams = DrinkPortionPolicy.canonicalGrams(portion) ?: return drafts
+    return listOf(draft.copy(grams = grams.toString(), role = "drink", drinkPortion = portion, portionInput = null))
 }
 
 private fun correctionSnapshot(
@@ -366,6 +401,8 @@ private fun reviewExitState(
             preparation = item.preparation,
             role = item.role,
             evidence = item.evidence,
+            drinkPortion = item.drinkPortion?.let(DrinkPortionCodec::encode)?.toString().orEmpty(),
+            portionInput = item.portionInput.orEmpty(),
         )
     },
     matchIds = matchIds,
@@ -420,6 +457,7 @@ private fun applyPersonalDishSuggestion(
                 name = savedItem.name,
                 description = savedItem.description.orEmpty(),
                 grams = savedItem.grams?.toString().orEmpty(),
+                drinkPortion = savedItem.drinkPortion?.let { DrinkPortionPolicy.forCatalog(it, catalog) },
                 preparation = savedItem.preparation.orEmpty(),
                 role = savedItem.role,
                 evidence = "possible_inside",
@@ -438,11 +476,16 @@ private fun applyPersonalDishSuggestion(
             PersonalDishMatcher.identityKey(candidate.name) == PersonalDishMatcher.identityKey(item.name)
         }
         if (savedItem != null) usedSavedItems += savedItemIdentity(savedItem)
-        (currentFoodId ?: savedItem?.catalogFoodId)?.let { updatedMatches[item.id] = it }
+        val nextFoodId = currentFoodId ?: savedItem?.catalogFoodId
+        nextFoodId?.let { updatedMatches[item.id] = it }
+        val retainedDrink = item.drinkPortion?.takeIf { it.catalogFoodId == nextFoodId }
+            ?.let { DrinkPortionPolicy.forCatalog(it, catalog) }
         item.copy(
             dishName = saved.name,
             description = item.description.ifBlank { savedItem?.description.orEmpty() },
             preparation = item.preparation.ifBlank { savedItem?.preparation.orEmpty() },
+            drinkPortion = retainedDrink,
+            portionInput = item.portionInput.takeIf { retainedDrink != null },
         )
     }.toMutableList()
 
@@ -456,6 +499,7 @@ private fun applyPersonalDishSuggestion(
             name = savedItem.name,
             description = savedItem.description.orEmpty(),
             grams = savedItem.grams?.toString().orEmpty(),
+            drinkPortion = savedItem.drinkPortion?.let { DrinkPortionPolicy.forCatalog(it, catalog) },
             preparation = savedItem.preparation.orEmpty(),
             role = savedItem.role,
             evidence = "possible_inside",
@@ -507,17 +551,23 @@ fun MetriaMealReviewSheet(
     onDismiss: () -> Unit,
     onSave: (MealEntry, List<FoodCorrection>, List<PersonalDish>, MealCorrectionMemory?) -> String?,
 ) {
-    val draftKey = 31 * (31 * proposal.items.hashCode() + (initialSavedDishPrefill?.hashCode() ?: 0)) +
-        (initialPortionOverride?.hashCode() ?: 0) + (initialFoodReplacementOverride?.hashCode() ?: 0)
+    val resolvedInitialMealSlot = ExplicitMealSlotPolicy.initialReviewSlot(initialMealSlot, proposal.memberMealSlot)
+    val draftKey = 31 * (31 * (31 * (31 * proposal.items.hashCode() + (initialSavedDishPrefill?.hashCode() ?: 0)) +
+        (initialPortionOverride?.hashCode() ?: 0) + (initialFoodReplacementOverride?.hashCode() ?: 0)) +
+        (resolvedInitialMealSlot?.hashCode() ?: 0)) + proposal.memberDrinkDefaultsAllowed.hashCode()
     val proposalItems = remember(proposal, catalog, initialSavedDishPrefill) {
         if (initialSavedDishPrefill == null) reviewProposalItems(proposal, catalog) else emptyList()
     }
     // Keep the baseline IDs across configuration recreation; otherwise every
     // restored item would look removed and re-added to the learning diff.
     val initialItems = rememberSaveable(draftKey, saver = MealReviewItemsSaver) {
-        initialSavedDishPrefill?.let(::savedDishInitialDrafts)
-            ?: initialDraftsWithFoodReplacement(
-                proposalItems, proposal, initialFoodReplacementOverride, initialPortionOverride,
+        initialSavedDishPrefill?.let { savedDishInitialDrafts(it).map { draft ->
+            draft.copy(drinkPortion = draft.drinkPortion?.let { portion -> DrinkPortionPolicy.forCatalog(portion, catalog) })
+        } }
+            ?: initialDraftsWithDrinkDefaults(
+                initialDraftsWithFoodReplacement(proposalItems, proposal, initialFoodReplacementOverride, initialPortionOverride),
+                proposal, catalog, corrections, savedMeals,
+                hasExplicitOverride = manualEntry || initialPortionOverride != null || initialFoodReplacementOverride != null,
             )
     }
     var items by rememberSaveable(draftKey, stateSaver = MealReviewItemsSaver) {
@@ -530,7 +580,8 @@ fun MetriaMealReviewSheet(
             ) null else {
                 val savedItem = initialSavedDishPrefill?.items?.getOrNull(index)
                 val savedId = savedItem?.catalogFoodId?.takeIf {
-                    savedItem.catalogRelease != null && savedItem.catalogRelease == catalog?.sourceRelease
+                    savedItem.catalogRelease != null && (savedItem.catalogRelease == catalog?.sourceRelease ||
+                        item.drinkPortion?.catalogFoodId == savedItem.catalogFoodId && item.drinkPortion?.catalogRelease == catalog?.sourceRelease)
                 }
                 val foodId = savedId?.takeIf { id -> catalog?.foods?.any { it.fdcId == id } == true }
                     ?: catalog?.let { FoodCatalog.suggest(it, item.name, item.description, corrections)?.fdcId }
@@ -564,11 +615,14 @@ fun MetriaMealReviewSheet(
     var acceptedDishIds by rememberSaveable(draftKey, stateSaver = StringMapSaver) {
         mutableStateOf(emptyMap())
     }
-    var mealSlot by rememberSaveable(draftKey) { mutableStateOf(initialMealSlot?.takeIf { it in MealSlots.allowed }) }
+    var mealSlot by rememberSaveable(draftKey) { mutableStateOf(resolvedInitialMealSlot) }
     var keepReference by rememberSaveable(draftKey) { mutableStateOf(referenceThumbnailBase64 != null) }
     var detailsExpanded by rememberSaveable(draftKey) { mutableStateOf(false) }
     var editingDishId by rememberSaveable(draftKey) { mutableStateOf<String?>(null) }
-    var error by rememberSaveable(draftKey) { mutableStateOf<String?>(null) }
+    var error by rememberSaveable(draftKey) { mutableStateOf<String?>(
+        if (initialSavedDishPrefill?.items?.any { saved -> saved.drinkPortion?.let { DrinkPortionPolicy.forCatalog(it, catalog) == null } == true } == true)
+            "The saved drink unit is unavailable here. Review its gram portion or choose a unit again." else null
+    ) }
     var showLeaveConfirmation by rememberSaveable(draftKey) { mutableStateOf(false) }
 
     val initialExitState by rememberSaveable(draftKey, initialRecordedDate, stateSaver = MealReviewDraftStateSaver) {
@@ -579,7 +633,7 @@ fun MetriaMealReviewSheet(
                 includedPossibleIds = emptySet(),
                 title = initialTitle,
                 date = initialDate,
-                mealSlot = initialMealSlot?.takeIf { it in MealSlots.allowed },
+                mealSlot = resolvedInitialMealSlot,
                 keepReference = referenceThumbnailBase64 != null,
                 dishMemoryChoices = emptyMap(),
                 acceptedDishIds = emptyMap(),
@@ -601,7 +655,9 @@ fun MetriaMealReviewSheet(
 
     val foodsById = remember(catalog) { catalog?.foods?.associateBy(CatalogFood::fdcId).orEmpty() }
     val catalogMatches = items.associate { item -> item.id to matchIds[item.id]?.let(foodsById::get) }
-    val parsedGrams = items.associate { item -> item.id to item.grams.replace(',', '.').toIntOrNull()?.takeIf { it in 1..2_000 } }
+    val parsedGrams = items.associate { item -> item.id to if (item.drinkPortion != null) {
+        item.resolvedDrink()?.let(DrinkPortionPolicy::canonicalGrams)
+    } else item.grams.replace(',', '.').toIntOrNull()?.takeIf { it in 1..2_000 } }
     val perItemNutrition = items.associate { item ->
         item.id to catalogMatches[item.id]?.let { food -> parsedGrams[item.id]?.let { FoodCatalog.calculate(food, it) } }
     }
@@ -767,6 +823,9 @@ fun MetriaMealReviewSheet(
                 MealReview(
                 proposal = proposal,
                 manualEntry = manualEntry,
+                usingPreviousDrinkPortion = initialSavedDishPrefill == null && proposal.memberDrinkDefaultsAllowed &&
+                    initialItems.size == 1 && initialItems.single().drinkPortion != null &&
+                    items.singleOrNull()?.resolvedDrink() == initialItems.single().resolvedDrink(),
                 items = items,
                 title = title,
                 onTitleChange = {
@@ -783,8 +842,13 @@ fun MetriaMealReviewSheet(
                 totals = totals,
                 onScalePortions = { factor ->
                     val scaled = app.metria.MealPortionScale.apply(items.map { it.grams }, factor)
-                    if (scaled == null) false else {
-                        items = items.mapIndexed { index, item -> item.copy(grams = scaled[index]) }
+                    val scaledDrinks = items.map { it.resolvedDrink()?.let { drink -> DrinkPortionPolicy.scale(drink, factor) } }
+                    if (scaled == null || items.indices.any { items[it].drinkPortion != null && scaledDrinks[it] == null }) false else {
+                        items = items.mapIndexed { index, item ->
+                            val drink = scaledDrinks[index]
+                            item.copy(grams = drink?.let(DrinkPortionPolicy::canonicalGrams)?.toString() ?: scaled[index],
+                                drinkPortion = drink, portionInput = null)
+                        }
                         includedPossibleIds = emptySet()
                         error = null
                         true
@@ -849,11 +913,12 @@ fun MetriaMealReviewSheet(
                             name = item.name.trim(),
                             grams = parsedGrams[item.id],
                             preparation = item.preparation.trim().takeIf(String::isNotEmpty),
-                            catalogFoodId = catalogMatches[item.id]?.fdcId.takeIf { item.id in includedIds },
-                            catalogRelease = catalog?.sourceRelease?.takeIf { item.id in includedIds },
+                            catalogFoodId = catalogMatches[item.id]?.fdcId.takeIf { item.id in includedIds || item.resolvedDrink() != null },
+                            catalogRelease = catalog?.sourceRelease?.takeIf { item.id in includedIds || item.resolvedDrink() != null },
                             groupLabel = item.dishName.trim().takeIf(String::isNotEmpty),
                             description = item.description.trim().takeIf(String::isNotEmpty),
                             role = item.role,
+                            drinkPortion = item.resolvedDrink(),
                         )
                     }
                     val nutrition = totals?.let {
@@ -897,7 +962,9 @@ fun MetriaMealReviewSheet(
                             )
                         }
                     }.orEmpty()
-                    if (meal == null || !MealEntryValidation.valid(meal)) {
+                    if (items.any { !it.validDrinkInput() }) {
+                        error = "Review the drink amount and its unit before saving."
+                    } else if (meal == null || !MealEntryValidation.valid(meal)) {
                         error = "Review each food name, portion and the meal date before saving."
                     } else if (personalDishes.size != selectedDishGroups.size) {
                         error = "Review the name and foods in each dish you want Metria to remember."
@@ -925,6 +992,7 @@ fun MetriaMealReviewSheet(
 private fun MealReview(
     proposal: MealProposal,
     manualEntry: Boolean,
+    usingPreviousDrinkPortion: Boolean,
     items: List<MealReviewItemDraft>,
     title: String,
     onTitleChange: (String) -> Unit,
@@ -972,6 +1040,12 @@ private fun MealReview(
                     dishCount = items.dishGroups().size,
                     manualEntry = manualEntry,
                 )
+            }
+            if (usingPreviousDrinkPortion) {
+                item {
+                    Text("Using your last saved drink portion. Edit it if this one is different.",
+                        style = MaterialTheme.typography.bodySmall, color = MetriaColors.InkMuted)
+                }
             }
             if (!manualEntry && proposal.omittedItemCount > 0) {
                 item {
@@ -1284,7 +1358,8 @@ private fun DishReviewCard(
             }
             HorizontalDivider(color = MetriaColors.Divider)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(grams?.let { "About $it g" } ?: "Portion needs review", color = MetriaColors.InkMuted)
+                Text(dish.items.singleOrNull()?.resolvedDrink()?.let(DrinkPortionPolicy::format)
+                    ?: grams?.let { "About $it g" } ?: "Portion needs review", color = MetriaColors.InkMuted)
                 Text(
                     when {
                         needsReviewCount > 0 -> "$needsReviewCount to review"
@@ -1498,6 +1573,7 @@ private fun DishEditor(
                             item = item,
                             expanded = expandedItemId == item.id,
                             catalogFood = localMatchIds[item.id]?.let(foodsById::get),
+                            catalogRelease = catalog?.sourceRelease,
                             includedPossible = item.id in localIncludedPossible,
                             canRemove = localItems.size > 1 || canRemoveLastComponent,
                             otherDishes = otherDishes,
@@ -1566,7 +1642,7 @@ private fun DishEditor(
                                 onCancel = { correctionRequestId?.let(onCancelFoodNameCorrection) },
                                 onApply = { name ->
                                     localItems = localItems.map { current ->
-                                        if (current.id == item.id) current.copy(name = name) else current
+                                        if (current.id == item.id) current.copy(name = name, drinkPortion = null, portionInput = null) else current
                                     }
                                     localMatchIds = localMatchIds - item.id
                                     correctionText = ""
@@ -1629,6 +1705,8 @@ private fun DishEditor(
                             onApply(emptyList(), emptyMap(), emptySet(), false)
                         } else if (localItems.isEmpty() && movedItems.isEmpty()) {
                             editorError = "Keep at least one food in this meal."
+                        } else if (localItems.any { !it.validDrinkInput() }) {
+                            editorError = "Review the drink amount and its unit before applying changes."
                         } else if (localItems.isNotEmpty() && (localDishName.trim().isEmpty() || localItems.any { it.name.trim().isEmpty() })) {
                             editorError = "Give the dish and each food a short name before continuing."
                         } else {
@@ -1657,6 +1735,7 @@ private fun DishEditor(
             onDismiss = { catalogSearchItemId = null },
             onSelect = { food ->
                 localMatchIds = localMatchIds + (itemId to food.fdcId)
+                localItems = localItems.map { if (it.id == itemId) it.copy(drinkPortion = null, portionInput = null) else it }
                 catalogSearchItemId = null
             },
         )
@@ -1718,6 +1797,7 @@ private fun ComponentEditorCard(
     item: MealReviewItemDraft,
     expanded: Boolean,
     catalogFood: CatalogFood?,
+    catalogRelease: String?,
     includedPossible: Boolean,
     canRemove: Boolean,
     otherDishes: List<DishGroup>,
@@ -1752,7 +1832,7 @@ private fun ComponentEditorCard(
                     Text(item.name.ifBlank { "Unnamed food" }, style = MaterialTheme.typography.titleSmall)
                     Text(
                         listOfNotNull(
-                            item.grams.toIntOrNull()?.let { "$it g" },
+                            item.resolvedDrink()?.let(DrinkPortionPolicy::format) ?: item.grams.toIntOrNull()?.let { "$it g" },
                             if (item.evidence == "seen") "Seen" else "May be inside",
                             catalogFood?.let { "Food selected" } ?: "Needs food match",
                         ).joinToString(" · "),
@@ -1767,15 +1847,21 @@ private fun ComponentEditorCard(
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     OutlinedTextField(
                         value = item.name,
-                        onValueChange = { onChange(item.copy(name = it)) },
+                        onValueChange = { onChange(item.copy(name = it, drinkPortion = null, portionInput = null)) },
                         label = { Text("Food") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
+                    if (item.role == "drink" || catalogFood?.let(DrinkPortionPolicy::isDrink) == true) {
+                        DrinkPortionEditor(item.grams, item.drinkPortion, item.portionInput, catalogFood,
+                            catalogRelease = catalogRelease,
+                            onChange = { grams, drink, text -> onChange(item.copy(grams = grams,
+                                drinkPortion = drink, portionInput = text, role = "drink")) })
+                    }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        OutlinedTextField(
+                        if (item.role != "drink" && catalogFood?.let(DrinkPortionPolicy::isDrink) != true) OutlinedTextField(
                             value = item.grams,
-                            onValueChange = { onChange(item.copy(grams = it.filter { char -> char.isDigit() })) },
+                            onValueChange = { onChange(item.copy(grams = it.filter { char -> char.isDigit() }, drinkPortion = null, portionInput = null)) },
                             label = { Text("Portion") },
                             suffix = { Text("g") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -1828,7 +1914,7 @@ private fun ComponentEditorCard(
                         ).forEach { (role, label) ->
                             FilterChip(
                                 selected = item.role == role,
-                                onClick = { onChange(item.copy(role = role)) },
+                                onClick = { onChange(item.copy(role = role, drinkPortion = null, portionInput = null)) },
                                 label = { Text(label) },
                             )
                         }

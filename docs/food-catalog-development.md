@@ -42,6 +42,44 @@ the bounded SR supplement; no SR food is attributed to Foundation. Existing food
 IDs/values and previously saved releases are unchanged. New reviewed saves use
 the bundle release; duplicate IDs reject rather than replace a source silently.
 
+## Bounded coffee beverage supplement — 2026-10-22
+
+The offline catalog now includes two official USDA SR Legacy beverage references:
+
+- [171890: brewed coffee prepared with tap water](https://fdc.nal.usda.gov/food-details/171890/nutrients)
+- [171891: restaurant-prepared brewed espresso](https://fdc.nal.usda.gov/food-details/171891/nutrients)
+
+The source identifies SR Legacy records published April 1, 2019 from the final
+April 2018 dataset, under CC0 1.0. Each normalized food retains the USDA source
+ID, description, available nutrients, source portions, gram weights, and its
+food-details URL. The 171890 portion labels include `cup (8 fl oz)`, `fl oz`,
+and `6 fl oz`; 171891 supplies `fl oz`. The normalized asset preserves those
+original modifiers and gram weights.
+
+For portions whose modifier explicitly states a U.S. fluid-ounce quantity, the
+asset adds `volume_milliliters` using NIST's published U.S. fluid-ounce conversion
+factor (29.57353 mL per fl oz). The cup entry receives a metric volume because
+its USDA modifier explicitly says `8 fl oz`; the importer does not assume a
+generic cup or mug volume. USDA's portion gram weight remains authoritative for
+the corresponding nutrition calculation. A source lacking an explicit fluid
+ounce modifier receives no inferred volume or density. See the [NIST conversion
+table](https://www.nist.gov/pml/special-publication-811/nist-guide-si-appendix-b-conversion-factors/nist-guide-si-appendix-b9).
+
+The importer verifies exact IDs, descriptions, SR Legacy data type, available
+energy and macro nutrient identities, and non-empty source portions. It uses no
+runtime API or API key. Raw public JSON stays in ignored `data/usda/raw/`.
+Reproduce the normalized asset with:
+
+```powershell
+python tools/food_catalog/import_beverage_foods.py `
+  --input-dir data/usda/raw `
+  --output native-android/app/src/main/assets/usda-beverages-sr-2018-v1.json
+```
+
+The bundle release becomes `2026-04-30+sr-2018-v1+beverages-sr-2018-v1` when
+merged. Existing Foundation/prepared IDs and values remain unchanged; duplicate
+food IDs still reject rather than silently replacing a source.
+
 The complete April 2026 releases are intentionally retained in a developer's
 local `data/usda/raw/` directory while M3 is being designed:
 

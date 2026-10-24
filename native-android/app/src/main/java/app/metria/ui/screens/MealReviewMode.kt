@@ -12,6 +12,8 @@ internal data class MealReviewItemState(
     val preparation: String,
     val role: String,
     val evidence: String,
+    val drinkPortion: String = "",
+    val portionInput: String = "",
 )
 
 /** Values that can affect the meal eventually written by the review flow. */
@@ -33,10 +35,10 @@ internal object MealReviewExitPolicy {
 
     /** A primitive-only list lets Compose restore the baseline after rotation. */
     fun saveableFields(state: MealReviewDraftState): List<String> = buildList {
-        add("1")
+        add("2")
         add(state.items.size.toString())
         state.items.forEach { item ->
-            addAll(listOf(item.id, item.dishId, item.dishName, item.name, item.description, item.grams, item.preparation, item.role, item.evidence))
+            addAll(listOf(item.id, item.dishId, item.dishName, item.name, item.description, item.grams, item.preparation, item.role, item.evidence, item.drinkPortion, item.portionInput))
         }
         add(state.matchIds.size.toString())
         state.matchIds.forEach { (id, foodId) -> add(id); add(foodId.toString()) }
@@ -56,9 +58,11 @@ internal object MealReviewExitPolicy {
         var index = 0
         fun next(): String = fields[index++]
         fun count(): Int = next().toInt().also { require(it >= 0) }
-        require(next() == "1")
+        val version = next()
+        require(version in setOf("1", "2"))
         val items = List(count()) {
-            MealReviewItemState(next(), next(), next(), next(), next(), next(), next(), next(), next())
+            val item = MealReviewItemState(next(), next(), next(), next(), next(), next(), next(), next(), next())
+            if (version == "2") item.copy(drinkPortion = next(), portionInput = next()) else item
         }
         val matches = buildMap { repeat(count()) { put(next(), next().toLong()) } }
         val included = buildSet { repeat(count()) { add(next()) } }

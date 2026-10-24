@@ -68,7 +68,7 @@ class MainActivity : FragmentActivity() {
         assistantTraceStore = AssistantTraceStore(noBackupFilesDir, BuildConfig.DEBUG)
         debugImageCaptureStore = DebugImageCaptureStore(noBackupFilesDir, BuildConfig.DEBUG)
         modelLifecycle = ModelLifecycle(applicationContext, filesDir, cacheDir, assistantTraceStore, debugImageCaptureStore)
-        vault = EncryptedVault(applicationContext)
+        vault = EncryptedVault(applicationContext, assistantTraceStore::recordMealWrite)
         modelLifecycle.setAnalysisAuditSink { audit ->
             runOnUiThread {
                 // Audit metadata is retained only in the already-unlocked local vault.

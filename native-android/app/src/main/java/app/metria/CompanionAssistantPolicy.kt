@@ -15,6 +15,7 @@ object CompanionAssistantPolicy {
         val catalogFoodId: Long?,
         val catalogRelease: String?,
         val role: String,
+        val drinkPortion: DrinkPortion? = null,
     )
 
     data class SavedDishMealPrefill(
@@ -316,6 +317,7 @@ object CompanionAssistantPolicy {
                 catalogFoodId = item.catalogFoodId,
                 catalogRelease = item.catalogRelease,
                 role = item.role,
+                drinkPortion = item.drinkPortion,
             ) },
         )
     }

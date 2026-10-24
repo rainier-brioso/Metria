@@ -1,5 +1,12 @@
 # Metria screen contracts
 
+Drink Review (2026-10-22): identify a reused saved portion with one concise note;
+keep Edit and explicit Save authoritative. Quantity controls show readable mL or
+servings, label rounded conversions as approximate, and retain exact mass until
+text entry establishes a new quantity. No extra preference screen or popup.
+Saved-meal reopening retains the stored amount/unit; new defaults do not rewrite
+existing records. Acceptance: `../drink-portions.md`.
+
 Chat correction revision (2026-10-15): preserve the original message and existing
 Chat hierarchy while validating up to three corrections/abbreviations together.
 Distinct valid meanings show a concise host clarification in the ordinary reply
@@ -192,6 +199,23 @@ The chosen section/date reaches both meal and label review. Back returns to Toda
 and discards temporary capture; label Stop invalidates any pending OCR output.
 
 ## Meal review
+
+**Drink quantity controls - 2026-10-22:** keep the existing food/dish editor as
+the focused entry surface. For drinks, show a readable amount and selected unit,
+with grams, available mL and measured serving choices progressively disclosed.
+Serving labels identify their defined size, never a guessed household cup. Show
+the conversion basis concisely when needed; no unsupported nutrition calculation.
+Reuse the same controls in the saved-meal editor. Invalid amount/conversion is
+visible and blocks Apply/Save; Cancel restores prior amount/unit. Selection and
+errors have text/semantics, targets are at least 48 dp, controls wrap and remain
+reachable with keyboard/font scaling. Unit changes alone do not save records.
+
+**Explicit Chat meal type - 2026-10-21:** preselect an unambiguous meal type stated
+in the original description, such as "for dinner", when no explicit Today section
+was supplied. This is host-owned draft metadata, not a model food-schema field or
+time-of-day guess. Use the existing editable meal-type controls; member changes
+and clearing remain authoritative. The initial exit snapshot includes this prefill,
+so untouched preselection alone is not reported as an unsaved member edit.
 
 **Automatic photo review - 2026-10-11:** after the member explicitly starts
 Create meal draft, a validated matching photo result opens review automatically

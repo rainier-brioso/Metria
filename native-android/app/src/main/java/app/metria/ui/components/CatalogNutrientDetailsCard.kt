@@ -35,7 +35,7 @@ fun CatalogNutrientDetailsCard(values: List<CatalogNutrientAmount>, release: Str
                     .clickable(role = Role.Button) { expanded = !expanded },
             )
             if (expanded) {
-                Text("USDA Foundation Foods${release?.let { " · $it" }.orEmpty()} · selected foods and portions",
+                Text("USDA FoodData Central${release?.let { " · $it" }.orEmpty()} · selected foods and portions",
                     style = MaterialTheme.typography.bodySmall)
                 if (values.isEmpty()) Text("No additional nutrient values are available for the selected foods.")
                 values.forEach { nutrient ->

@@ -1,6 +1,65 @@
 # Metria product plan
 
+## Active drink portions - 2026-10-22
+
+Active follow-up: member requests remembered drink unit/portion and readable cup
+decimals. Implement derived same-drink defaults from confirmed saved meals only,
+with host permission for unspecified single-drink text and visible editable reuse.
+Preserve explicit quantities and source conversion, no new preference payload.
+Shortened approximate display keeps exact mass until actual text entry. Review,
+all 691 tests, both builds, release vital lint and diff check pass. Saved/new-coffee
+phone checks pending; `drink-portions.md`.
+
+691-test phone check stopped before Review: a coffee report received only
+conversational prose. Trace confirms saved-dish no-match handoff then Gemma reply.
+Guarded plain-drink no-match routing now invokes the existing unsaved structured
+draft task. Review, all 694 tests, both builds, release vital lint and diff check
+pass; installed in place and cold-launched on Samsung. Member confirms exact
+coffee draft and saved-portion Review retry works; safe trace confirms guarded
+host drink drafting. Member also confirms an explicit 150 g correction wins over
+the remembered portion; safe metadata shows portion_applied. Member confirms the
+focused coffee ask-first/No-thanks regression also works: asks before drafting,
+acknowledges decline and leaves no draft. Broader physical gates remain open.
+No auto-save authority added.
+
+Member explicitly approved committing and pushing this reviewed checkpoint on
+2026-10-24. Named coffee checks pass; broader physical gates remain documented.
+
+Latest follow-up: member reports a coffee record created from Chat without Save.
+Code discovery finds only explicit-save insertion paths; do not dismiss the
+observation or claim an auto-save feature. Added content-free post-persistence
+insert/edit diagnostics. Independent review, all 684 tests, both builds and
+release vital lint pass. Member withdrew the report as possibly mistaken and
+asks to move on; no reproduction or cause is claimed. The 684-test APK is now
+installed in place and cold-launched; resume drink serving/unit acceptance. See
+`drink-portions.md` for artifact identity and evidence limits.
+
+Member approved mL and measured serving sizes for drinks with correct nutrition.
+Implement source-backed conversion alongside the existing canonical gram mass;
+persist the chosen amount/unit and its catalog conversion in reviewed meals and
+saved dishes, with backward-compatible encrypted/recovery reading. No generic
+1 mL = 1 g, no clock/model-derived density and no automatic Save. Missing reliable
+volume data retains grams/measured servings and a clear unavailable explanation.
+Review and saved-meal editing share the controls; source changes invalidate old
+conversion authority. Add bounded official USDA coffee/espresso data to make the
+reported coffee case usable, with reproducible importer and source attribution.
+Existing uncommitted 669-test meal-type fix is preserved. Implementation and
+independent review are complete: all 682 Android tests, debug/release builds,
+release vital lint, three beverage-importer tests and diff checks pass. The new
+APK is installed in place and cold-launched on Samsung SM-S928B / Android 16.
+Physical unit/edit/persistence/accessibility acceptance remains pending; see
+`drink-portions.md`.
+
 ## Current checkpoint - 2026-10-21
+
+Approved voice checkpoint is committed and pushed to main as `5919898`.
+Active follow-up: preserve an explicit Chat meal type (e.g. "for dinner") into
+Review/save. Member reported correct foods/portions but missing Dinner. Carry a
+host-parsed unambiguous type on the validated proposal, preserve Today priority
+and editable Review, and keep model/vault schemas unchanged. Implementation and
+independent review complete; all 669 tests, debug/release builds, release vital
+lint and diff check pass. In-place update/cold launch succeeded; phone retry pending. This
+separate fix is not yet commit-approved.
 
 Automatic Chat speech, pencil Edit, continuous inline activity, post-cancellation
 typed delivery, cooking-report confirmation and manual-stop silence admission are

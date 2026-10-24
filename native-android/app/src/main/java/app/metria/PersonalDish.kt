@@ -27,7 +27,7 @@ object PersonalDishValidation {
         runCatching { UUID.fromString(dish.id) }.isSuccess &&
             dish.name.trim().length in 1..120 &&
             dish.aliases.size <= 8 && dish.aliases.all { it.trim().length in 1..80 } &&
-            dish.items.isNotEmpty() && dish.items.size <= 12 &&
+            dish.items.isNotEmpty() && dish.items.size <= 12 && dish.items.all(DrinkPortionPolicy::valid) &&
             dish.confirmationCount in 1..10_000 &&
             dish.referenceThumbnailBase64?.length?.let { it in 1..180_000 } != false
 

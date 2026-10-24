@@ -8,6 +8,37 @@ import org.junit.Test
 
 class AssistantTraceStoreTest {
     @Test
+    fun `durable meal events retain only fixed origins without record data`() {
+        val root = Files.createTempDirectory("trace-test").toFile()
+        AssistantTraceStore(root, true, { 1_000L }).use { trace ->
+            trace.recordMealWrite(MealWriteOrigin.REVIEW)
+            trace.flush()
+            assertEquals(0, trace.status().eventCount)
+            trace.setEnabled(true)
+            MealWriteOrigin.entries.forEach(trace::recordMealWrite)
+            trace.flush()
+            val rows = root.resolve(AssistantTraceStore.relativePath).readLines().map { it.split('\t') }
+            assertEquals(MealWriteOrigin.entries.map { it.traceReason }, rows.map { it[4] })
+            assertTrue(rows.all {
+                it.size == 8 && it[1] == "meal_persisted" && it[2] == "meal" &&
+                    it[3] == "accepted" && it.drop(5) == listOf("none", "none", "none")
+            })
+        }
+    }
+
+    @Test
+    fun `meal persistence diagnostics are disabled in release builds`() {
+        val root = Files.createTempDirectory("trace-test").toFile()
+        AssistantTraceStore(root, false, { 1_000L }).use { trace ->
+            trace.setEnabled(true)
+            MealWriteOrigin.entries.forEach(trace::recordMealWrite)
+            trace.flush()
+            assertFalse(root.resolve(AssistantTraceStore.relativePath).exists())
+            assertFalse(trace.status().enabled)
+        }
+    }
+
+    @Test
     fun `draft edit and confirmation outcomes retain only deduplicated fixed reasons across restart`() {
         val root = Files.createTempDirectory("trace-test").toFile()
         AssistantTraceStore(root, true, { 1_000L }).use { trace ->

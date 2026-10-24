@@ -1,5 +1,12 @@
 # Metria primary UX flows
 
+Drink defaults (2026-10-22): an unspecified single-drink text draft can start with
+the last confirmed same-drink unit and portion, with a brief editable-default note.
+Explicit current quantities, saved dishes, photo/manual and mixed meals take
+priority. Learn only from saved records, never discarded drafts. Unit conversion
+shows concise approximate amounts while preserving exact nutrition mass until
+the member edits. Detail and physical gates: `../drink-portions.md`.
+
 Approved shared read typo tolerance (2026-10-13) preserves the original Chat
 message while a transient candidate may select an existing validated read.
 Ambiguous requests keep normal handling. Loading, Stop, error feedback,
@@ -14,6 +21,23 @@ late failure from an obsolete turn. Pending failures remain transient until a
 current turn is terminal.
 
 These flows define member intent and state transitions. They do not prescribe a specific composable hierarchy.
+
+**Drink portions - 2026-10-22:** in the focused drink editor, choose grams, mL
+when the selected food has a reliable conversion, or a source-defined serving.
+Switching units preserves the current portion; editing its amount updates the
+deterministic estimate. Missing conversion explains the available grams/food-match
+path. Invalid amounts stay editable and cannot silently save an earlier amount.
+Changing food retires its prior conversion. Apply/Cancel, keyboard restoration
+and unsaved-change handling include amount/unit. Save retains that choice for
+History, subsequent editing, saved dishes and recovery. Existing explicit Save
+and review of uncertain food/portion estimates remain required.
+
+**Explicit Chat meal type - 2026-10-21:** when the member's meal description
+unambiguously states a type such as "for dinner", carry that literal choice into
+the unsaved meal Review. The chosen Today meal section takes priority when present.
+Absent, conflicting or negated descriptions leave the type unset. The member can
+change or clear it in Review; only Save records it. Food/portion corrections keep
+the source draft's type, without deriving a type from the clock or model output.
 
 **Approved phase calories — 2026-10-08:** see
 [phase calorie contract](phase-energy-contract-proposal.md). Lose/Gain daily-reference
