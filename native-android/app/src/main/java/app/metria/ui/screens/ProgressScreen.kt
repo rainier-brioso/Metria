@@ -2,8 +2,11 @@ package app.metria.ui.screens
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -14,13 +17,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Timeline
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Scale
 import androidx.compose.material3.Card
@@ -32,13 +38,15 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -48,11 +56,12 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.withFrameNanos
 import app.metria.MealEntry
 import app.metria.GoalPhase
 import app.metria.MealIdentity
-import app.metria.MealNutritionSummaries
 import app.metria.MealSlots
 import app.metria.NutritionTargets
 import app.metria.WeightEntry
@@ -65,10 +74,11 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
+import java.time.temporal.ChronoUnit
 import java.util.Locale
 import kotlin.math.abs
 
-/** Approved Progress A: one seven-day view, one dominant metric, and in-place day inspection. */
+/** Local, read-only progress views over member-recorded weight and meal data. */
 enum class ProgressMetric(val label: String, val unit: String) {
     Weight("Weight", "kg"),
     Calories("Calories", "kcal"),
@@ -88,6 +98,22 @@ data class ProgressDay(
 data class WeightHistoryGroup(val date: LocalDate, val entries: List<WeightEntry>)
 data class MealHistoryGroup(val date: LocalDate, val meals: List<MealEntry>)
 
+enum class ProgressRange(val label: String) {
+    Week("7 days"), Month("1 month"), Quarter("3 months"), Year("1 year");
+
+    fun start(endDate: LocalDate): LocalDate = when (this) {
+        Week -> endDate.minusDays(6)
+        Month -> endDate.minusMonths(1).plusDays(1)
+        Quarter -> endDate.minusMonths(3).plusDays(1)
+        Year -> endDate.minusYears(1).plusDays(1)
+    }
+
+    companion object {
+        fun defaultFor(metric: ProgressMetric): ProgressRange =
+            if (metric == ProgressMetric.Weight) Quarter else Week
+    }
+}
+
 object ProgressHistory {
     fun weightGroups(entries: List<WeightEntry>, zoneId: ZoneId = ZoneId.systemDefault()): List<WeightHistoryGroup> =
         entries.groupBy { it.recordedAt.atZone(zoneId).toLocalDate() }
@@ -101,28 +127,54 @@ object ProgressHistory {
 }
 
 object ProgressTimeline {
+    fun range(
+        entries: List<WeightEntry>,
+        meals: List<MealEntry>,
+        range: ProgressRange,
+        endDate: LocalDate = LocalDate.now(),
+        zoneId: ZoneId = ZoneId.systemDefault(),
+    ): List<ProgressDay> {
+        val weightByDate = entries.groupBy { it.recordedAt.atZone(zoneId).toLocalDate() }
+            .mapValues { (_, dayWeights) -> dayWeights.sortedByDescending(WeightEntry::recordedAt) }
+        val mealsByDate = meals.groupBy { it.recordedAt.atZone(zoneId).toLocalDate() }
+            .mapValues { (_, dayMeals) -> dayMeals.sortedByDescending(MealEntry::recordedAt) }
+        val startDate = range.start(endDate)
+        return (0L..ChronoUnit.DAYS.between(startDate, endDate)).map { offset ->
+            val date = startDate.plusDays(offset)
+            buildDay(date, weightByDate[date].orEmpty(), mealsByDate[date].orEmpty())
+        }
+    }
+
     fun sevenDays(
         entries: List<WeightEntry>,
         meals: List<MealEntry>,
         endDate: LocalDate = LocalDate.now(),
         zoneId: ZoneId = ZoneId.systemDefault(),
-    ): List<ProgressDay> = (6 downTo 0).map { offset ->
-        val date = endDate.minusDays(offset.toLong())
-        val dayWeights = entries.filter { it.recordedAt.atZone(zoneId).toLocalDate() == date }
-            .sortedByDescending(WeightEntry::recordedAt)
-        val dayMeals = meals.filter { it.recordedAt.atZone(zoneId).toLocalDate() == date }
-            .sortedByDescending(MealEntry::recordedAt)
-        val summary = MealNutritionSummaries.between(dayMeals, date, date)
-        val includedNutritionCount = summary.completeNutritionMeals + summary.partialNutritionMeals
-        ProgressDay(
+    ): List<ProgressDay> = range(entries, meals, ProgressRange.Week, endDate, zoneId)
+
+    private fun buildDay(date: LocalDate, dayWeights: List<WeightEntry>, dayMeals: List<MealEntry>): ProgressDay {
+        val completeNutrition = dayMeals.mapNotNull(MealEntry::nutrition).filter {
+            it.estimateCoverage == "full" && it.caloriesKcal != null && it.proteinGrams != null &&
+                it.carbohydrateGrams != null && it.fatGrams != null
+        }
+        val partialNutrition = dayMeals.mapNotNull(MealEntry::nutrition).filter {
+            it.estimateCoverage == "partial" && it.caloriesKcal != null && it.proteinGrams != null &&
+                it.carbohydrateGrams != null && it.fatGrams != null
+        }
+        val includedNutritionCount = completeNutrition.size + partialNutrition.size
+        val completeCalories = completeNutrition.takeIf { it.isNotEmpty() }?.sumOf { it.caloriesKcal!! }
+        val partialCalories = partialNutrition.takeIf { it.isNotEmpty() }?.sumOf { it.caloriesKcal!! }
+        val completeProtein = completeNutrition.takeIf { it.isNotEmpty() }?.sumOf { it.proteinGrams!! }
+        val partialProtein = partialNutrition.takeIf { it.isNotEmpty() }?.sumOf { it.proteinGrams!! }
+        return ProgressDay(
             date = date,
             weightEntries = dayWeights,
             meals = dayMeals,
             latestWeightKilograms = dayWeights.firstOrNull()?.kilograms,
-            caloriesKcal = sumOrNull(summary.caloriesKcal, summary.partialCaloriesKcal),
-            proteinGrams = sumOrNull(summary.proteinGrams, summary.partialProteinGrams),
-            nutritionIsPartial = (dayMeals.isNotEmpty() && includedNutritionCount < summary.recordedMeals) ||
-                summary.partialNutritionMeals > 0,
+            caloriesKcal = sumOrNull(completeCalories, partialCalories),
+            proteinGrams = sumOrNull(completeProtein, partialProtein),
+            nutritionIsPartial = (dayMeals.isNotEmpty() && includedNutritionCount < dayMeals.size) ||
+                partialNutrition.isNotEmpty(),
         )
     }
 
@@ -140,19 +192,45 @@ fun MetriaProgressScreen(
     onEditMeal: (MealEntry) -> Unit,
     onEditNutritionTargets: () -> Unit,
     goalPhase: GoalPhase?,
+    endDate: LocalDate = LocalDate.now(),
 ) {
-    val days = ProgressTimeline.sevenDays(entries, meals)
     var metricName by rememberSaveable { mutableStateOf(ProgressMetric.Weight.name) }
     val metric = ProgressMetric.valueOf(metricName)
-    var selectedDateText by rememberSaveable {
-        mutableStateOf(lastDateWithValue(days, ProgressMetric.Weight).toString())
+    var weightRangeName by rememberSaveable { mutableStateOf(ProgressRange.Quarter.name) }
+    var caloriesRangeName by rememberSaveable { mutableStateOf(ProgressRange.Week.name) }
+    var proteinRangeName by rememberSaveable { mutableStateOf(ProgressRange.Week.name) }
+    var detailOpen by rememberSaveable { mutableStateOf(false) }
+    var detailPage by rememberSaveable { mutableStateOf(0) }
+    val rangeName = when (metric) {
+        ProgressMetric.Weight -> weightRangeName
+        ProgressMetric.Calories -> caloriesRangeName
+        ProgressMetric.Protein -> proteinRangeName
+    }
+    val range = runCatching { ProgressRange.valueOf(rangeName) }.getOrDefault(ProgressRange.defaultFor(metric))
+    val days = remember(entries, meals, range, endDate) { ProgressTimeline.range(entries, meals, range, endDate) }
+    var weightSelectedDateText by rememberSaveable { mutableStateOf(lastDateWithValue(ProgressTimeline.range(entries, meals, ProgressRange.Quarter, endDate), ProgressMetric.Weight).toString()) }
+    var caloriesSelectedDateText by rememberSaveable { mutableStateOf(lastDateWithValue(ProgressTimeline.range(entries, meals, ProgressRange.Week, endDate), ProgressMetric.Calories).toString()) }
+    var proteinSelectedDateText by rememberSaveable { mutableStateOf(lastDateWithValue(ProgressTimeline.range(entries, meals, ProgressRange.Week, endDate), ProgressMetric.Protein).toString()) }
+    val selectedDateText = when (metric) {
+        ProgressMetric.Weight -> weightSelectedDateText
+        ProgressMetric.Calories -> caloriesSelectedDateText
+        ProgressMetric.Protein -> proteinSelectedDateText
+    }
+    fun selectDate(date: LocalDate, forMetric: ProgressMetric) {
+        when (forMetric) {
+            ProgressMetric.Weight -> weightSelectedDateText = date.toString()
+            ProgressMetric.Calories -> caloriesSelectedDateText = date.toString()
+            ProgressMetric.Protein -> proteinSelectedDateText = date.toString()
+        }
     }
     var historyOpen by rememberSaveable { mutableStateOf(false) }
     var historyTab by rememberSaveable { mutableStateOf("Weight") }
     val selectedDate = runCatching { LocalDate.parse(selectedDateText) }.getOrDefault(days.last().date)
     val selectedDay = days.firstOrNull { it.date == selectedDate } ?: days.last()
 
-    BackHandler(enabled = historyOpen) { historyOpen = false }
+    BackHandler(enabled = historyOpen || detailOpen) {
+        if (historyOpen) historyOpen = false else detailOpen = false
+    }
     if (historyOpen) {
         AllHistory(
             entries = entries,
@@ -164,18 +242,44 @@ fun MetriaProgressScreen(
             onEditWeight = onEditWeight,
             onEditMeal = onEditMeal,
         )
+    } else if (detailOpen) {
+        EvolutionDetail(
+            metric = metric, range = range, days = days, unit = unit,
+            selectedDate = selectedDay.date, page = detailPage,
+            onPageChange = { detailPage = it }, onBack = { detailOpen = false },
+            onSelectDate = { selectDate(it, metric) },
+        )
     } else {
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            ProgressHeader(days.first().date, days.last().date) {
+            ProgressHeader {
                 historyTab = if (metric == ProgressMetric.Weight) "Weight" else "Meals"
                 historyOpen = true
             }
             MetricSelector(metric) { next ->
                 metricName = next.name
-                selectedDateText = lastDateWithValue(days, next).toString()
+                val nextRangeName = when (next) {
+                    ProgressMetric.Weight -> weightRangeName
+                    ProgressMetric.Calories -> caloriesRangeName
+                    ProgressMetric.Protein -> proteinRangeName
+                }
+                val nextRange = runCatching { ProgressRange.valueOf(nextRangeName) }.getOrDefault(ProgressRange.defaultFor(next))
+                val nextDays = ProgressTimeline.range(entries, meals, nextRange, endDate)
+                selectDate(lastDateWithValue(nextDays, next), next)
             }
-            ProgressHero(metric, selectedDay, days, unit, nutritionTargets)
-            SevenDayChart(metric, days, selectedDay.date, unit) { selectedDateText = it.toString() }
+            RangeSelector(range) { next ->
+                when (metric) {
+                    ProgressMetric.Weight -> weightRangeName = next.name
+                    ProgressMetric.Calories -> caloriesRangeName = next.name
+                    ProgressMetric.Protein -> proteinRangeName = next.name
+                }
+                selectDate(lastDateWithValue(ProgressTimeline.range(entries, meals, next, endDate), metric), metric)
+            }
+            ProgressHero(metric, selectedDay, days, range, unit, nutritionTargets)
+            EvolutionChart(metric, range, days, selectedDay.date, unit, compact = true, onSelectDate = { selectDate(it, metric) })
+            TextButton(onClick = { detailPage = 0; detailOpen = true }, modifier = Modifier.align(Alignment.End)) {
+                Icon(Icons.Rounded.Timeline, contentDescription = null, modifier = Modifier.padding(end = 6.dp))
+                Text("View detail")
+            }
             ProgressGoalCard(goalPhase, nutritionTargets, unit, onEditNutritionTargets)
             DayDetails(metric, selectedDay, unit, onEditWeight, onEditMeal)
         }
@@ -183,12 +287,12 @@ fun MetriaProgressScreen(
 }
 
 @Composable
-private fun ProgressHeader(start: LocalDate, end: LocalDate, onOpenHistory: () -> Unit) {
+private fun ProgressHeader(onOpenHistory: () -> Unit) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("Progress", style = MaterialTheme.typography.displaySmall)
             Text(
-                "Last 7 days · ${shortDate(start)}–${shortDate(end)}",
+                "Explore your recorded trends",
                 color = MetriaColors.InkMuted,
                 style = MaterialTheme.typography.bodyMedium,
             )
@@ -272,6 +376,46 @@ private fun HistorySelector(selectedTab: String, onSelected: (String) -> Unit) {
 }
 
 @Composable
+private fun RangeSelector(selectedRange: ProgressRange, onSelected: (ProgressRange) -> Unit) {
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val minimumLabelWidth = 80.dp * LocalDensity.current.fontScale
+        val columns = when {
+            maxWidth >= minimumLabelWidth * 4 -> 4
+            maxWidth >= minimumLabelWidth * 2 -> 2
+            else -> 1
+        }
+        Surface(color = MetriaColors.SurfaceSubtle, shape = MaterialTheme.shapes.large) {
+            Column(Modifier.padding(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                ProgressRange.entries.chunked(columns).forEach { ranges ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        ranges.forEach { range ->
+                            val isSelected = range == selectedRange
+                            Surface(
+                                color = if (isSelected) MetriaColors.Surface else Color.Transparent,
+                                shape = MaterialTheme.shapes.large,
+                                tonalElevation = if (isSelected) 1.dp else 0.dp,
+                                modifier = Modifier.weight(1f).defaultMinSize(minHeight = 48.dp)
+                                    .semantics { selected = isSelected }
+                                    .clickable(role = Role.RadioButton) { onSelected(range) },
+                            ) {
+                                Row(
+                                    Modifier.padding(4.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    if (isSelected) Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(16.dp), tint = MetriaColors.Primary)
+                                    Text(range.label, color = if (isSelected) MetriaColors.Ink else MetriaColors.InkMuted, style = MaterialTheme.typography.labelMedium)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun HistoryDateHeading(date: LocalDate) {
     Text(historyDateLabel(date), color = MetriaColors.InkMuted, style = MaterialTheme.typography.labelLarge)
 }
@@ -310,6 +454,7 @@ private fun ProgressHero(
     metric: ProgressMetric,
     day: ProgressDay,
     days: List<ProgressDay>,
+    range: ProgressRange,
     unit: String,
     targets: NutritionTargets?,
 ) {
@@ -336,128 +481,352 @@ private fun ProgressHero(
             if (metric != ProgressMetric.Weight && day.nutritionIsPartial && rawValue != null) {
                 MetriaEstimateBadge("Partial estimate")
             }
-            Text(heroContext(metric, day, days, unit, target), color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodyMedium)
+            Text(heroContext(metric, day, days, range, unit, target), color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodyMedium)
         }
     }
 }
 
 @Composable
-private fun SevenDayChart(
+private fun EvolutionChart(
     metric: ProgressMetric,
+    range: ProgressRange,
     days: List<ProgressDay>,
+    selectedDate: LocalDate,
+    unit: String,
+    compact: Boolean,
+    onSelectDate: (LocalDate) -> Unit,
+) {
+    val present = days.filter { valueFor(metric, it) != null }
+    val selected = days.firstOrNull { it.date == selectedDate } ?: days.last()
+    val selectedValue = valueFor(metric, selected)
+    val first = present.firstOrNull()
+    val last = present.lastOrNull()
+    val selectedIndex = days.indexOfFirst { it.date == selectedDate }.coerceAtLeast(0)
+    val description = buildString {
+        append("${range.label} ${metric.label.lowercase()} history, ${days.first().date}, through ${days.last().date}. ")
+        if (present.isEmpty()) append("No recorded values in this period.")
+        else append("${present.size} dates with recorded values.")
+        selectedValue?.let { append(" Selected ${selected.date}: ${formatMetricValue(metric, it, unit)} ${if (metric == ProgressMetric.Weight) unit else metric.unit}.") }
+        if (metric == ProgressMetric.Weight && first != null && last != null) {
+            val firstValue = valueFor(metric, first)!!
+            val lastValue = valueFor(metric, last)!!
+            append(" First reading ${first.date}, ${formatMetricValue(metric, firstValue, unit)}; latest ${last.date}, ${formatMetricValue(metric, lastValue, unit)}.")
+        }
+        if (metric != ProgressMetric.Weight && present.any(ProgressDay::nutritionIsPartial)) append(" Some recorded nutrition is partial.")
+    }
+    Card(colors = CardDefaults.cardColors(containerColor = MetriaColors.Surface)) {
+        Column(Modifier.fillMaxWidth().padding(vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Your evolution", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 18.dp))
+            Text(periodDateLabel(days.first().date, days.last().date), color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 18.dp))
+            EvolutionCanvas(metric, days, selectedIndex, description, compact) { fraction ->
+                val targetIndex = (fraction.coerceIn(0f, 1f) * (days.lastIndex)).toInt()
+                val nearest = days.indices.minByOrNull { index ->
+                    val dateDistance = kotlin.math.abs(index - targetIndex)
+                    if (valueFor(metric, days[index]) == null) dateDistance + days.size else dateDistance
+                }
+                nearest?.let { onSelectDate(days[it].date) }
+            }
+            EvolutionDateAxis(days)
+            if (present.isEmpty()) {
+                Text(if (metric == ProgressMetric.Weight) "No weight records in this period." else "No calculated nutrition in this period.", color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 18.dp))
+            } else {
+                if (metric == ProgressMetric.Weight && first != null && last != null) {
+                    val firstValue = valueFor(metric, first)!!
+                    val lastValue = valueFor(metric, last)!!
+                    val delta = lastValue - firstValue
+                    val signed = if (delta > 0) "+" else if (delta < 0) "−" else ""
+                    Text(
+                        if (present.size < 2) "Readings are on one date; add a reading on another day to compare."
+                        else "$signed${formatMetricValue(metric, abs(delta), unit)} $unit from ${first.date} to ${last.date} · latest reading ${last.date}",
+                        color = MetriaColors.InkMuted,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(horizontal = 18.dp),
+                    )
+                }
+                AxisScaleContext(metric, present, unit)
+                if (metric != ProgressMetric.Weight && present.any(ProgressDay::nutritionIsPartial)) {
+                    Text("Includes daily recorded estimates. Partial values use square marks and ≈. Unrecorded days are not inferred.", color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 18.dp))
+                }
+                DateStepSelector(metric, present, selected.date, unit, onSelectDate)
+            }
+        }
+    }
+}
+
+@Composable
+private fun AxisScaleContext(metric: ProgressMetric, present: List<ProgressDay>, unit: String) {
+    val values = present.mapNotNull { valueFor(metric, it) }
+    if (values.isEmpty()) return
+    val low = if (metric == ProgressMetric.Weight) values.minOrNull()!! else 0.0
+    val high = values.maxOrNull()!!
+    val padding = if (metric == ProgressMetric.Weight) maxOf((high - low) * 0.2, 1.0) else 0.0
+    Text(
+        "Scale ${formatMetricValue(metric, low - padding, unit)}–${formatMetricValue(metric, high + padding, unit)} ${if (metric == ProgressMetric.Weight) unit else metric.unit}",
+        color = MetriaColors.InkMuted,
+        style = MaterialTheme.typography.labelSmall,
+        modifier = Modifier.padding(horizontal = 18.dp),
+    )
+}
+
+@Composable
+private fun DateStepSelector(
+    metric: ProgressMetric,
+    present: List<ProgressDay>,
     selectedDate: LocalDate,
     unit: String,
     onSelectDate: (LocalDate) -> Unit,
 ) {
-    val values = days.map { valueFor(metric, it) }
-    val spokenSummary = days.joinToString(". ") { day ->
-        val value = valueFor(metric, day)?.let { formatMetricValue(metric, it, unit) } ?: "no entry"
-        "${dayLabel(day.date)} $value${if (value != "no entry") " ${if (metric == ProgressMetric.Weight) unit else metric.unit}" else ""}"
+    val selectedIndex = present.indexOfFirst { it.date == selectedDate }.let { if (it < 0) 0 else it }
+    val previous = present.getOrNull(selectedIndex - 1)
+    val next = present.getOrNull(selectedIndex + 1)
+    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+        IconButton(onClick = { previous?.let { onSelectDate(it.date) } }, enabled = previous != null, modifier = Modifier.size(48.dp)) {
+            Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Previous recorded date")
+        }
+        val current = present.getOrNull(selectedIndex)
+        val value = current?.let { valueFor(metric, it) }
+        Text(
+            current?.let {
+                "${it.date} · ${formatMetricValue(metric, value!!, unit)} ${if (metric == ProgressMetric.Weight) unit else metric.unit}" +
+                    if (metric != ProgressMetric.Weight && it.nutritionIsPartial) " · ≈ Partial estimate" else ""
+            } ?: "No recorded dates",
+            style = MaterialTheme.typography.labelLarge,
+            modifier = Modifier.weight(1f),
+        )
+        IconButton(onClick = { next?.let { onSelectDate(it.date) } }, enabled = next != null, modifier = Modifier.size(48.dp)) {
+            Icon(Icons.Rounded.ChevronRight, contentDescription = "Next recorded date")
+        }
     }
-    Card(colors = CardDefaults.cardColors(containerColor = MetriaColors.Surface)) {
-        Column(Modifier.fillMaxWidth().padding(vertical = 18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Your week", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 18.dp))
-            MetricCanvas(
-                metric = metric,
-                values = values,
-                selectedIndex = days.indexOfFirst { it.date == selectedDate }.coerceAtLeast(0),
-                description = "Seven day ${metric.label.lowercase()} chart. $spokenSummary",
+}
+
+@Composable
+private fun EvolutionCanvas(
+    metric: ProgressMetric,
+    days: List<ProgressDay>,
+    selectedIndex: Int,
+    description: String,
+    compact: Boolean,
+    onSelectFraction: (Float) -> Unit,
+) {
+    val height = if (compact) 156.dp else 232.dp
+    val values = days.map { valueFor(metric, it) }
+    Canvas(
+        Modifier.fillMaxWidth().height(height).padding(horizontal = 20.dp)
+            .semantics { contentDescription = description }
+            .pointerInput(days, metric) {
+                detectTapGestures { point -> onSelectFraction(point.x / size.width) }
+            },
+    ) {
+        val rangeStart = days.first().date
+        val totalDays = ChronoUnit.DAYS.between(rangeStart, days.last().date).coerceAtLeast(1).toFloat()
+        val chartTop = 12.dp.toPx()
+        val chartBottom = size.height - 10.dp.toPx()
+        val chartHeight = chartBottom - chartTop
+        val subtle = MetriaColors.SurfaceSubtle
+        val primary = MetriaColors.Primary
+        val accent = MetriaColors.Accent
+        drawLine(subtle, Offset(0f, chartBottom), Offset(size.width, chartBottom), strokeWidth = 2.dp.toPx())
+        val presentValues = values.filterNotNull()
+        if (presentValues.isEmpty()) return@Canvas
+        val minValue = presentValues.minOrNull()!!
+        val maxValue = presentValues.maxOrNull()!!
+        val pad = if (metric == ProgressMetric.Weight) maxOf((maxValue - minValue) * 0.2, 1.0) else 0.0
+        val axisMin = if (metric == ProgressMetric.Weight) minValue - pad else 0.0
+        val axisMax = if (metric == ProgressMetric.Weight) maxValue + pad else maxValue.coerceAtLeast(1.0)
+        val span = (axisMax - axisMin).takeIf { it > 0.0001 } ?: 1.0
+        val points = values.mapIndexedNotNull { index, value ->
+            value?.let {
+                val x = ((ChronoUnit.DAYS.between(rangeStart, days[index].date).toFloat() / totalDays) * size.width)
+                val y = chartBottom - (((it - axisMin) / span).toFloat().coerceIn(0f, 1f) * chartHeight)
+                index to Offset(x, y)
+            }
+        }
+        if (metric == ProgressMetric.Weight) {
+            points.zipWithNext().forEach { (a, b) ->
+                drawLine(primary, a.second, b.second, strokeWidth = 3.dp.toPx(), cap = StrokeCap.Round)
+            }
+        } else {
+            val barWidth = (size.width / days.size * 0.7f).coerceIn(1f, 16.dp.toPx())
+            points.forEach { (index, point) ->
+                val color = when {
+                    index == selectedIndex -> primary
+                    days[index].nutritionIsPartial -> MetriaColors.Estimated
+                    else -> accent
+                }
+                drawLine(color, Offset(point.x, chartBottom), point, strokeWidth = barWidth)
+            }
+        }
+        points.forEach { (index, point) ->
+            if (index == selectedIndex) drawCircle(primary.copy(alpha = 0.2f), radius = 10.dp.toPx(), center = point)
+            val partialNutrition = metric != ProgressMetric.Weight && days[index].nutritionIsPartial
+            if (partialNutrition) {
+                val edge = if (index == selectedIndex) 9.dp.toPx() else 6.dp.toPx()
+                drawRect(
+                    if (index == selectedIndex) primary else MetriaColors.Estimated,
+                    Offset(point.x - edge / 2, point.y - edge / 2),
+                    Size(edge, edge),
+                )
+            } else if (metric == ProgressMetric.Weight || index == selectedIndex) {
+                drawCircle(if (index == selectedIndex) primary else accent, radius = if (index == selectedIndex) 5.dp.toPx() else 3.dp.toPx(), center = point)
+            }
+        }
+        // Dates anchor the plotting scale, so sparse weight readings are not presented as daily values.
+        listOf(0, days.lastIndex / 2, days.lastIndex).distinct().forEach { index ->
+            val x = ChronoUnit.DAYS.between(rangeStart, days[index].date).toFloat() / totalDays * size.width
+            drawLine(subtle, Offset(x, chartTop), Offset(x, chartBottom), strokeWidth = 1.dp.toPx())
+        }
+    }
+}
+
+@Composable
+private fun EvolutionDateAxis(days: List<ProgressDay>) {
+    val indices = listOf(0, days.lastIndex / 2, days.lastIndex).distinct()
+    Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+        indices.forEach { dayIndex ->
+            Text(
+                if (days.first().date.year == days.last().date.year) shortDate(days[dayIndex].date)
+                else days[dayIndex].date.format(DateTimeFormatter.ofPattern("d MMM\nyyyy", Locale.getDefault())),
+                color = MetriaColors.InkMuted,
+                style = MaterialTheme.typography.labelSmall,
+                textAlign = when (dayIndex) {
+                    0 -> TextAlign.Start
+                    days.lastIndex -> TextAlign.End
+                    else -> TextAlign.Center
+                },
+                modifier = Modifier.weight(1f),
             )
-            BoxWithConstraints(Modifier.fillMaxWidth()) {
-                val dayWidth = ((maxWidth - 28.dp) / 7).coerceAtLeast(48.dp)
-                Row(
-                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-                ) {
-                    days.forEach { day ->
-                        val isSelected = day.date == selectedDate
-                        val value = valueFor(metric, day)
-                        val description = buildString {
-                            append(dayLabel(day.date))
-                            append(if (value == null) ", no entry" else ", ${formatMetricValue(metric, value, unit)} ${if (metric == ProgressMetric.Weight) unit else metric.unit}")
-                            if (metric != ProgressMetric.Weight && day.nutritionIsPartial && value != null) append(", partial estimate")
-                            if (isSelected) append(", selected")
-                        }
-                        Surface(
-                            color = if (isSelected) MetriaColors.PrimarySoft else Color.Transparent,
-                            shape = RoundedCornerShape(14.dp),
-                            modifier = Modifier
-                                .width(dayWidth)
-                                .defaultMinSize(minHeight = 58.dp)
-                                .semantics { contentDescription = description; selected = isSelected }
-                                .clickable(role = Role.RadioButton) { onSelectDate(day.date) },
-                        ) {
-                            Column(
-                                Modifier.padding(vertical = 7.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(2.dp),
-                            ) {
-                                Text(day.date.dayOfWeek.getDisplayName(TextStyle.NARROW, Locale.getDefault()), color = MetriaColors.InkMuted, style = MaterialTheme.typography.labelMedium)
-                                Text(day.date.dayOfMonth.toString(), style = MaterialTheme.typography.bodyMedium)
-                                if (metric != ProgressMetric.Weight && day.nutritionIsPartial && value != null) {
-                                    Text("≈", color = MetriaColors.Estimated, style = MaterialTheme.typography.labelMedium)
-                                }
-                            }
-                        }
+        }
+    }
+}
+
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun EvolutionDetail(
+    metric: ProgressMetric,
+    range: ProgressRange,
+    days: List<ProgressDay>,
+    unit: String,
+    selectedDate: LocalDate,
+    page: Int,
+    onPageChange: (Int) -> Unit,
+    onBack: () -> Unit,
+    onSelectDate: (LocalDate) -> Unit,
+) {
+    val headerBringIntoViewRequester = remember { BringIntoViewRequester() }
+    LaunchedEffect(Unit) {
+        withFrameNanos { }
+        headerBringIntoViewRequester.bringIntoView()
+    }
+    val present = days.filter { valueFor(metric, it) != null }
+    val pageSize = 12
+    val pageCount = (present.size + pageSize - 1) / pageSize
+    val safePage = page.coerceIn(0, (pageCount - 1).coerceAtLeast(0))
+    val newestFirst = present.asReversed()
+    val visible = newestFirst.drop(safePage * pageSize).take(pageSize)
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(
+            Modifier.fillMaxWidth().bringIntoViewRequester(headerBringIntoViewRequester),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
+                Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back to evolution")
+            }
+            Column(Modifier.padding(start = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("${metric.label} detail", style = MaterialTheme.typography.headlineSmall)
+                Text("${range.label} · ${periodDateLabel(days.first().date, days.last().date)}", color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+        EvolutionCanvas(metric, days, days.indexOfFirst { it.date == selectedDate }.coerceAtLeast(0), "${range.label} ${metric.label.lowercase()} trend, ${present.size} recorded dates", compact = false) { fraction ->
+            val target = (fraction.coerceIn(0f, 1f) * days.lastIndex).toInt()
+            present.minByOrNull { kotlin.math.abs(days.indexOf(it) - target) }?.let {
+                onSelectDate(it.date)
+                val pageForDate = (present.lastIndex - present.indexOf(it)).coerceAtLeast(0) / pageSize
+                onPageChange(pageForDate)
+            }
+        }
+        EvolutionDateAxis(days)
+        AxisScaleContext(metric, present, unit)
+        DateStepSelector(metric, present, selectedDate, unit) { date ->
+            onSelectDate(date)
+            val selectedIndex = present.indexOfFirst { it.date == date }
+            onPageChange((present.lastIndex - selectedIndex).coerceAtLeast(0) / pageSize)
+        }
+        if (metric != ProgressMetric.Weight && present.isNotEmpty()) {
+            Text(
+                "Daily recorded estimates. Square marks indicate partial values; unrecorded days stay empty.",
+                color = MetriaColors.InkMuted,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        if (present.isEmpty()) {
+            EmptyDayCard(
+                if (metric == ProgressMetric.Weight) "No weight records in this period" else "No calculated nutrition in this period",
+                "Saved ${metric.label.lowercase()} readings will appear here.",
+            )
+        } else {
+            Text("Recorded values", style = MaterialTheme.typography.titleMedium)
+            if (metric == ProgressMetric.Weight) {
+                visible.flatMap { day -> day.weightEntries.map { day to it } }.forEach { (day, entry) ->
+                    val value = shownWeight(entry.kilograms, unit)
+                    ReadOnlyValueRow(day.date, "${value.first} ${value.second}", day.date == selectedDate, entry.recordedAt.atZone(ZoneId.systemDefault()).toLocalTime().withSecond(0).withNano(0).toString()) {
+                        onSelectDate(day.date)
                     }
                 }
+            } else {
+                visible.forEach { day ->
+                    val value = valueFor(metric, day)!!
+                    ReadOnlyValueRow(
+                        day.date,
+                        "${formatMetricValue(metric, value, unit)} ${metric.unit}",
+                        day.date == selectedDate,
+                        if (day.nutritionIsPartial) "Partial estimate" else "Recorded daily estimate",
+                    ) { onSelectDate(day.date) }
+                }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = { onPageChange((safePage - 1).coerceAtLeast(0)) }, enabled = safePage > 0) { Text("Newer dates") }
+                Text("${safePage + 1} of ${pageCount.coerceAtLeast(1)}", style = MaterialTheme.typography.labelMedium)
+                TextButton(onClick = { onPageChange((safePage + 1).coerceAtMost((pageCount - 1).coerceAtLeast(0))) }, enabled = safePage < pageCount - 1) { Text("Earlier dates") }
             }
         }
     }
 }
 
 @Composable
-private fun MetricCanvas(metric: ProgressMetric, values: List<Double?>, selectedIndex: Int, description: String) {
-    val accent = MetriaColors.Accent
-    val primary = MetriaColors.Primary
-    val subtle = MetriaColors.SurfaceSubtle
-    Canvas(Modifier.fillMaxWidth().height(164.dp).padding(horizontal = 20.dp).semantics { contentDescription = description }) {
-        val slotWidth = size.width / values.size
-        val chartTop = 12.dp.toPx()
-        val chartBottom = size.height - 10.dp.toPx()
-        val chartHeight = chartBottom - chartTop
-        drawLine(subtle, Offset(0f, chartBottom), Offset(size.width, chartBottom), strokeWidth = 2.dp.toPx())
-        val selectedX = slotWidth * selectedIndex + slotWidth / 2f
-        drawLine(primary.copy(alpha = 0.16f), Offset(selectedX, chartTop), Offset(selectedX, chartBottom), strokeWidth = 2.dp.toPx())
+internal fun ProgressEvolutionContent(
+    metric: ProgressMetric,
+    range: ProgressRange,
+    days: List<ProgressDay>,
+    unit: String = "kg",
+    selectedDate: LocalDate = days.last().date,
+    detail: Boolean = false,
+) {
+    var selected by rememberSaveable { mutableStateOf(selectedDate.toString()) }
+    var page by rememberSaveable { mutableStateOf(0) }
+    val selectedDateValue = runCatching { LocalDate.parse(selected) }.getOrDefault(selectedDate)
+    if (detail) {
+        EvolutionDetail(metric, range, days, unit, selectedDateValue, page, { page = it }, {}, { selected = it.toString() })
+    } else {
+        EvolutionChart(metric, range, days, selectedDateValue, unit, compact = true, onSelectDate = { selected = it.toString() })
+    }
+}
 
-        val present = values.filterNotNull()
-        if (present.isEmpty()) return@Canvas
-        if (metric == ProgressMetric.Weight) {
-            val minimum = present.minOrNull()!!
-            val maximum = present.maxOrNull()!!
-            val span = (maximum - minimum).takeIf { it > 0.01 } ?: 1.0
-            val points = values.mapIndexedNotNull { index, value ->
-                value?.let {
-                    val x = slotWidth * index + slotWidth / 2f
-                    val normalized = ((it - minimum) / span).toFloat()
-                    val y = chartBottom - (0.18f + normalized * 0.72f) * chartHeight
-                    index to Offset(x, y)
-                }
+@Composable
+private fun ReadOnlyValueRow(date: LocalDate, value: String, selected: Boolean, detail: String, onSelect: () -> Unit) {
+    Surface(
+        color = if (selected) MetriaColors.PrimarySoft else MetriaColors.Surface,
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)
+            .semantics { this.selected = selected; contentDescription = "$date, $value, $detail${if (selected) ", selected" else ""}" }
+            .clickable(role = Role.Button, onClick = onSelect),
+    ) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(date.toString(), style = MaterialTheme.typography.labelLarge)
+                Text(detail, color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall)
             }
-            points.zipWithNext().forEach { (first, second) ->
-                drawLine(primary, first.second, second.second, strokeWidth = 4.dp.toPx(), cap = StrokeCap.Round)
-            }
-            points.forEach { (index, point) ->
-                if (index == selectedIndex) drawCircle(primary.copy(alpha = 0.18f), radius = 10.dp.toPx(), center = point)
-                drawCircle(if (index == selectedIndex) primary else accent, radius = 5.dp.toPx(), center = point)
-                drawCircle(Color.White, radius = 2.dp.toPx(), center = point)
-            }
-        } else {
-            val maximum = present.maxOrNull()!!.coerceAtLeast(1.0)
-            values.forEachIndexed { index, value ->
-                val x = slotWidth * index + slotWidth / 2f
-                val barWidth = slotWidth * 0.36f
-                drawRoundRect(subtle, Offset(x - barWidth / 2f, chartTop), Size(barWidth, chartHeight), CornerRadius(barWidth / 2f))
-                if (value != null) {
-                    val barHeight = (value / maximum).toFloat().coerceIn(0.04f, 1f) * chartHeight
-                    drawRoundRect(
-                        if (index == selectedIndex) primary else accent,
-                        Offset(x - barWidth / 2f, chartBottom - barHeight),
-                        Size(barWidth, barHeight),
-                        CornerRadius(barWidth / 2f),
-                    )
-                }
-            }
+            if (selected) Icon(Icons.Rounded.Check, contentDescription = "Selected date", tint = MetriaColors.Primary, modifier = Modifier.padding(end = 8.dp).size(18.dp))
+            Text(value, style = MaterialTheme.typography.titleMedium)
         }
     }
 }
@@ -584,19 +953,19 @@ private fun valueFor(metric: ProgressMetric, day: ProgressDay): Double? = when (
 private fun lastDateWithValue(days: List<ProgressDay>, metric: ProgressMetric): LocalDate =
     days.lastOrNull { valueFor(metric, it) != null }?.date ?: days.last().date
 
-private fun heroContext(metric: ProgressMetric, day: ProgressDay, days: List<ProgressDay>, unit: String, target: Double?): String {
+private fun heroContext(metric: ProgressMetric, day: ProgressDay, days: List<ProgressDay>, range: ProgressRange, unit: String, target: Double?): String {
     val value = valueFor(metric, day)
     if (value == null) return if (metric == ProgressMetric.Weight) "No weight entry on this day." else "No calculated nutrition on this day."
     if (target != null) return "Recorded estimate · ${"%.0f".format(value / target * 100.0)}% of your current daily reference."
     if (metric != ProgressMetric.Weight) return "Add a goal if you want a daily reference."
-    val weights = days.mapNotNull(ProgressDay::latestWeightKilograms)
-    if (weights.size < 2) return "Add another reading to see a seven-day change."
-    val change = weights.last() - weights.first()
-    return when {
-        abs(change) < 0.05 -> "Broadly unchanged across recorded days this week."
-        change > 0 -> "${formatMetricValue(metric, change, unit)} $unit higher across recorded days this week."
-        else -> "${formatMetricValue(metric, -change, unit)} $unit lower across recorded days this week."
-    }
+    val readings = days.filter { it.latestWeightKilograms != null }
+    if (readings.isEmpty()) return "No weight entries in the ${range.label.lowercase()} period."
+    val first = readings.first()
+    val latest = readings.last()
+    if (readings.size < 2) return "Readings are on ${first.date}. Add one on another day to compare."
+    val change = latest.latestWeightKilograms!! - first.latestWeightKilograms!!
+    val signed = if (change > 0) "+" else if (change < 0) "−" else ""
+    return "${signed}${formatMetricValue(metric, abs(change), unit)} $unit from ${first.date} to ${latest.date}. Latest reading ${latest.date}."
 }
 
 private fun formatMetricValue(metric: ProgressMetric, value: Double, unit: String): String = when (metric) {
@@ -616,6 +985,12 @@ private fun dayLabel(date: LocalDate): String = when (date) {
 }
 
 private fun shortDate(date: LocalDate): String = date.format(DateTimeFormatter.ofPattern("d MMM", Locale.getDefault()))
+
+private fun periodDateLabel(start: LocalDate, end: LocalDate): String {
+    val pattern = if (start.year == end.year) "d MMM" else "d MMM yyyy"
+    val formatter = DateTimeFormatter.ofPattern(pattern, Locale.getDefault())
+    return "${start.format(formatter)} – ${end.format(formatter)}"
+}
 
 private fun historyDateLabel(date: LocalDate): String = when (date) {
     LocalDate.now() -> "Today"

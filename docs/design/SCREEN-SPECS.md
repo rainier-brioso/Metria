@@ -182,9 +182,16 @@ retain their existing full cards. The central capture action remains dominant.
 **Secondary action:** set or edit a goal in context.  
 **Rule:** do not place Today’s full dashboard inside Progress.
 
-**Approved first slice:** use a fixed seven-day range including today with Weight, Calories, and Protein selectors. Selecting a metric surfaces its day value and applicable member-entered goal; selecting a chart day reveals only that day’s editable weight or meal entries in place. Partial nutrition remains included only as a visibly marked partial estimate. “All history” opens date-grouped Weight and Meals tabs containing every saved record; Android Back restores the unchanged seven-day view.
+**Approved evolution extension - 2026-10-27:** replace the initial fixed
+seven-day chart with Your evolution and 7-day, 1-month, 3-month and 1-year
+periods. Weight defaults to 3 months; Calories and Protein to 7 days. Retain
+per-metric period and selected reading across configuration/detail return.
+Use actual dates and unknown gaps, neutral dated weight change, accessible
+point selection and partial nutrition disclosure. View detail shows a larger
+chart and read-only dated values; All history keeps its existing edit routes.
+See [the approved contract and acceptance status](progress-evolution.md).
 
-**Progress goal context — 2026-10-07:** below the weekly chart, a compact supporting
+**Progress goal context — 2026-10-07:** below the selected-period chart, a compact supporting
 card shows the current direction and optional member-entered weight target/range
 in the selected kg/lb unit. It identifies daily references when present and opens
 the existing goal hub. Missing goals offer optional setup without interrupting

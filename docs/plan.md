@@ -1,5 +1,27 @@
 # Metria product plan
 
+Progress evolution (2026-10-27): member approves selectable 7-day, 1-month,
+3-month and 1-year charts, with 3 months initially for weight and 7 days for
+nutrition, per-metric restored selection and a larger read-only detail.
+Implementation complete; independent review and final unit/debug gate pass
+749 tests with zero failures/errors/skips. Five affected synthetic renders
+visually inspected, including empty/one-point, annual partial nutrition and
+narrow large text; range wrapping found and repaired. Physical acceptance and
+interaction remain pending. Follow-up: member authorized in-place installation
+on Samsung SM-S928B / Android 16; final gated APK installed successfully and
+cold-launched (2,938 ms). Read-only phone checks pass range/default switching,
+per-metric period retention, partial nutrition marks, point/arrow selection
+and Back retaining date/range; existing weight/nutrition data observed. A detail
+entry scroll defect was found, fixed and gated (749 tests) then installed in
+place and cold-launched (2,339 ms). Corrected-build phone follow-up passes detail
+entry, portrait/landscape selection restoration, 150% physical font, pager reach
+and older-page navigation, and All history Weight/Meals inspection. Font 1.0
+and free rotation restored; no records changed. TalkBack, gesture navigation
+and page-index configuration restoration remain separate open gates.
+No record writes in this slice.
+Contract and checkpoint: `design/progress-evolution.md`. Existing Today See all
+entry and All history editing remain. No record writes are authorized for QA.
+
 Assistant prototype completion (2026-10-26/27): direct searchable saved-dish
 selection into unsaved Review, contextual label category/atomic Chat receipt,
 and atomic update receipt for saved meals opened from Chat are implemented.

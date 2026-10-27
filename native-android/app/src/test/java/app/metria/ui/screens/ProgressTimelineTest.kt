@@ -7,6 +7,7 @@ import app.metria.WeightEntry
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
+import java.time.ZoneId
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -29,6 +30,56 @@ class ProgressTimelineTest {
         assertEquals(70.4, result[5].latestWeightKilograms!!, 0.001)
         assertEquals(2, result[5].weightEntries.size)
         assertNull(result.last().latestWeightKilograms)
+    }
+
+    @Test
+    fun `calendar periods are inclusive and handle leap and short months`() {
+        assertEquals(LocalDate.parse("2024-03-01"), ProgressRange.Quarter.start(LocalDate.parse("2024-05-31")))
+        assertEquals(LocalDate.parse("2024-03-02"), ProgressRange.Quarter.start(LocalDate.parse("2024-05-31")).plusDays(1))
+        assertEquals(LocalDate.parse("2024-02-29"), ProgressRange.Year.start(LocalDate.parse("2025-02-28")))
+        val result = ProgressTimeline.range(emptyList(), emptyList(), ProgressRange.Month, LocalDate.parse("2026-03-31"), ZoneOffset.UTC)
+        assertEquals(LocalDate.parse("2026-03-01"), result.first().date)
+        assertEquals(LocalDate.parse("2026-03-31"), result.last().date)
+        assertEquals(31, result.size)
+    }
+
+    @Test
+    fun `year range retains gaps and latest of same-day weight readings`() {
+        val outside = WeightEntry(kilograms = 99.0, recordedAt = Instant.parse("2024-02-28T08:00:00Z"))
+        val oldReading = WeightEntry(kilograms = 71.1, recordedAt = Instant.parse("2025-01-03T08:00:00Z"))
+        val latestReading = WeightEntry(kilograms = 70.8, recordedAt = Instant.parse("2025-01-03T19:00:00Z"))
+        val result = ProgressTimeline.range(
+            listOf(outside, oldReading, latestReading), emptyList(), ProgressRange.Year,
+            LocalDate.parse("2025-02-28"), ZoneOffset.UTC,
+        )
+        val recordedDay = result.first { it.date == LocalDate.parse("2025-01-03") }
+        assertEquals(366, result.size) // Leap day is retained in the inclusive year.
+        assertEquals(2, recordedDay.weightEntries.size)
+        assertEquals(70.8, recordedDay.latestWeightKilograms!!, 0.001)
+        assertTrue(result.none { day -> day.weightEntries.any { it.id == outside.id } })
+        assertNull(recordedDay.caloriesKcal)
+        assertNull(result.first { it.date == LocalDate.parse("2024-02-29") }.latestWeightKilograms)
+    }
+
+    @Test
+    fun `daily nutrition sums partial values and preserves partial marker`() {
+        val partial = meal("2026-08-27T12:00:00Z", 210.0, 14.0, "partial")
+        val day = ProgressTimeline.range(emptyList(), listOf(partial), ProgressRange.Week, end, ZoneOffset.UTC).last()
+        assertEquals(210.0, day.caloriesKcal!!, 0.001)
+        assertEquals(14.0, day.proteinGrams!!, 0.001)
+        assertTrue(day.nutritionIsPartial)
+    }
+
+    @Test
+    fun `timeline groups nutrition according to requested timezone near midnight`() {
+        val meal = meal("2026-08-27T23:30:00Z", 340.0, 24.0, "full")
+        val timeline = ProgressTimeline.range(
+            emptyList(), listOf(meal), ProgressRange.Week, LocalDate.parse("2026-08-28"), ZoneId.of("Europe/Madrid"),
+        )
+        val localDay = timeline.last()
+        assertEquals(LocalDate.parse("2026-08-28"), localDay.date)
+        assertEquals(340.0, localDay.caloriesKcal!!, 0.001)
+        assertEquals(24.0, localDay.proteinGrams!!, 0.001)
     }
 
     @Test

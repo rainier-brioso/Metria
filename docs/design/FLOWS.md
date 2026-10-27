@@ -407,7 +407,7 @@ values locally and retains explicit draft review rather than product lookup.
 
 ## 5. Understand progress
 
-**Current goal context — 2026-10-07:** the seven-day view includes a compact
+**Current goal context — 2026-10-07:** the selected-period view includes a compact
 current-goal card below the chart. View goal and daily references opens the same
 goal hub used by Today and Privacy; without goals or references, Explore goal
 setup offers the voluntary journey. Dismissal returns to the selected metric/day
@@ -418,15 +418,22 @@ is introduced. All history retains its separate date-grouped view.
 **Intent:** see useful patterns without moral judgment or false precision.
 
 1. Today shows a compact daily summary and the latest entries.
-2. Progress defaults to the last seven days including today.
+2. Progress offers 7 days, 1 month, 3 months and 1 year ending today; Weight
+   starts at 3 months and Calories/Protein at 7 days. Each metric retains its
+   chosen period during configuration restoration and detail return.
 3. The selected metric is visually dominant; targets are context, not the headline.
 4. Tapping a day reveals its meals and weights without navigating away unnecessarily.
 5. “All history” opens every saved weight and meal, grouped newest date first; tapping a row opens its existing editor.
-6. Back returns to the same seven-day Progress state without changing records.
+6. View detail opens a larger chart and dated read-only values for that period.
+   Back returns to the same selected metric, period and reading without writes.
 7. Complete and partial nutrition are visually distinct and explained on demand.
 8. Assistant insights use only approved local tools and the selected period.
 
 **States:** no data, partial estimates only, goal absent, one-day history, selected day, all history, empty history tab, changed range, cycle-aware context enabled/disabled.
+
+The approved [evolution extension](progress-evolution.md) replaces the first
+fixed-week slice. Empty and sparse ranges never invent values; chart touch has
+an accessible alternative, and selected/partial states do not rely on color.
 
 ## 6. Ask Metria
 
