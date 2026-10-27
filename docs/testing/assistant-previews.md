@@ -1,5 +1,14 @@
 # Assistant and review previews
 
+Capture-state follow-up (2026-10-27): `AssistantCaptureLoadingPreview`,
+`AssistantCapturePartialPreview` and `AssistantCaptureFailurePreview` render
+successfully and were visually inspected after the 749-test/debug gate.
+Stop, partial-food warning with Review/Discard at 150% font, and error/manual
+entry/source action fit their initial viewports. The fixture frame omits the
+shell dock and portions of source selection; these are shared presentation
+fragments, not a complete capture screen or interactive retry acceptance.
+No phone installation or real analysis was needed for these renders.
+
 The preview entry points are in
 `native-android/app/src/debug/java/app/metria/ui/screens/AssistantAndReviewPreviews.kt`.
 Fixtures exist only in the debug source set. They use invented meal/label data,
@@ -31,6 +40,17 @@ category. Build/render observations for these changes belong to the active M4
 checkpoint; their presence alone does not establish a passed visual gate.
 `SavedDishReviewPreview` reuses the same review component with saved-dish
 presentation, so its title/intro can be checked without touching member memory.
+
+Integrated capture presentation fixtures now live in
+`AssistantCaptureStatePreviews.kt`. `AssistantCaptureLoadingPreview`,
+`AssistantCapturePartialPreview` and `AssistantCaptureFailurePreview` render the
+same production loading/Stop state, meal-draft card, failure copy/manual action
+and source button used by `AssistantCapturePanel`. Their meal contents are fixed
+fictional values and every callback is inert. The partial card uses a 360 dp,
+150% font viewport; static rendering shows its initial position only, so use
+Studio Interactive mode to scroll and check the final Review/Discard reachability.
+These fixtures do not instantiate camera/picker launchers, model state, vault or
+analysis, and do not verify the actual error/cancellation pipeline.
 
 Completion follow-up 2026-10-27: all five affected entry points above rendered
 successfully and were visually inspected after the final 745-test gate. Populated

@@ -19,7 +19,7 @@
         </provider>
         <activity
             android:name=".MainActivity"
-            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:configChanges="orientation|screenSize|keyboardHidden|fontScale"
             android:windowSoftInputMode="adjustResize"
             android:exported="true">
             <intent-filter>

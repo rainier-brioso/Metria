@@ -1,5 +1,161 @@
 # M4 local assistant checkpoints
 
+## Post-demo acceptance backlog - 2026-10-27
+
+Member explicitly defers the remaining assistant physical checks until after
+the hackathon demo and authorizes committing/pushing the current checkpoint.
+Deferral is scheduling, not a passed gate or release acceptance. The historical
+no-commit/no-push notes below describe earlier authorization boundaries.
+
+Resume with the current build/device identity and the no-save itinerary in
+`TESTING.md`; preserve records, use temporary private evidence and restore any
+system settings changed. Start with synthetic previews before real inference.
+
+- [ ] Exercise a real contextual meal-analysis failure and recovery/manual
+  fallback; confirm actionable feedback, no success receipt and no stale result.
+- [ ] Exercise a real partial capture result; confirm missing-food/uncertainty
+  explanation, editable Review and cancellation without saving.
+- [ ] Repeat affected panel/capture/review navigation with Android gestures,
+  including bottom actions and keyboard clearance; restore original navigation.
+- [ ] Run guided TalkBack traversal and announcements for header, actions,
+  composer, async state, errors and Review; restore original accessibility state.
+- [ ] Explicitly confirm authentication is required after Home/background;
+  unlock as member, verify no transient draft/activity replay and a fresh request.
+- [ ] Finish enlarged-font/last-field IME checks on remaining assistant pages
+  and secondary editors; existing named 150% passes remain scoped as recorded.
+- [ ] When the member actually wants to record/revise food, verify contextual
+  label/saved-dish receipt-only and Meal updated receipt success, View meal and
+  cancellation/failure behavior. Final Save/update must be member-performed;
+  this backlog does not authorize test records or edits.
+
+Demo preparation: use the already-verified normal path and keep Metria in the
+foreground while an unsaved draft is needed. Real backgrounding intentionally
+locks and discards temporary work. The currently installed font-fix APK and the
+later preview/extraction build are distinguished in the evidence below.
+
+## Synthetic capture-state coverage and header Close - 2026-10-27
+
+Member requests continued no-save checks and explicitly defers TalkBack.
+Added three debug-only synthetic entry points in `AssistantCaptureStatePreviews.kt`
+for loading/Stop, partial meal at 360 dp/150% font and recoverable failure.
+They reuse extracted production loading, meal-card, error and source-action
+composables with fictional data and inert callbacks. Existing panel state,
+request checks, cancellation, save and picker wiring are unchanged. They are
+presentation fragments in a real panel/header, not a full capture state-machine
+simulator or a physical error/retry test.
+
+Independent review finds no material blocker. Full Android unit/debug command
+succeeds; reports show 749 tests, zero failures/errors/skips. APK SHA-256:
+`2db1cebe490505387649a7197ca9d69a2497c512e9bc03df1153040983061d1b`.
+This extraction/preview APK was not installed. All three new previews rendered
+through Android Studio MetriaNative and were visually inspected immediately:
+Stop, partial-food explanation/Review/Discard at enlarged font, and error/manual
+entry/source action fit their initial viewports without blocking overlap.
+The existing Chat error preview was also rendered/inspected; composer and error
+remain distinct. Static rendering does not prove scrolling or screen-reader
+announcements. Four renders, zero inference runs and zero installs in this slice.
+
+Separate phone check on the already-installed font-fix APK `75deb0ea...`, Samsung
+SM-S928B / Android 16: member unlocked; original icon opens retained Chat.
+Header Close returns to Today. No message submitted or saved record touched.
+Phone is left on Today. Temporary host screenshots and synthetic renders removed.
+No setting changes, real photo selection or model run in this slice.
+
+Still open: integrated real capture failure/partial/recovery, gesture-navigation,
+explicit member confirmation of authentication after Home and wider accessibility.
+TalkBack remains deferred at the member's request. Source/previews do not close
+those physical gates. No new record Save/edit/delete authority or commit/push.
+
+## Contextual capture Stop continuation - 2026-10-27
+
+Post-unlock controls continuation on the same installed `75deb0ea...` APK and
+reference phone: member replied ready after the unlock request, without an
+explicit statement that authentication was requested. Treat that as readiness,
+not independent confirmation of the preceding lock gate. Today is visible;
+opening the original assistant icon restores completed Chat and its existing
+receipt, with no active temporary photo draft. Expanding and reducing the idle
+panel preserves those messages and usable composer. Tapping the exposed scrim
+closes the compact panel to the same Today screen without activating its
+underlying control. This does not exercise header Close or TalkBack traversal.
+No text submission, model run, setting change, record mutation or build/install
+occurred. Temporary screenshot removed. Background lock confirmation, integrated
+capture partial/error, TalkBack and gestures remain open. Discovery confirms
+existing error/partial synthetic previews cover Chat rather than the integrated
+capture page; no physical acceptance is inferred from them.
+
+Corrected-build font continuation: on installed `75deb0ea...`, Samsung
+SM-S928B / Android 16, member unlocked and selected a meal image. Foreground
+system font 1.0 -> 1.5 preserves the capture page and identical selected photo;
+the stable enlarged layout expands the panel and wraps copy. Scrolling reaches
+the complete Prepare draft/source actions. One new local analysis completes
+with a reviewable unsaved proposal at 150%. Review opens with complete final
+Save/Leave actions above three-button navigation; neither Save nor any field
+edit was performed. Font 1.5 -> 1.0 while Review is open preserves the same
+review and proposal. System setting independently reads back 1.0. Rotation and
+navigation mode were not changed. These named foreground font gates pass; no
+claim for every assistant page, IME at 150%, TalkBack or gesture navigation.
+
+Home/background then warm reopen was exercised to check unchanged locking.
+The immediate resulting capture was black/protected, so it is not sufficient
+evidence of the lock UI or draft cleanup. Member confirmation/unlock requested;
+background-lock physical acceptance remains pending that observation. No
+biometric automation or auth inspection attempted. No record Save/edit/delete,
+new install or source change in this continuation. Reused temporary captures
+were removed after visual inspection. No private values/images kept in docs.
+
+Follow-up on the same installed build: member reselected the photo. A fresh
+Prepare draft shows inline loading and completes with a reviewable unsaved
+proposal. Review opens; Leave without saving returns to that same capture draft.
+No Save or field change. This closes the named Stop/reselect/new-analysis/review
+sequence on this build, not generic failure/partial-result acceptance.
+
+An additional physical font-scale check exposed a restoration failure: changing
+system font from 1.0 to 1.5 while the completed capture draft was open dismissed
+the panel to Progress. Reopening the icon showed retained Chat instead of the
+active capture. Source audit finds fontScale absent from handled configuration
+changes, while Activity teardown/lock cleanup invalidates process-local work.
+This is a failed active-flow font-change gate; do not count it as accepted from
+the static large-text previews. System font was restored and independently read
+back as 1.0; rotation was not changed (original free). A bounded fontScale
+configuration repair is being prepared; new-build physical verification and
+real-background lock regression remain required.
+
+Repair follow-up: MainActivity now handles only the additional `fontScale`
+configuration in place, like its existing handled rotation. Compose updates the
+font without intentionally replacing the Activity; no change to onStop/onDestroy,
+vault locking, image retention, saved state payloads or dependencies. Independent
+review finds no material blocker. Full
+`:app:testDebugUnitTest :app:assembleDebug --no-daemon` succeeds; unchanged unit
+tasks are up to date and retained XML reports show 749 tests, zero failures/errors.
+Diff check passes. APK SHA-256:
+`75deb0ea479a0be06dfa5e9d773d09e2ee177d721fbae8a637afcea69f7a0df3`.
+Installation and new-build physical result are recorded separately below.
+
+The repair APK installed in place on the same reference phone (`install -r`:
+Success) and cold-launched (Status ok, 2,464 ms). Existing app identity/private
+storage retained; no clear/uninstall or record operation. Member unlock and photo
+reselection requested. Active preview/draft/review font-change acceptance and
+actual Home/background lock regression remain open on this new APK.
+
+Read-only phone QA on the existing Progress checkpoint APK `090d237e...`
+(source `838ea19`, 749-test/debug gate), Samsung SM-S928B / Android 16.
+Member selected a meal photo. Prepare draft displayed inline preparing feedback
+and a reachable Stop action. Tapping Stop returned to the empty capture selector.
+A further stable observation approximately one minute later still showed the
+selector, without a late draft. This is one observed cancellation window, not
+proof of every native completion race. No record Save/edit/delete, new install,
+configuration change or biometric automation occurred.
+
+Read-only explorer audit confirms photo removal is intentional: panel reset
+revokes its request and preparation/OCR generation; lifecycle cancellation
+revokes the analysis generation and deletes the temporary image. The current
+contract requires choosing a photo again to retry. Do not classify this as an
+unintended draft-loss defect or silently extend temporary-photo retention.
+Member asked to reselect the photo for the next bounded check: a fresh analysis
+after Stop and unsaved Review/cancel. Partial/error/retry and accessibility
+acceptance remain open. Temporary host screenshot removed after inspection;
+no image, member values or device endpoint retained in this note.
+
 ## Source checkpoint before progress chart work - 2026-10-27
 
 Member authorizes commit and push of the pending assistant/OCR/drink-quantity

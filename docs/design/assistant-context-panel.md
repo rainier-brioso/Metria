@@ -192,6 +192,12 @@ Do not mark the UI task fully accepted until these applicable phone gates pass.
 - Photo Review retains the shared full meal editor and all its catalog,
   portions/corrections/uncertainty controls. Cancel returns to the same panel
   draft; successful Save returns to Chat. Today photo routes are unchanged.
+- Foreground system font-size changes update Compose in place, preserving the
+  current assistant panel, capture route and unsaved in-memory draft while the
+  layout recomposes for the new scale. Leaving/backgrounding the app continues
+  to lock the vault and discard temporary images and drafts under the existing
+  policy. Physical font-scale verification of an active capture/review remains
+  open; no photo or meal draft is persisted to make it survive app backgrounding.
 - Options now also includes Privacy and Lock alongside New conversation and
   Assistant tools. Existing serialized conversation retention precedes handoff.
 - Gate: 718 tests, zero failures/errors/skips; debug assembly and diff check pass.

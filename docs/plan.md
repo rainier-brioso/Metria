@@ -1,5 +1,30 @@
 # Metria product plan
 
+Demo checkpoint (2026-10-27): member explicitly schedules the remaining assistant
+physical acceptance after the hackathon demo and authorizes commit/push of pending
+changes. The actionable checklist is `m4-assistant-checkpoints.md`, section
+Post-demo acceptance backlog. Deferred gates stay open; this is not full release
+acceptance. Existing no-save verification limits remain in force.
+
+Assistant QA fixtures (2026-10-27): three new debug capture-state previews reuse
+production loading/partial/error/source controls with invented data and inert
+callbacks. Independent review, full 749-test/debug gate and three visual renders
+pass; no installation or inference required. Header Close separately verified
+on installed font-fix APK. Real capture failure/partial/recovery and gestures
+remain open; member explicitly defers TalkBack. No records changed. Evidence:
+`m4-assistant-checkpoints.md`, `testing/assistant-previews.md`.
+
+Assistant font/async continuation (2026-10-27): physical Stop returns to the
+intentional empty capture and no late draft was seen in the observed wait.
+Reselection/new-analysis/Review/Leave succeeds without saving. A foreground
+font-change restoration defect was found; bounded fontScale configuration fix
+passes independent review and the full 749-test/debug gate and is installed in
+place. Corrected-build phone checks pass retained photo at 150%, fresh analysis,
+Review action reachability and retained Review when restoring font 1.0. Original
+font restored; no records changed. Home/reopen yielded a protected capture;
+member lock confirmation is pending. Partial/error, TalkBack/gestures and broader
+assistant font/IME gates remain open. Evidence: `m4-assistant-checkpoints.md`.
+
 Progress evolution (2026-10-27): member approves selectable 7-day, 1-month,
 3-month and 1-year charts, with 3 months initially for weight and 7 days for
 nutrition, per-metric restored selection and a larger read-only detail.

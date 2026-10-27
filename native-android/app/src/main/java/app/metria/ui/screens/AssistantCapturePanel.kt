@@ -152,28 +152,17 @@ fun AssistantCapturePanel(
                     )
                 }
                 busy -> {
-                    LinearProgressIndicator(Modifier.fillMaxWidth())
-                    Text(when (status.imageState) {
-                        "preparing" -> "Preparing your photo…"
-                        "reading_label" -> "Reading the nutrition label…"
-                        else -> "Preparing your meal draft…"
-                    }, style = MaterialTheme.typography.titleMedium)
-                    Text("Everything stays on this phone. Nothing has been saved.", color = MetriaColors.InkMuted)
-                    OutlinedButton(onClick = reset, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Stop") }
+                    AssistantCaptureLoadingState(status.imageState, onStop = reset)
                 }
                 status.imageState == "cooling_down" -> {
                     Text("Photo tools are cooling down. Try again in ${secondsLeft}s.")
                     Text("You can return to chat while your phone cools.", color = MetriaColors.InkMuted)
                 }
-                proposal != null -> CaptureDraftCard {
-                    Text("Your meal draft", style = MaterialTheme.typography.titleLarge)
-                    Text(proposal.items.joinToString(" · ") { it.name })
-                    Text("Estimate · ${proposal.overallConfidence} confidence", color = MetriaColors.InkMuted)
-                    Text(if (proposal.omittedItemCount > 0) "Some foods could not be identified. Add anything missing during review."
-                        else "Check foods and portions before saving.")
-                    Button(onClick = { onReviewMeal(proposal) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Review draft") }
-                    TextButton(onClick = { pendingExit = {} }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Discard draft") }
-                }
+                proposal != null -> AssistantMealDraftCaptureCard(
+                    proposal = proposal,
+                    onReview = { onReviewMeal(proposal) },
+                    onDiscard = { pendingExit = {} },
+                )
                 labelReady -> CaptureDraftCard {
                     Text("Your label draft", style = MaterialTheme.typography.titleLarge)
                     Text(if (status.labelDraft == null) "The text was read, but nutrition values need to be entered from the package."
@@ -200,9 +189,7 @@ fun AssistantCapturePanel(
                         }
                     }
                     if (attempted || status.imageState == "failed") {
-                        Text(if (label) "Could not prepare a label draft. Try a clearer photo or enter a meal manually."
-                            else "Could not prepare a meal draft. Try another photo or enter the foods manually.", color = MetriaColors.Danger)
-                        TextButton(onClick = onManualMeal, modifier = Modifier.heightIn(min = 48.dp)) { Text("Enter manually") }
+                        AssistantCaptureFailureState(label = label, onManualMeal = onManualMeal)
                     }
                     error?.let { Text(it, color = MetriaColors.Danger) }
                     if (status.imageState == "ready") {
@@ -230,8 +217,12 @@ fun AssistantCapturePanel(
                             TextButton(onClick = { requestExit(onOpenTools) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Assistant setup") }
                         }
                         OutlinedButton(onClick = { choose(true) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Retake photo") }
-                    } else Button(onClick = { choose(true) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Take photo") }
-                    OutlinedButton(onClick = { choose(false) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Choose image") }
+                    } else AssistantCaptureSourceAction(
+                        text = "Take photo", primary = true, onClick = { choose(true) },
+                    )
+                    AssistantCaptureSourceAction(
+                        text = "Choose image", primary = false, onClick = { choose(false) },
+                    )
                     Text("Review before saving. Photos are processed on this phone.", style = MaterialTheme.typography.bodySmall, color = MetriaColors.InkMuted)
                 }
             }
@@ -249,5 +240,50 @@ fun AssistantCapturePanel(
 private fun CaptureDraftCard(content: @Composable ColumnScope.() -> Unit) {
     Surface(color = MetriaColors.Surface, shape = MaterialTheme.shapes.medium, border = BorderStroke(1.dp, MetriaColors.Divider)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp), content = content)
+    }
+}
+
+@Composable
+internal fun AssistantCaptureLoadingState(imageState: String, onStop: () -> Unit) {
+    LinearProgressIndicator(Modifier.fillMaxWidth())
+    Text(when (imageState) {
+        "preparing" -> "Preparing your photo…"
+        "reading_label" -> "Reading the nutrition label…"
+        else -> "Preparing your meal draft…"
+    }, style = MaterialTheme.typography.titleMedium)
+    Text("Everything stays on this phone. Nothing has been saved.", color = MetriaColors.InkMuted)
+    OutlinedButton(onClick = onStop, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Stop") }
+}
+
+@Composable
+internal fun AssistantMealDraftCaptureCard(
+    proposal: MealProposal,
+    onReview: () -> Unit,
+    onDiscard: () -> Unit,
+) {
+    CaptureDraftCard {
+        Text("Your meal draft", style = MaterialTheme.typography.titleLarge)
+        Text(proposal.items.joinToString(" · ") { it.name })
+        Text("Estimate · ${proposal.overallConfidence} confidence", color = MetriaColors.InkMuted)
+        Text(if (proposal.omittedItemCount > 0) "Some foods could not be identified. Add anything missing during review."
+            else "Check foods and portions before saving.")
+        Button(onClick = onReview, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Review draft") }
+        TextButton(onClick = onDiscard, modifier = Modifier.heightIn(min = 48.dp)) { Text("Discard draft") }
+    }
+}
+
+@Composable
+internal fun AssistantCaptureFailureState(label: Boolean, onManualMeal: () -> Unit) {
+    Text(if (label) "Could not prepare a label draft. Try a clearer photo or enter a meal manually."
+        else "Could not prepare a meal draft. Try another photo or enter the foods manually.", color = MetriaColors.Danger)
+    TextButton(onClick = onManualMeal, modifier = Modifier.heightIn(min = 48.dp)) { Text("Enter manually") }
+}
+
+@Composable
+internal fun AssistantCaptureSourceAction(text: String, primary: Boolean, onClick: () -> Unit) {
+    if (primary) Button(onClick = onClick, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+        Text(text)
+    } else OutlinedButton(onClick = onClick, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+        Text(text)
     }
 }
