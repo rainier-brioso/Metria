@@ -14,6 +14,13 @@ revised first.
 
 ## Data boundary
 
+Chat drink-quantity extension (2026-10-24, approved implementation in progress):
+typed and transcribed mL/measured-serving expressions may update an unsaved draft
+only using the packaged food's existing validated conversion. Unsupported or
+ambiguous quantities preserve the previous draft; no model density or generic
+cup conversion. Initial explicit quantities override remembered portions. Existing
+Review and explicit Save remain required; no automatic recording is authorized.
+
 **Drink quantity decision - 2026-10-22:** member approved mL and measured serving
 entry with correct nutrition conversions. Preserve the chosen amount/unit and
 validated source conversion in the existing encrypted meal item and saved-dish

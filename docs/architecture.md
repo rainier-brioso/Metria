@@ -1,6 +1,34 @@
 # Metria architecture
 
+Contextual assistant completion (approved 2026-10-26): label insertion and
+assistant-origin meal update may opt into a host-authored conversation receipt
+inside the same encrypted-vault transaction, with conversation rollback on
+failure. Receipt-bearing mutations must also share the serialized conversation
+writer gate: wait for any in-flight transcript write before mutating the vault,
+invalidate stale snapshot tickets and synchronize the returned transcript before
+releasing the gate. An older debounced/IO snapshot must not erase the receipt.
+Recheck unlocked session and current editor after waiting; saving is guarded
+against repeat taps and cancellation. Label values retain verified-label
+validation and do not enter estimate
+or correction-learning pipelines. Receipts carry the saved record identity,
+not model-authored claims or new read authority; existing retention and fresh
+record lookup govern View meal. A contextual explicit save/update can start a
+receipt-only conversation without reviving expired transcript content.
+Direct saved-dish browsing is local UI over unlocked dishes. Selection checks
+the current dish identity and uses the existing unsaved review prefill; it grants
+no model capability or automatic Save. Lock/session disposal revokes that UI.
+
 ## Shared routing recognition
+
+Chat drink-quantity extension (2026-10-24, in development): original member text
+may supply a bounded initial mL/serving quantity or a correction to a current
+unsaved ordinary draft. Host-owned metadata/overrides carry the chosen source-bound
+snapshot, not a model-provided density. Resolve only against the same unambiguous
+packaged drink used by Review; ambiguous or missing conversion preserves the
+previous draft. Canonical grams still drive nutrition. Explicit gram entry or
+food replacement invalidates the prior conversion; unchanged-draft continuation
+must preserve it. Existing identity, cancellation, voice and explicit Save guards
+remain, with no new vault schema or dependency. Scope: `drink-portions.md`.
 
 Drink portions (approved 2026-10-22): meals keep their
 canonical integer gram mass for deterministic per-100-g catalog calculation. An
@@ -533,6 +561,14 @@ interpreted as a URL or model-authored tool request. Member/evidence messages
 cannot retain it. View meal resolves against the current unlocked meal list;
 deleted targets have no action. The existing editor overlays Chat and returns
 there on dismissal, save, or deletion.
+
+Contextual capture follow-up (2026-10-26): Analyse meal and its manual fallback
+use that same atomic receipt path. Their explicit Save may create a fresh
+receipt-only conversation when no active conversation exists; expired messages
+are excluded rather than revived. Opening capture alone writes no transcript.
+An assistant-only opt-in initializes the Review meal category from the frozen
+local review time after explicit Today/member choices. Selection and clearing
+remain review state; no existing saved record is reclassified.
 
 ## Android voice handoff
 

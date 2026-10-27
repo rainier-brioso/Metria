@@ -1,5 +1,122 @@
 # Metria product plan
 
+Assistant prototype completion (2026-10-26/27): direct searchable saved-dish
+selection into unsaved Review, contextual label category/atomic Chat receipt,
+and atomic update receipt for saved meals opened from Chat are implemented.
+Independent review, five affected synthetic renders and full 745-test/debug gate
+pass. Final APK installed in place. Phone verifies list/search/no-match/keyboard
+and saved-dish selection/cancel; two discovered review copy/inset defects are
+fixed and verified in portrait/landscape on final build. Original rotation
+restored. No agent record Save/edit/delete. Contextual label default/change/clear,
+rotation and Review re-entry, portrait keyboard and landscape final-action
+reachability pass on the final APK; test capture discarded back to retained Chat.
+Real receipt success needs member Save/update. Broader
+accessibility/async gates remain open. See
+`design/assistant-context-panel.md` and `m4-assistant-checkpoints.md`.
+
+Assistant save follow-up (2026-10-26): contextual meal Save now atomically records
+the Chat acknowledgement/View meal, including capture as the first conversation
+action. Assistant Review preselects an editable local-time meal category after
+explicit Today/member choices. Existing records unchanged. Two worker changes,
+independent review, 743-test/debug gate and saved-receipt preview render pass.
+Updated in place on reference Samsung and cold-launched successfully. Physical
+default/change/clear category and cleared-state rotation checks pass; original
+default and rotation restored without saving. Member subsequently saved and
+confirms correct category; physical inspection verifies Chat acknowledgement,
+View meal opening the same record and return without changes. Empty/expired
+conversation and failure paths remain separate physical gaps.
+Details: `m4-assistant-checkpoints.md`.
+
+Synthetic previews (2026-10-26): nine debug-only assistant/review previews now
+reuse actual components with fixed invented data and inert save callbacks.
+Full unit/debug gate passes 738 tests; independent review and diff check pass.
+Studio follow-up rendered and visually inspected all nine previews successfully;
+no blocking overlap/truncation observed in their initial viewports. Interactive
+scrolling and native-window/IME acceptance remain open. No install or phone
+interaction in this slice. Usage and exact observations: `testing/assistant-previews.md`.
+Prior live draft was lost on phone lock; physical gaps below remain open.
+
+OCR continuation (2026-10-26): paired-row column boundaries preserve unknown
+left-column fields; the subsequent actual-label check exposed detached numeric
+lines with multiple values. Their element boxes now reach column selection.
+Independent review and full Android test/debug gate pass (738 tests).
+The formerly failing dual-column image now passes on the phone with all four
+fields from the same per-serving column. Keyboard/landscape and camera/picker
+cancellation were checked on that APK. Meal analysis and accessibility checks
+continued: real-photo draft, shared dish editor and return without saving pass.
+A bottom system-bar overlap found in review has an assistant-entry-only repair;
+its 738-test/debug build passes. On that APK, portrait Review footer and keyboard
+checks pass. Follow-up on the same installed APK also passes Review landscape,
+dish-editor portrait/landscape footer, portrait lower-field keyboard and Cancel
+return with draft retained. Original rotation restored; no record saves.
+Stop, partial/error and accessibility checks remain pending. No record saves
+are authorized in this cycle.
+See `m4-assistant-checkpoints.md` for APK identity and acceptance gaps.
+Member prioritizes visual-debugging research before further phone checks.
+Repository-local guidance is in `skills/metria-visual-qa/SKILL.md`, linked from
+`AGENTS.md`; tooling audit and proposed infrastructure are in
+`testing/visual-debugging.md`. No app changes or new physical passes from research.
+
+OCR follow-up (2026-10-25): geometry-based consistent-column extraction and
+ambiguous/unit/subtotal regressions implemented; complete Android gate passes
+730 tests. The assistant landscape inset fix is included. New-build physical
+OCR/landscape acceptance remains open; see `m4-assistant-checkpoints.md`.
+
+Assistant panel follow-up (2026-10-25): integrated photo/label capture, inline label
+review and options Privacy/Lock implemented. Full Android gate passes 718 tests;
+physical acceptance remains open. See `design/assistant-context-panel.md` for the
+exact scope, APK identity and remaining capture/review/keyboard/rotation checks.
+
+## Active assistant panel - 2026-10-24
+
+Member approved implementation of only the contextual assistant panel, retaining
+the current icon and all existing functions, with no redesign of other screens.
+Pre-existing Chat drink quantity work below is preserved. Design, scope and
+acceptance evidence: `design/assistant-context-panel.md`. Final debug test/build
+gate passed (714 tests); physical acceptance remains pending.
+Do not treat the interactive prototype or a passing build as phone acceptance.
+Member rejected the initial installed styling as unlike the prototype. A visual
+correction now uses inline actions, a unified composer, soft messages and the
+existing navigation dock. Its 714-test/debug build gate passes; fresh visual
+acceptance is pending. See the panel specification for the corrected APK hash.
+
+## Active Chat drink quantities - 2026-10-24
+
+Drink-unit checkpoint `ee36df2` is committed and pushed. Member approves typed
+and spoken mL/measured-serving quantities in ordinary Chat: both an explicit
+single-drink report and a correction to its live unsaved draft. Use the same
+source-backed conversion and canonical grams as Review, preserve the chosen unit,
+and keep explicit current quantities above remembered defaults. Missing or
+ambiguous serving/conversion evidence must explain the limitation without changing
+the previous draft. Existing request/session/voice guards and final Review/Save
+remain authoritative. No new dependency, automatic Save or persisted preference.
+Implementation, review, automated gate and phone acceptance are in progress;
+see `drink-portions.md` for the bounded scope and test plan.
+
+Implementation and independent/follow-up review pass. Final gate passes all 710
+tests, debug/release assembly, release vital lint and diff check. Samsung is
+connected and authorized in-place installation is underway; new initial mL,
+repeated serving/gram and spoken correction checks are not yet accepted. Closed
+correction phrases omit trailing food names; unsupported phrases retain the draft.
+
+Verified APK installed in place and cold-launched successfully on Samsung
+SM-S928B / Android 16. Member unlock and initial mL/half-cup phone check requested;
+new physical acceptance remains pending.
+
+Member confirms initial coffee 200 mL + Breakfast and subsequent half-cup Review
+checks pass. Safe trace corroborates guarded initial drink drafting, not amount
+values. Spoken correction, gram switching/invalid retention and broader physical
+gates remain open. Next focused check: spoken mL edit and repeated Review.
+
+Spoken check reported failed. Authorized visible-layout inspection shows different
+consumption wording/amount from the requested correction; trace corroborates
+portion rejection then a new draft. Await original spoken amount to distinguish
+ASR from quantity/intent behavior. No converter change or spoken pass claimed.
+
+Member may have said "thousand" accidentally. Retry a fresh typed coffee draft
+with spoken one-hundred-milliliter correction; recognition/conversion acceptance
+remains open, with no code fix inferred from the prior test.
+
 ## Active drink portions - 2026-10-22
 
 Active follow-up: member requests remembered drink unit/portion and readable cup

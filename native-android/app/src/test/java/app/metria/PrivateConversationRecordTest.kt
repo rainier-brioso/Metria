@@ -73,6 +73,16 @@ class PrivateConversationRecordTest {
         ))
     }
 
+    @Test fun `linked saved-meal receipt remains active without inventing a member message`() {
+        val receipt = PrivateConversationMessage("Meal saved", fromMember = false, savedMealId = "meal-123")
+
+        val decoded = PrivateConversationMessageCodec.decode(PrivateConversationMessageCodec.encode(receipt))
+        val record = PrivateConversationPolicy.updated(listOf(decoded), now)!!
+
+        val snapshot = PrivateConversationPolicy.updated(record.messages, record.updatedAt)
+        assertEquals(listOf(receipt), PrivateConversationPolicy.active(snapshot, now)?.messages)
+    }
+
     @Test
     fun `message text is bounded before storage`() {
         val record = PrivateConversationPolicy.updated(

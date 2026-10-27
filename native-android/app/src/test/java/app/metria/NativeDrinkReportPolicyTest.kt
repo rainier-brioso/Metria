@@ -13,12 +13,19 @@ class NativeDrinkReportPolicyTest {
             "I have had orange juice as breakfast").forEach { assertEquals(it, description(it)) }
     }
 
+    @Test fun `closed quantified drink reports enter the draft path with host-parsed quantity`() {
+        listOf("I had 200 mL of coffee", "I had 200mL coffee for breakfast", "I drank half a cup of coffee")
+            .forEach { text -> assertEquals(text, description(text)) }
+        assertEquals(ChatDrinkQuantity(200.0, "ml"), ChatDrinkPortionPolicy.reportQuantity("I had 200 mL of coffee"))
+        assertEquals(ChatDrinkQuantity(0.5, "serving", "cup"), ChatDrinkPortionPolicy.reportQuantity("I drank half a cup of coffee"))
+    }
+
     @Test fun `ask first advice questions negation and mixed details never take direct route`() {
         listOf("I had a coffee for breakfast. Please ask me before preparing a draft.",
             "I had coffee; do not record it", "Should I have coffee?", "I could have coffee",
             "I haven't had coffee", "I had a coffee with a friend", "I had coffee and toast",
             "I had a bad night's sleep", "I had coffee yesterday", "I had coffee?",
-            "I had 200 ml coffee", "I had a large coffee", "Ah, had a coffee for breakfast").forEach {
+            "I had 200 g coffee", "I had 200 ml coffee and toast", "I had a large coffee", "Ah, had a coffee for breakfast").forEach {
             assertNull(it, description(it))
         }
     }

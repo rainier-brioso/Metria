@@ -801,6 +801,7 @@ class EncryptedVault(
         dishes: List<PersonalDish>,
         correctionMemory: MealCorrectionMemory? = null,
         recordInConversation: Boolean = false,
+        createReceiptOnlyConversation: Boolean = false,
     ): Status {
         if (sessionKey == null) return Status.Locked
         if (!MealEntryValidation.valid(entry)) return Status.Failed("This reviewed meal contains invalid values.")
@@ -829,7 +830,10 @@ class EncryptedVault(
             }
             require(dishes.all(::mergePersonalDish)) { "Private dish memory is full." }
             if (recordInConversation) {
-                AssistantMealSaveReceipt.append(activeConversation, entry, Instant.now())?.let {
+                AssistantMealSaveReceipt.append(
+                    activeConversation, entry, Instant.now(),
+                    createReceiptOnlyConversation = createReceiptOnlyConversation,
+                )?.let {
                     activeConversation = it
                     conversationExpired = false
                 }
@@ -965,27 +969,50 @@ class EncryptedVault(
     }
 
     @Synchronized
-    fun addMeal(entry: MealEntry): Status {
+    fun addMeal(
+        entry: MealEntry,
+        recordInConversation: Boolean = false,
+        createReceiptOnlyConversation: Boolean = false,
+    ): Status {
         if (sessionKey == null) return Status.Locked
         if (!MealEntryValidation.valid(entry)) return Status.Failed("This meal draft contains invalid values.")
+        val previousConversation = activeConversation
+        val previousConversationExpired = conversationExpired
         meals.add(entry)
         return try {
+            if (recordInConversation) {
+                AssistantMealSaveReceipt.append(
+                    activeConversation, entry, Instant.now(),
+                    createReceiptOnlyConversation = createReceiptOnlyConversation,
+                )?.let {
+                    activeConversation = it
+                    conversationExpired = false
+                }
+            }
             persist()
             runCatching { onMealPersisted(MealWriteOrigin.DIRECT_ENTRY) }
             unlockedStatus()
         } catch (_: Exception) {
             meals.remove(entry)
+            activeConversation = previousConversation
+            conversationExpired = previousConversationExpired
             Status.Failed("Meal could not be saved locally. Try again before locking the vault.")
         }
     }
 
     @Synchronized
-    fun updateMeal(entry: MealEntry): Status {
+    fun updateMeal(
+        entry: MealEntry,
+        recordInConversation: Boolean = false,
+        createReceiptOnlyConversation: Boolean = false,
+    ): Status {
         if (sessionKey == null) return Status.Locked
         if (!MealEntryValidation.valid(entry)) return Status.Failed("This meal contains invalid values.")
         val index = meals.indexOfFirst { it.id == entry.id }
         if (index < 0) return Status.Failed("This meal record is no longer available.")
         val previous = meals[index]
+        val previousConversation = activeConversation
+        val previousConversationExpired = conversationExpired
         val previousCorrections = foodCorrections.toList()
         val previousMemories = mealCorrectionMemories.toList()
         val removingOnlyReferencePhoto = MealLearningLifecyclePolicy.removesOnlyReferencePhoto(previous, entry)
@@ -1000,11 +1027,23 @@ class EncryptedVault(
             mealCorrectionMemories.removeAll { it.mealId == entry.id }
         }
         return try {
+            if (recordInConversation) {
+                AssistantMealSaveReceipt.append(
+                    activeConversation, entry, Instant.now(),
+                    createReceiptOnlyConversation = createReceiptOnlyConversation,
+                    updated = true,
+                )?.let {
+                    activeConversation = it
+                    conversationExpired = false
+                }
+            }
             persist()
             runCatching { onMealPersisted(MealWriteOrigin.EDIT) }
             unlockedStatus()
         } catch (_: Exception) {
             meals[index] = previous
+            activeConversation = previousConversation
+            conversationExpired = previousConversationExpired
             foodCorrections = previousCorrections.toMutableList()
             mealCorrectionMemories = previousMemories.toMutableList()
             Status.Failed("Meal changes could not be saved locally. Try again before locking the vault.")

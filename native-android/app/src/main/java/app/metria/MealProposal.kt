@@ -2,6 +2,7 @@ package app.metria
 
 import org.json.JSONArray
 import org.json.JSONObject
+import java.time.LocalTime
 import java.util.Locale
 
 data class GramRange(val min: Int, val max: Int)
@@ -31,6 +32,8 @@ data class MealProposal(
     val memberMealSlot: String? = null,
     /** Host permits a saved drink default only when the source text specifies no quantity. */
     val memberDrinkDefaultsAllowed: Boolean = false,
+    /** Explicit drink quantity parsed from original member text; never supplied by model JSON. */
+    val memberDrinkQuantity: ChatDrinkQuantity? = null,
 )
 
 /** Attaches only a uniquely and explicitly named meal slot from member-authored text. */
@@ -63,12 +66,14 @@ object ExplicitMealSlotPolicy {
 
     fun attach(proposal: MealProposal, memberText: String): MealProposal =
         proposal.copy(memberMealSlot = explicitSlot(memberText),
-            memberDrinkDefaultsAllowed = DrinkDefaultsPolicy.allowsDefault(memberText))
+            memberDrinkDefaultsAllowed = DrinkDefaultsPolicy.allowsDefault(memberText),
+            memberDrinkQuantity = ChatDrinkPortionPolicy.reportQuantity(memberText))
 
-    /** A valid explicit Today section wins; otherwise use the member's wording. */
-    fun initialReviewSlot(todayMealSlot: String?, memberMealSlot: String?): String? =
+    /** A valid explicit Today section wins; otherwise use member wording, then an optional local-time suggestion. */
+    fun initialReviewSlot(todayMealSlot: String?, memberMealSlot: String?, reviewTime: LocalTime? = null): String? =
         todayMealSlot?.takeIf { it in MealSlots.allowed }
             ?: memberMealSlot?.takeIf { it in MealSlots.allowed }
+            ?: reviewTime?.let(MealSlots::suggestedFor)
 }
 
 /** Closed, non-sensitive reasons a usable proposal omitted one or more foods. */

@@ -1,5 +1,37 @@
 # Metria screen contracts
 
+Assistant completion (approved 2026-10-26): My saved dishes is an inline panel
+page with Back to chat, a labelled search field, readable selectable dish rows
+and explicit empty/no-match states. Selection opens the shared unsaved Review;
+it never saves automatically. The list uses the Metria theme, scrolls above the
+keyboard/dock and supports enlarged text. Label Review exposes a labelled meal
+category selection with a clearable clock default. Successful contextual label
+Save and assistant-origin meal update show host-authored Chat receipts with
+View meal only after their atomic vault operation succeeds. Cancellation and
+failure create no receipt. No new persistence or background-draft promise.
+
+Assistant save follow-up (2026-10-26): after a successful contextual meal Save,
+Chat shows the existing saved-meal acknowledgement and View meal action, linked
+to the actual saved record. No success message on failure. In assistant meal
+Review, Meal details starts with an editable local-time category when no explicit
+Today/member category exists; a member-cleared value remains unclassified.
+
+Assistant capture pages (2026-10-25): use the same panel header, expandable white
+surface and original navigation as Chat. One dominant action per stage: Take photo,
+Prepare draft/Read label, Review, or explicit Save in label review. Source/preview
+uses a botanical tonal area; results use a bordered draft card with visible
+uncertainty. Inline scrolling, IME insets, source cancellation, cooldown, Stop,
+partial/error/manual fallback and unsaved-exit confirmation are required. The
+shared photo meal editor preserves all detailed correction tools. Physical gates
+remain pending in `assistant-context-panel.md`.
+
+Chat drink quantities (2026-10-24, in development): use the existing Chat timeline,
+activity state and Review action. Applied amount feedback identifies mL or the
+measured serving. Unsupported/ambiguous/invalid amounts explain that the draft is
+unchanged and keep Review available. Review displays the chosen unit using its
+existing concise quantity control and source conversion; no new layout or primary
+action. Shared typed/spoken behavior and acceptance: `../drink-portions.md`.
+
 Drink Review (2026-10-22): identify a reused saved portion with one concise note;
 keep Edit and explicit Save authoritative. Quantity controls show readable mL or
 servings, label rounded conversions as approximate, and retain exact mass until
@@ -426,6 +458,20 @@ lock/background and the existing response lifecycle invalidate the details.
 **States:** direct edit, assistant unavailable/busy, loading, result, stale result, apply/discard, manually selected replacement match, partial/no catalog estimate, manual nutrition unchanged, pending reference removal, keyboard visible, rotation, cancel, validation/save failure, save/reopen.
 
 ## Assistant overlay and conversation
+
+**Approved contextual panel - 2026-10-24:** replace only the assistant's
+presentation with a compact/expanded in-window panel, entered from the existing
+green SmartToy action. Use the prototype's continuous white surface, soft member
+messages, plain assistant prose, rounded unified composer and inline action views.
+Reuse the original navigation dock when the keyboard is closed. Keep all existing timeline, voice, evidence, action cards,
+review, Copy and saved-meal links. A full-width composer has `+` for existing
+capture/manual routes; header options retain confirmed New conversation and
+Assistant tools. Size changes retain one composition; keyboard, large fonts and
+short windows use the full available height. Only the already-bound selected
+meal receives a context label. The background shell is excluded from accessibility
+traversal while open. This supersedes the initial full-screen/selector layout
+below without changing other screens or business rules. Detailed state and
+acceptance contract: [assistant-context-panel.md](assistant-context-panel.md).
 
 An explicit single-food label correction admitted by the packaged food vocabulary
 may complete locally (2026-10-19), using the same acknowledgement/card and no

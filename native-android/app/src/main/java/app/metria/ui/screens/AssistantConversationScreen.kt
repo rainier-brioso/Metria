@@ -7,6 +7,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,11 +18,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -44,7 +42,6 @@ import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SmartToy
 import androidx.compose.material.icons.rounded.Stop
-import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -54,6 +51,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -78,13 +80,20 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.width
 import app.metria.MealProposal
 import app.metria.ModelStatus
+import app.metria.PersonalDish
 import app.metria.SafeMarkdownText
 import app.metria.WeightEntry
 import app.metria.ui.theme.MetriaColors
 import app.metria.ui.components.SelectableChatText
 import app.metria.ui.components.AssistantActivityCard
+import app.metria.ui.components.AssistantContextPanel
+import app.metria.ui.components.AssistantPanelAction
+import app.metria.ui.components.AssistantPanelActions
+import app.metria.ui.components.AssistantPanelHeader
+import app.metria.ui.components.AssistantPanelChoices
 
 data class MetriaChatMessage(
     val text: String,
@@ -213,7 +222,7 @@ internal fun assistantHomeSupporting(state: String): String = when (state) {
 }
 
 /**
- * Approved Assistant slice: conversation is a full-screen, keyboard-safe destination while
+ * Conversation stays in one resizable, keyboard-safe contextual panel while
  * tool selection and vault mutations remain owned by the existing coordinator.
  */
 @Composable
@@ -233,6 +242,7 @@ fun MetriaAssistantConversationScreen(
     portionQuestion: String? = null,
     portionFeedback: String? = null,
     savedDishChoices: List<MetriaSavedDishChoice> = emptyList(),
+    savedDishes: List<PersonalDish> = emptyList(),
     recordingVoice: Boolean,
     preparingVoice: Boolean,
     voiceMessage: String?,
@@ -247,20 +257,27 @@ fun MetriaAssistantConversationScreen(
     onReviewMeal: (MealProposal) -> Unit,
     onOpenSavedMeal: (String) -> Unit,
     onReviewSavedDish: (String) -> Unit = {},
+    onSelectSavedDish: (String) -> Unit = {},
     onDiscardMealDraft: () -> Unit,
     onToggleVoice: () -> Unit,
     onEditLatestMemberMessage: (String) -> Unit,
     onSend: () -> Unit,
     voiceActivity: (@Composable () -> Unit)? = null,
     composerFocusRequest: Long = 0L,
+    onPanelAction: (AssistantPanelAction) -> Unit,
+    panelActionInFlight: Boolean = false,
+    introductoryConversation: Boolean = false,
+    bottomBar: @Composable () -> Unit = {},
 ) {
-    BackHandler(onBack = onBack)
+    var panelView by rememberSaveable { mutableStateOf("chat") }
+    BackHandler { if (panelActionInFlight) Unit else if (panelView != "chat") panelView = "chat" else onBack() }
     val listState = rememberLazyListState()
     val composerFocusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
     var focusComposerAfterEdit by remember { mutableStateOf(false) }
     var editingMessageAsNewTurn by rememberSaveable { mutableStateOf(false) }
     var confirmNewConversation by remember { mutableStateOf(false) }
+    var expanded by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val activity = chatActivity(voiceActivity != null, assistantStopping, mealDraftThinking, assistantThinking, responseStopped)
     val transientCount = listOfNotNull(
@@ -271,8 +288,11 @@ fun MetriaAssistantConversationScreen(
         assistantDiagnostic,
         coachDiagnostic,
     ).size
-    LaunchedEffect(messages.size, streamingReply, transientCount, activity, assistantDiagnostic, coachDiagnostic) {
-        val lastIndex = messages.size + transientCount - 1
+    val showIntroduction = (messages.isEmpty() || introductoryConversation) && transientCount == 0
+    val visibleMessages = if (showIntroduction) emptyList() else messages
+    LaunchedEffect(messages.size, streamingReply, transientCount, activity, assistantDiagnostic, coachDiagnostic, selectedMealContextTitle) {
+        val lastIndex = visibleMessages.size + transientCount +
+            (if (selectedMealContextTitle != null) 1 else 0) + (if (showIntroduction) 1 else 0) - 1
         if (lastIndex >= 0) listState.animateScrollToItem(lastIndex)
     }
     LaunchedEffect(focusComposerAfterEdit) {
@@ -292,27 +312,77 @@ fun MetriaAssistantConversationScreen(
     }
     val latestMemberMessageIndex = messages.indexOfLast { it.fromMember && !it.localEvidence }
     val canEditMessage = !assistantThinking && !assistantStopping && !mealDraftThinking &&
-        !recordingVoice && !preparingVoice && voiceActivity == null
+        !recordingVoice && !preparingVoice && voiceActivity == null && !panelActionInFlight
 
-    Surface(
-        color = MetriaColors.Canvas,
-        modifier = Modifier.fillMaxSize(),
-    ) {
-        Column(
-            Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
-                .navigationBarsPadding()
-                .imePadding(),
-        ) {
-            AssistantHeader(onBack, onNewConversation = { confirmNewConversation = true })
+    AssistantContextPanel(expanded = expanded, onDismiss = { if (!panelActionInFlight) onBack() }, bottomBar = bottomBar) { fullHeight, canResize ->
+            AssistantPanelHeader(
+                fullHeight = fullHeight,
+                canResize = canResize,
+                onToggleExpanded = { expanded = !expanded },
+                onClose = { if (!panelActionInFlight) onBack() },
+                onOptions = { keyboardController?.hide(); panelView = if (panelView == "options") "chat" else "options" },
+                optionsEnabled = canEditMessage,
+            )
+            if (panelView != "chat") {
+                if (panelView == "dishes") {
+                    Column(Modifier.weight(1f).fillMaxWidth()) {
+                        androidx.compose.material3.TextButton(
+                            onClick = { if (!panelActionInFlight) panelView = "chat" },
+                            enabled = !panelActionInFlight,
+                            modifier = Modifier.heightIn(min = 48.dp).padding(horizontal = 20.dp),
+                        ) {
+                            androidx.compose.material3.Icon(Icons.AutoMirrored.Rounded.ArrowBack, null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Back to chat")
+                        }
+                        AssistantSavedDishesContent(
+                            dishes = savedDishes,
+                            enabled = canEditMessage,
+                            busy = panelActionInFlight,
+                            diagnostic = assistantDiagnostic ?: coachDiagnostic,
+                            onSelectDish = onSelectSavedDish,
+                        )
+                    }
+                } else AssistantPanelChoices(
+                    options = panelView == "options", enabled = canEditMessage,
+                    voiceEnabled = modelReady, newConversationEnabled = !panelActionInFlight,
+                    onBack = { panelView = "chat" },
+                    onSpeak = { panelView = "chat"; onToggleVoice() },
+                    onChat = { panelView = "chat"; focusComposerAfterEdit = true },
+                    onAction = onPanelAction,
+                    onNewConversation = { confirmNewConversation = true },
+                    onSavedDishes = { keyboardController?.hide(); panelView = "dishes" },
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                )
+            } else {
             LazyColumn(
                 state = listState,
                 modifier = Modifier.weight(1f).fillMaxWidth(),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 20.dp, vertical = 18.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                itemsIndexed(messages) { index, message ->
+                selectedMealContextTitle?.let { title ->
+                    item(key = "selected_meal_context") {
+                        SelectedMealContext(title, onClearSelectedMealContext)
+                    }
+                }
+                if (showIntroduction) {
+                    item(key = "assistant_introduction") {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text(if (selectedMealContextTitle == null) "How can I help?" else "What would you like to know?",
+                                style = MaterialTheme.typography.headlineSmall)
+                            Text("Ask about your records or prepare a new entry.", color = MetriaColors.InkMuted)
+                            OutlinedButton(onClick = {
+                                onInputChange(if (selectedMealContextTitle == null) "What meals have I recorded today?"
+                                    else "What portion is recorded for this meal?")
+                                focusComposerAfterEdit = true
+                            }, enabled = !panelActionInFlight, modifier = Modifier.heightIn(min = 48.dp)) {
+                                Text(if (selectedMealContextTitle == null) "Ask about my meals" else "Ask about this portion")
+                            }
+                        }
+                    }
+                }
+                itemsIndexed(visibleMessages) { index, message ->
                     ChatBubble(
                         message = message,
                         onOpenSavedMeal = onOpenSavedMeal,
@@ -354,33 +424,19 @@ fun MetriaAssistantConversationScreen(
                     }
                 }
             }
-            selectedMealContextTitle?.let { title ->
-                Surface(color = MetriaColors.PrimarySoft, shape = MaterialTheme.shapes.medium) {
-                    Row(
-                        Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
-                            Text("One question about this saved meal", style = MaterialTheme.typography.labelLarge)
-                            Text(title, color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall)
-                        }
-                        IconButton(onClick = onClearSelectedMealContext, modifier = Modifier.size(48.dp)) {
-                            Icon(Icons.Rounded.Close, contentDescription = "Remove selected meal context", tint = MetriaColors.InkMuted)
-                        }
-                    }
-                }
             }
-            AssistantComposer(
+            if (panelView == "chat") AssistantComposer(
                 input = input,
                 recordingVoice = recordingVoice && voiceActivity == null,
                 preparingVoice = preparingVoice && voiceActivity == null,
                 voiceMessage = voiceMessage.takeIf { voiceActivity == null },
                 modelReady = modelReady && voiceActivity == null,
-                assistantBusy = assistantThinking || assistantStopping || mealDraftThinking || voiceActivity != null,
+                assistantBusy = assistantThinking || assistantStopping || mealDraftThinking || voiceActivity != null || panelActionInFlight,
                 focusRequester = composerFocusRequester,
                 editingMessageAsNewTurn = editingMessageAsNewTurn,
-                inputEnabled = voiceActivity == null,
+                inputEnabled = voiceActivity == null && !panelActionInFlight,
+                panelActionsEnabled = canEditMessage,
+                onOpenActions = { keyboardController?.hide(); panelView = if (panelView == "actions") "chat" else "actions" },
                 onToggleVoice = onToggleVoice,
                 onInputChange = {
                     onInputChange(it)
@@ -391,7 +447,6 @@ fun MetriaAssistantConversationScreen(
                     editingMessageAsNewTurn = false
                 },
             )
-        }
     }
     if (confirmNewConversation) {
         AlertDialog(
@@ -401,7 +456,7 @@ fun MetriaAssistantConversationScreen(
             confirmButton = {
                 TextButton(onClick = {
                     scope.launch {
-                        if (onNewConversation()) confirmNewConversation = false
+                        if (onNewConversation()) { confirmNewConversation = false; panelView = "chat" }
                     }
                 }) { Text("Start new") }
             },
@@ -453,28 +508,19 @@ private fun StoppingBubble() {
 }
 
 @Composable
-private fun AssistantHeader(onBack: () -> Unit, onNewConversation: () -> Unit) {
-    Surface(color = MetriaColors.Surface, shadowElevation = 1.dp) {
+private fun SelectedMealContext(title: String, onClear: () -> Unit) {
+    Surface(color = MetriaColors.PrimarySoft, shape = MaterialTheme.shapes.medium) {
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
+            Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
-                Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Close Metria conversation")
+            Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
+                Text("One question about this saved meal", style = MaterialTheme.typography.labelLarge)
+                Text(title, color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall)
             }
-            Surface(color = MetriaColors.AccentSoft, shape = MaterialTheme.shapes.medium) {
-                Icon(Icons.Rounded.SmartToy, contentDescription = null, tint = MetriaColors.Primary, modifier = Modifier.padding(10.dp).size(24.dp))
-            }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                Text("Metria", style = MaterialTheme.typography.titleMedium)
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Icon(Icons.Rounded.Lock, contentDescription = null, tint = MetriaColors.Verified, modifier = Modifier.size(13.dp))
-                    Text("AI assistant · private on this phone", color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall)
-                }
-            }
-            IconButton(onClick = onNewConversation, modifier = Modifier.size(48.dp)) {
-                Icon(Icons.Rounded.Refresh, contentDescription = "Start a new private conversation")
+            IconButton(onClick = onClear, modifier = Modifier.size(48.dp)) {
+                Icon(Icons.Rounded.Close, contentDescription = "Remove selected meal context", tint = MetriaColors.InkMuted)
             }
         }
     }
@@ -498,8 +544,8 @@ private fun ChatBubble(
             }
             message.fromMember -> Column(horizontalAlignment = Alignment.End) {
                 Surface(
-                    color = MetriaColors.Primary,
-                    contentColor = Color.White,
+                    color = MetriaColors.PrimarySoft,
+                    contentColor = MetriaColors.Ink,
                     shape = MaterialTheme.shapes.medium,
                     modifier = Modifier.widthIn(max = 320.dp),
                 ) {
@@ -523,7 +569,7 @@ private fun ChatBubble(
                         } else Modifier
                     ),
                 ) {
-                    Column(Modifier.padding(horizontal = 16.dp, vertical = 13.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(Modifier.padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         SelectableChatText { SafeMarkdownText(message.text, MetriaColors.Ink) }
                         message.savedMealId?.let { id ->
                             if (message.savedMealAvailable) {
@@ -643,8 +689,12 @@ private fun MealDraftCard(
     onReview: (MealProposal) -> Unit,
     onDiscard: () -> Unit,
 ) {
-    Card(colors = CardDefaults.cardColors(containerColor = MetriaColors.PrimarySoft)) {
+    Card(colors = CardDefaults.cardColors(containerColor = MetriaColors.Surface), border = BorderStroke(1.dp, MetriaColors.Divider)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Rounded.Edit, null, tint = MetriaColors.Primary, modifier = Modifier.size(18.dp))
+                Text("Draft · Not saved", color = MetriaColors.Primary, style = MaterialTheme.typography.labelMedium)
+            }
             Text("Meal draft ready", style = MaterialTheme.typography.titleMedium)
             Text(proposal.items.joinToString { it.name }, color = MetriaColors.InkMuted)
             Text("Review portions and ingredients before saving.", color = MetriaColors.Estimated, style = MaterialTheme.typography.bodySmall)
@@ -654,7 +704,7 @@ private fun MealDraftCard(
                     color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall)
             }
             portionFeedback?.let { Text(it, color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall) }
-            TextButton(onClick = { onReview(proposal) }, modifier = Modifier.fillMaxWidth()) { Text("Review meal") }
+            Button(onClick = { onReview(proposal) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Review meal") }
             MealDraftDiscardAction(onDiscard = onDiscard)
         }
     }
@@ -685,12 +735,14 @@ private fun AssistantComposer(
     inputEnabled: Boolean,
     onToggleVoice: () -> Unit,
     onSend: () -> Unit,
+    panelActionsEnabled: Boolean,
+    onOpenActions: () -> Unit,
 ) {
-    Surface(color = MetriaColors.Surface, shadowElevation = 4.dp) {
+    Surface(color = MetriaColors.Surface) {
         Column(
             Modifier
                 .fillMaxWidth()
-                .padding(start = 12.dp, top = 10.dp, end = 12.dp),
+                .padding(horizontal = 20.dp, vertical = 12.dp),
         ) {
             if (editingMessageAsNewTurn) {
                 Text(
@@ -718,43 +770,56 @@ private fun AssistantComposer(
                     Spacer(Modifier.height(7.dp))
                 }
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Bottom) {
-                OutlinedTextField(
+            Text("Write or use your voice", style = MaterialTheme.typography.bodySmall,
+                color = MetriaColors.InkMuted, modifier = Modifier.padding(bottom = 8.dp))
+            Surface(color = MetriaColors.Canvas, shape = MaterialTheme.shapes.medium,
+                border = BorderStroke(1.dp, MetriaColors.Divider)) {
+            Column(Modifier.padding(8.dp)) {
+            TextField(
                     value = input,
                     onValueChange = onInputChange,
-                    placeholder = { Text("Message Metria") },
+                    placeholder = { Text("Tell me…") },
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
+                        disabledContainerColor = Color.Transparent,
+                        focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent,
+                        disabledIndicatorColor = Color.Transparent,
+                    ),
                     maxLines = 4,
                     enabled = inputEnabled,
-                    modifier = Modifier.weight(1f).focusRequester(focusRequester),
+                    modifier = Modifier.fillMaxWidth().focusRequester(focusRequester).semantics { contentDescription = "Message Metria" },
                 )
-                Surface(
-                    color = if (recordingVoice) MetriaColors.AccentSoft else MetriaColors.SurfaceSubtle,
-                    shape = MaterialTheme.shapes.medium,
-                ) {
-                    IconButton(onClick = onToggleVoice,
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                AssistantPanelActions(
+                    enabled = panelActionsEnabled,
+                    onOpen = onOpenActions,
+                )
+                    TextButton(onClick = onToggleVoice,
                         enabled = canUseChatMicrophone(modelReady, assistantBusy, recordingVoice),
-                        modifier = Modifier.size(56.dp)) {
+                        modifier = Modifier.heightIn(min = 48.dp)) {
                         Icon(
                             if (recordingVoice) Icons.Rounded.Stop else Icons.Rounded.Mic,
-                            contentDescription = if (recordingVoice) "Stop listening" else "Speak to Metria",
+                            contentDescription = null,
                             tint = if (recordingVoice) MetriaColors.Verified else MetriaColors.Primary,
                         )
+                        Text(if (recordingVoice) "Stop" else "Speak", modifier = Modifier.padding(start = 4.dp))
                     }
-                }
+                Spacer(Modifier.weight(1f))
                 Surface(
-                    color = if (input.isNotBlank() && modelReady && !assistantBusy) MetriaColors.Accent else MetriaColors.SurfaceSubtle,
-                    shape = MaterialTheme.shapes.medium,
+                    color = MetriaColors.Primary,
+                    shape = MaterialTheme.shapes.small,
                 ) {
                     IconButton(
                         onClick = onSend,
                         enabled = input.isNotBlank() && modelReady && !assistantBusy,
-                        modifier = Modifier.size(56.dp),
+                        modifier = Modifier.size(48.dp),
                     ) {
-                        Icon(Icons.AutoMirrored.Rounded.Send, contentDescription = "Send message", tint = MetriaColors.Ink)
+                        Icon(Icons.Rounded.ArrowUpward, contentDescription = "Send message", tint = MaterialTheme.colorScheme.onPrimary)
                     }
                 }
             }
-            Spacer(Modifier.height(10.dp))
+            }
+            }
         }
     }
 }

@@ -287,4 +287,12 @@ class MealProposalParserTest {
 
         assertNull(proposal)
     }
+
+    @Test
+    fun rejectsHostOnlyDrinkQuantityWhenItAppearsInModelJson() {
+        val proposal = MealProposalParser.parse(
+            """{"kind":"meal_proposal","items":[{"name":"Coffee","visible_portion":"cup","estimated_grams_range":{"min":100,"max":180},"preparation":"brewed","confidence":"medium","role":"drink"}],"assumptions":[],"questions":[],"overall_confidence":"medium","member_drink_quantity":{"amount":200,"unit":"ml"}}"""
+        )
+        assertNull(proposal)
+    }
 }

@@ -33,11 +33,39 @@ class AssistantMealSaveReceiptTest {
         assertNull(AssistantMealSaveReceipt.append(expired, meal, now))
     }
 
+    @Test fun `explicit contextual save creates a receipt only conversation when none exists`() {
+        val updated = AssistantMealSaveReceipt.append(null, meal, now, createReceiptOnlyConversation = true)!!
+
+        assertEquals(listOf(meal.id), updated.messages.mapNotNull(PrivateConversationMessage::savedMealId))
+        assertEquals(now, updated.updatedAt)
+        assertEquals(updated, PrivateConversationPolicy.active(updated, now))
+    }
+
+    @Test fun `explicit contextual save after expiry starts a clean receipt only conversation`() {
+        val oldMessage = PrivateConversationMessage("Old private chat", true)
+        val expired = PrivateConversationRecord(listOf(oldMessage), now.minusSeconds(86_400))
+
+        val updated = AssistantMealSaveReceipt.append(expired, meal, now, createReceiptOnlyConversation = true)!!
+
+        assertEquals(1, updated.messages.size)
+        assertEquals(meal.id, updated.messages.single().savedMealId)
+        assertFalse(updated.messages.single().text.contains(oldMessage.text))
+        assertEquals(updated, PrivateConversationPolicy.active(updated, now))
+    }
+
     @Test fun `receipt respects chat limits and works without a meal title`() {
         val previous = PrivateConversationRecord(List(50) { PrivateConversationMessage("meal $it", true) }, now)
         val updated = AssistantMealSaveReceipt.append(previous, meal.copy(title = null), now)!!
         assertEquals(50, updated.messages.size)
         assertTrue(updated.messages.last().text.startsWith("Meal saved on this phone: confirmed beans"))
         assertTrue(updated.messages.last().text.length <= PrivateConversationPolicy.maxMessageCharacters)
+    }
+
+    @Test fun `updated meal receipt links to the same record and identifies the update`() {
+        val updated = AssistantMealSaveReceipt.append(null, meal, now,
+            createReceiptOnlyConversation = true, updated = true)!!
+        val receipt = updated.messages.single()
+        assertTrue(receipt.text.startsWith("Meal updated on this phone: Reviewed lunch"))
+        assertEquals(meal.id, receipt.savedMealId)
     }
 }

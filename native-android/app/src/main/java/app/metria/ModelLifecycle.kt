@@ -2385,7 +2385,14 @@ class ModelLifecycle(
                         assistantFoodReplacementOverride = updated ?: ChatCurrentDraftFoodPolicy.rebind(
                             activeFoodEditContext, requestId, activeFoodEditContext.currentReplacementName,
                         )
-                        assistantPortionOverride = activeFoodEditContext.currentGrams?.let { grams ->
+                        assistantPortionOverride = activePortionEditContext?.let { portionContext ->
+                            if (updated != null) portionContext.currentGrams?.let { grams -> ChatPortionOverride(
+                                requestId, portionContext.conversationGeneration, portionContext.originalProposal,
+                                portionContext.target.itemIndex, portionContext.target.itemName, grams,
+                            ) } else ChatPortionClarificationPolicy.overrideForCurrentDraft(
+                                portionContext, requestId, portionContext.currentGrams, portionContext.drinkPortion,
+                            )
+                        } ?: activeFoodEditContext.currentGrams?.let { grams ->
                             ChatPortionOverride(
                                 requestId, activeFoodEditContext.conversationGeneration,
                                 activeFoodEditContext.originalProposal, activeFoodEditContext.itemIndex,
@@ -2424,6 +2431,7 @@ class ModelLifecycle(
                 }
                 val retained = updated ?: ChatPortionClarificationPolicy.overrideForCurrentDraft(
                     activePortionEditContext, requestId, activePortionEditContext.currentGrams,
+                    activePortionEditContext.drinkPortion,
                 )
                 synchronized(this) {
                     if (engine === loadedEngine && assistantRequestId == requestId && state != "removed") {
@@ -2463,7 +2471,7 @@ class ModelLifecycle(
                         ChatCurrentDraftFoodPolicy.rebind(it, requestId, it.currentReplacementName)
                     }
                     assistantPortionOverride = activePortionEditContext?.let {
-                        ChatPortionClarificationPolicy.overrideForCurrentDraft(it, requestId, it.currentGrams)
+                        ChatPortionClarificationPolicy.overrideForCurrentDraft(it, requestId, it.currentGrams, it.drinkPortion)
                     } ?: activeFoodEditContext?.currentGrams?.let { grams -> ChatPortionOverride(
                         requestId, activeFoodEditContext.conversationGeneration, activeFoodEditContext.originalProposal,
                         activeFoodEditContext.itemIndex, activeFoodEditContext.originalItemName, grams,
@@ -2487,13 +2495,15 @@ class ModelLifecycle(
                         assistantFoodReplacementOverride = ChatCurrentDraftFoodPolicy.rebind(
                             activeFoodEditContext, requestId, activeFoodEditContext.currentReplacementName,
                         )
-                        assistantPortionOverride = activeFoodEditContext.currentGrams?.let { grams ->
-                            ChatPortionOverride(
-                                requestId, activeFoodEditContext.conversationGeneration,
-                                activeFoodEditContext.originalProposal, activeFoodEditContext.itemIndex,
-                                activeFoodEditContext.originalItemName, grams,
+                        assistantPortionOverride = activePortionEditContext?.let { portionContext ->
+                            ChatPortionClarificationPolicy.overrideForCurrentDraft(
+                                portionContext, requestId, portionContext.currentGrams, portionContext.drinkPortion,
                             )
-                        }
+                        } ?: activeFoodEditContext.currentGrams?.let { grams -> ChatPortionOverride(
+                            requestId, activeFoodEditContext.conversationGeneration,
+                            activeFoodEditContext.originalProposal, activeFoodEditContext.itemIndex,
+                            activeFoodEditContext.originalItemName, grams,
+                        ) }
                         assistantOperation = "agent_meal_food_edit"
                         state = "loaded"
                         coachStreamingReply = null
@@ -2596,7 +2606,7 @@ class ModelLifecycle(
                         ChatCurrentDraftFoodPolicy.rebind(it, requestId, it.currentReplacementName)
                     }
                     assistantPortionOverride = activePortionEditContext?.let {
-                        ChatPortionClarificationPolicy.overrideForCurrentDraft(it, requestId, it.currentGrams)
+                        ChatPortionClarificationPolicy.overrideForCurrentDraft(it, requestId, it.currentGrams, it.drinkPortion)
                     } ?: activeFoodEditContext?.currentGrams?.let { grams -> ChatPortionOverride(
                         requestId, activeFoodEditContext.conversationGeneration, activeFoodEditContext.originalProposal,
                         activeFoodEditContext.itemIndex, activeFoodEditContext.originalItemName, grams,
@@ -2629,6 +2639,7 @@ class ModelLifecycle(
                             validatedPortionEditContext,
                             requestId,
                             validatedPortionEditContext.currentGrams,
+                            validatedPortionEditContext.drinkPortion,
                         )
                         assistantFoodReplacementOverride = validatedFoodEditContext?.let {
                             ChatCurrentDraftFoodPolicy.rebind(it, requestId, it.currentReplacementName)
@@ -3747,7 +3758,14 @@ class ModelLifecycle(
                 if (imagePreparationGeneration != labelGeneration || preparedImage !== image) return
                 ocrText = result.text.take(4_000)
                 val lines = result.textBlocks.flatMap { block -> block.lines }.mapNotNull { line ->
-                    line.boundingBox?.let { bounds -> OcrTextLine(line.text, bounds.left, bounds.top, bounds.right, bounds.bottom) }
+                    line.boundingBox?.let { bounds ->
+                        OcrTextLine(
+                            line.text, bounds.left, bounds.top, bounds.right, bounds.bottom,
+                            elements = line.elements.mapNotNull { element ->
+                                element.boundingBox?.let { box -> OcrTextElement(element.text, box.left, box.top, box.right, box.bottom) }
+                            },
+                        )
+                    }
                 }
                 labelDraft = LabelNutritionParser.extract(result.text, lines)
                 imageReason = if (ocrText.isNullOrBlank()) {

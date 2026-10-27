@@ -158,6 +158,43 @@ class AssistantConversationPersistenceTest {
     }
 
     @Test
+    fun receiptMutationWaitsForActiveWriterAndFencesQueuedSnapshots() = runBlocking {
+        val persistence = AssistantConversationPersistence()
+        val oldTicket = requireNotNull(persistence.captureWriteTicket())
+        val enteredOldWrite = CompletableDeferred<Unit>()
+        val releaseOldWrite = CompletableDeferred<Unit>()
+        val receipt = listOf(member, reply, PrivateConversationMessage("Meal updated", fromMember = false, savedMealId = "meal-1"))
+        var stored = emptyList<PrivateConversationMessage>()
+        val oldWriter = async {
+            persistence.persist(oldTicket, listOf(member, reply)) {
+                enteredOldWrite.complete(Unit)
+                releaseOldWrite.await()
+                stored = listOf(member, reply)
+                true
+            }
+        }
+        enteredOldWrite.await()
+        val queuedTicket = requireNotNull(persistence.captureWriteTicket())
+        val mutation = async {
+            persistence.withWriterIdle {
+                persistence.invalidatePendingWrites()
+                stored = receipt
+                persistence.invalidatePendingWrites()
+            }
+        }
+
+        assertFalse(mutation.isCompleted)
+        releaseOldWrite.complete(Unit)
+        assertEquals(ConversationPersistenceResult.SAVED, oldWriter.await())
+        mutation.await()
+        assertEquals(
+            ConversationPersistenceResult.SUPERSEDED,
+            persistence.persist(queuedTicket, listOf(member, reply)) { stored = it; true },
+        )
+        assertEquals(receipt, stored)
+    }
+
+    @Test
     fun restoreForChangedOrRemovedTranscriptFencesQueuedOlderAutosave() = runBlocking {
         val previouslyLoaded = requireNotNull(PrivateConversationPolicy.updated(listOf(member), java.time.Instant.EPOCH))
         val changedRecord = requireNotNull(PrivateConversationPolicy.updated(

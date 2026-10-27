@@ -1,5 +1,531 @@
 # M4 local assistant checkpoints
 
+## Source checkpoint before progress chart work - 2026-10-27
+
+Member authorizes commit and push of the pending assistant/OCR/drink-quantity
+work, synthetic previews and QA guidance before implementing longer chart ranges.
+Checkpoint review found no material blocker. The complete Android command
+`:app:testDebugUnitTest :app:assembleDebug --no-daemon` succeeds (tasks up to
+date; retained XML reports: 745 tests, zero failures/errors/skips), and
+`git diff --check` passes. No new install or physical acceptance in this step;
+the open physical gates below remain open. The generated local daemon Java 25
+configuration is excluded from the source checkpoint. Progress chart work has
+not started; next bounded implementation is selectable ranges with a three-month
+weight default, actual dated measurements and a read-only detail view.
+
+## Assistant prototype completion - 2026-10-26/27 (implemented; physical gates partial)
+
+Final follow-up 2026-10-27: full Android gate again passes 745 tests with zero
+failures/errors/skips; independent incremental review and diff check pass.
+Final APK SHA-256:
+`896b069ce1d8565fe9e8308503042a6afa10900eb14f1292c528fe398d735c22`.
+Installed in place on reference Samsung SM-S928B / Android 16: Success; cold
+launch Status ok, 2,413 ms. No clear/uninstall/data replacement. Member unlocks.
+Retained Chat and saved dishes remain visible after update; this is not a full
+vault/recovery data audit.
+
+On that final APK, explicit saved-dish selection opens Review saved dish with
+the correct saved-food/portion explanation. Both footer actions are fully outside
+three-button system navigation in portrait and landscape. The same active review
+and saved portion remain after rotation. Leave without saving returns to the
+retained Chat with no new receipt. No agent record Save/edit/delete. Original
+automatic rotation (`free`) restored and rechecked. A fifth affected synthetic
+preview (`SavedDishReviewPreview`) rendered and was visually inspected with
+complete actions. Temporary screenshots stay outside the repository and are
+removed after use; no raw member data belongs in acceptance notes.
+
+Label continuation on the same final APK/device, 2026-10-27: one fresh
+member-selected dual-column label was read locally. The four reviewed nutrients
+use the same per-serving column; no nutrient/date/name values were edited.
+Review shows the local-time default with a checkmark and selected text.
+Changed category, then cleared it; Not classified survives landscape,
+return to portrait, Back to draft and reopening Review without another OCR run.
+In landscape, scrolling reaches the complete category/reference-photo row and
+Save above the dock/system navigation. In portrait, focused Date remains visible
+with the keyboard; scrolling exposes the complete category/reference-photo row
+and Save above the IME. Keyboard dismissed; confirmed discard of this unsaved
+test capture returns to retained Chat without a new receipt. Original rotation
+(`free`) restored/rechecked. Temporary screenshot removed. No agent record
+Save/edit/delete, no new build/install, no broader OCR-accuracy claim beyond
+this image. Same 745-test gate remains applicable.
+
+Next bounded acceptance: real Save/update receipts only when the member wants
+to record/revise a meal; no agent Save authority. New label/saved-dish
+receipt-only and updated-meal success paths need member-performed Save/update
+for physical acceptance. Broader async Stop/late-result, failure, gesture,
+system-font/TalkBack acceptance remains open. Implementation is complete for the
+three identified gaps; this is not full assistant/release acceptance.
+
+Continuation 2026-10-27: implementation and independent review complete for
+the three prototype gaps. Full Android unit/debug gate passes 745 tests, zero
+failures/errors/skips. Added update-receipt and deterministic writer-ordering
+regressions; existing null/expired receipt tests remain applicable. Initial
+completion APK SHA-256:
+`e66f477d53b81baefd83929f713daa5d8bda125ece5fce549ab43ec268668179`.
+Installed in place on Samsung SM-S928B / Android 16 (`install -r`: Success),
+cold launch Status ok, 1,578 ms. No clear/uninstall or data replacement.
+
+Four synthetic previews rendered and were visually inspected: populated
+saved dishes at 360 dp/150% font, empty dishes, updated-meal Chat receipt and
+label Review at 150% font. No blocking overlap/truncation in those viewports;
+scrolling/native window/IME acceptance is separate. New selector previews first
+hit a mixed Layoutlib class/signature cache; refreshing the out-of-date preview
+from Studio completed a build and resolved it without production changes.
+
+Physical checks on that APK: retained Chat/receipt and original icon observed;
+sixth + action is fully reachable by scrolling; direct saved-dish list opens;
+search focus with keyboard keeps controls/results visible; fictitious no-match
+query displays its empty-result message; a matching query filters and opens
+the existing unsaved Review with the saved portion. Leave without saving returns
+to the unchanged Chat. No record save/edit/delete, image selection or inference
+by agent. CLI layout instrumentation still returned an unrecognized response;
+authorized temporary screenshots were used instead.
+
+That Review exposed two defects: misleading rejected-manual-draft intro and
+bottom Leave button overlapping three-button navigation. Follow-up now uses
+saved-dish-specific title/intro while retaining manual review business rules,
+and enables the existing measured-dialog inset treatment for every
+assistant-origin Review. Incremental independent review is clean. Added
+`SavedDishReviewPreview`. Final gate/install/phone retest is recorded above;
+the initial Review does not count as a layout pass.
+
+Member authorizes completion of remaining panel differences: direct saved-dish
+selector, contextual label category/save receipt and assistant meal-update
+receipt. Existing local OCR/drink work is preserved. Contracts are updated in
+`design/assistant-context-panel.md`, `design/FLOWS.md` and
+`design/SCREEN-SPECS.md`.
+
+Independent discovery confirmed these exact gaps against the interactive
+prototype. Implementation review found an in-flight transcript writer could
+overwrite a newly persisted meal receipt; completion therefore includes shared
+writer ordering for all assistant receipt-bearing saves. Failure feedback must
+be visible within the saved-dish page, and a failed meal save must retain the
+unlocked shell/draft rather than changing global vault status to Failed.
+
+Acceptance itinerary after the final automated gate and in-place installation:
+
+- Open + > My saved dishes, search by name/alias/component, inspect no-match,
+  clear search, choose a dish and return from Review without saving. Check
+  keyboard, scrolling and rotation; selection must not create a record.
+- Inspect contextual label category default, change/clear and retain across
+  review return/rotation. Member chooses any real label image. Agent does not
+  perform final Save; label receipt success needs a member-performed Save.
+- Open existing View meal, inspect editor and cancel without changes. A real
+  Meal updated receipt likewise needs a member-performed explicit update.
+- Existing broader Stop/late-result, partial/error, enlarged-system-font and
+  TalkBack gates remain separately open until physically exercised.
+
+Synthetic fixtures add populated/empty saved-dish lists and an update receipt.
+First preview attempt could not load the unbuilt new production class; first
+Android compile exposed missing imports and nullable category inference. These
+are not passed gates; final build/render evidence follows after repairs.
+No member record Save, edit or deletion by the agent is authorized here.
+
+## Contextual meal save acknowledgement and time category - 2026-10-26
+
+- Member-performed Save follow-up on installed `2bd2e81c...`, Samsung SM-S928B /
+  Android 16: member confirms the new meal was created with the correct category.
+  Authorized screen inspection independently confirms Chat contains the final
+  saved-meal acknowledgement and View meal action. Opened that action and
+  confirmed it resolves to the same saved meal; left the editor without saving
+  and observed the acknowledgement/link still present in Chat. No field edits,
+  duplicate record, additional Save or delete by agent. Temporary screenshots
+  removed. Today categorization is member-confirmed, not independently inspected
+  during this follow-up. This closes the observed existing-conversation happy
+  path; empty/expired-history physical tests and failure-path acceptance remain
+  separate gaps. No broader assistant accessibility/Stop acceptance claim.
+- New-build physical category check on reference Samsung SM-S928B / Android 16
+  with installed `2bd2e81c...` (743-test/debug gate): member regenerated and opened
+  Review. Meal details shows the expected local-time default already selected.
+  Changed to another category and observed the summary/chip update, then tapped
+  it again to clear. The unclassified choice survives landscape and return to
+  portrait rather than refilling from the clock. Restored the original default
+  and confirmed it selected. Original automatic rotation (`free`) restored.
+  No final Save, food/portion edit or existing-record write by agent; draft stays
+  open in Meal details. Temporary private screenshot removed. Actual saved-meal
+  receipt, View meal and Today grouping still need a member-performed Save after
+  the member finishes reviewing this draft. No success claim for that path yet.
+- Member reports manually saving the meal: record exists in Today / Other meals,
+  but contextual Chat has no acknowledgement. This is member-reported save
+  evidence, not an agent-run Save test. Existing record was not changed.
+- Contextual capture now opts into the existing transactional saved-meal receipt
+  and synchronizes the returned conversation only on successful save. Review
+  origin flags remain unchanged, preserving photo/manual override and dismissal
+  semantics. Empty/expired history can start a fresh receipt-only conversation
+  on this explicit capture Save; expired messages never return. Valid host-linked
+  receipt-only snapshots survive normal conversation serialization/hydration;
+  ordinary assistant-only greetings still do not persist.
+- Assistant-origin meal Review opts into an editable category default from the
+  existing local-time policy after explicit Today/member choices. Time is frozen
+  once per draft before category-aware state identity is derived. Changing or
+  clearing the category remains saveable review state. Other entry paths and
+  existing saved records retain their previous classification behavior.
+- Two custom workers and independent reviewer complete; no actionable findings.
+  Five new policy tests cover empty/expired receipt histories, receipt snapshot
+  round-trip, category precedence and time boundaries. Full gate
+  `:app:testDebugUnitTest :app:assembleDebug --no-daemon` passes 743 tests with
+  zero failures/errors/skips; diff check clean. APK SHA-256:
+  `2bd2e81c153ee754877ded92865000f63b94d07d95272115c5c2af82bb7b65e1`.
+- Installed in place on Samsung SM-S928B / Android 16 with `adb install -r`:
+  Success. No clear, uninstall, new signing key or private-storage deletion.
+  Cold launch returned Status ok, 2,637 ms.
+  Member unlock and new-build physical verification requested. Existing saved
+  meal was not reclassified or duplicated by the agent.
+- Added and rendered `AssistantMealSavedPreview` with fictional data: confirmation
+  and View meal both appear without visible clipping. Temporary PNG removed.
+  No agent-written meal or new physical acceptance from tests/preview.
+- Physical acceptance pending: save from a new capture with empty/existing Chat,
+  verify confirmation and View meal, check Today category, change/clear category
+  through rotation/review, and verify failure keeps the draft without receipt.
+  Final Save is a member action in the current test cycle; no automatic test save.
+
+## Review rotation and dish editor physical follow-up - 2026-10-26
+
+- Target: Samsung SM-S928B / Android 16, three-button navigation, existing
+  installed APK SHA-256 confirmed from base.apk:
+  `88d8206717b68ded3112c821eff3681c5b26f2661601e1f95b7e3e38f9ec7de0`.
+  Its recorded full unit/debug gate passes 738 tests. No build or installation
+  in this pass; existing installation/data left intact. Newer preview APK is not
+  the build tested on the phone.
+- Member had already regenerated a meal-image draft and opened Review. Verified
+  both complete Review footer actions outside system navigation in landscape;
+  rotating back to portrait preserves that unsaved draft.
+- Opened the existing dish editor. Both Apply dish changes and Cancel changes
+  remain complete above navigation in portrait and landscape. Focused a lower
+  visible ingredient-description field without typing: focused field and both
+  editor actions remain visible above the keyboard in portrait. This is not a
+  last-field-in-every-editor or landscape-keyboard acceptance claim.
+- Dismissed keyboard, cancelled the editor without applying any change, and
+  confirmed return to Review with the same unsaved draft. No Save, remembered
+  dish write, correction or value edit was performed. Original automatic rotation
+  (`free`) restored and rechecked. Temporary private screenshot removed; no raw
+  member content retained in evidence.
+- Member separately reports Home/background discards a draft even without a
+  process kill. Read-only explorer audit confirms existing policy: MainActivity
+  onStop locks the vault outside guarded external-image/archive transitions;
+  shell/model session invalidation clears the in-memory proposal/capture state.
+  M2 checkpoint specifies actual backgrounding locks the vault. No background
+  reproduction or persistence-policy change was made with the fresh draft.
+- Still open: gesture navigation, physical enlarged font/display size and
+  TalkBack, last-field reachability across all editor content, stable async
+  Stop/late-result checks and applicable partial/error recovery. Save/reopen
+  remains excluded by member instruction. Next bounded task: plan the remaining
+  accessibility checks without unnecessarily backgrounding this draft.
+
+## Synthetic visual previews - 2026-10-26
+
+- Studio visual follow-up: Rabbit 1 / 2026.2.1, MetriaNative ready. All nine
+  preview entry points rendered successfully and each synthetic PNG was viewed.
+  Initial-view hierarchy, wrapping, uncertainty labels and complete footer actions
+  show no blocking overlap/truncation. Narrow and landscape Review at 150% font
+  keep both footer buttons visible; landscape has little remaining content height.
+  Static rendering does not prove scrolling, native dialog frame, IME/system bars,
+  TalkBack, real async cancellation or lock restoration. Exact per-preview scope
+  and limits are in `testing/assistant-previews.md`. Nine synthetic renders,
+  no new builds/installs/inference/phone interactions; temporary PNGs removed.
+  No Android source change or new physical pass. Next bounded device check is
+  shared Review landscape + dish-editor footer on the previously installed build,
+  using a fresh member-selected meal photo and no saves.
+- Added nine debug-only previews in `AssistantAndReviewPreviews.kt`: real
+  conversation welcome/preparing/partial/error, real action choices, normal meal
+  review, partial landscape and narrow review at 150% font, and scrollable partial
+  label review at 150% font. All data are invented, clocks fixed and persistence
+  callbacks inert. No camera, OCR, model, vault, dependency or navigation entry.
+- Minimal main-source seams: shared inner MealReview is internal; label review
+  accepts initial date/time with existing runtime defaults and unkeyed saveable
+  state; fitted-dialog footer avoids an unused platform metrics lookup. No
+  change to other dirty drink work or the current assistant icon.
+- Worker implementation and independent static review complete. Full gate
+  `:app:testDebugUnitTest :app:assembleDebug --no-daemon` passes: 738 tests,
+  zero failures/errors/skips; diff check clean. No new instrumentation framework.
+  Built APK SHA-256:
+  `4afe964ce6c6e0ff95cec393b69bcea7c5f493840442116a0c275c0135ae67ad`;
+  not installed. Existing phone acceptance belongs to the earlier APK.
+- `android studio check` found no running instance; visual render acceptance is
+  still pending. No phone access, install or record save in this slice. Preview
+  success cannot close the outstanding physical footer/rotation/IME/accessibility
+  and async gates. Member reports prior live draft lost on phone lock.
+- Usage, render command and limits: `testing/assistant-previews.md`. Next bounded
+  task: render the previews with `native-android/` open in compatible Studio,
+  inspect normal and enlarged-font variants, then resume remaining phone gates
+  with a new member-selected image; no record saves.
+
+## Centered calorie OCR follow-up - 2026-10-26
+
+- Member reports the unsaved meal-analysis draft was lost when the phone locked.
+  Do not assume it remains available or infer a recreation/restoration pass.
+  Member authorizes synthetic assistant and review previews before further phone
+  checks. No record saves are authorized; real-photo continuation needs a fresh
+  member-selected image when device checks resume.
+- Physical follow-up on `88d82067...`, Samsung SM-S928B / Android 16:
+  portrait Review shows both complete footer actions above three-button navigation.
+  Actual requested content height matches the fitted window height (2108 px).
+  Meal-name focus and the expanded final Date field remain visible with the
+  keyboard open; both footer actions stay reachable above it. No field values
+  changed and no records saved. Keyboard was subsequently dismissed.
+  Landscape rotation was not executed: automatic approval review failed because
+  of a usage limit, not a finding that the action was unsafe. Landscape and dish
+  editor footer checks on this APK remain pending, alongside the prior async and
+  accessibility gaps. Member now reports the meal-analysis draft open and asks
+  to prioritize visual-debugging workflow research. No new device inspection or
+  installation was performed for that research; see `testing/visual-debugging.md`.
+- `40239b54...` physical retest still fails: secondary footer partially clips
+  below the screen. Native window geometry exposes the mismatch: content requests
+  1080x2340 while its actual fitted frame is 1080x2108, excluding status/navigation
+  bars. Cached Compose UI is 1.7.6; its non-platform-width DialogLayout measurement
+  uses display configuration size, consistent with the observed clipping.
+- Bounded workaround for contextual review only: retain the platform's fitted
+  dialog measurement (`usePlatformDefaultWidth=true`), then set that dialog window
+  to MATCH_PARENT in both dimensions and ADJUST_RESIZE. Root has no separate
+  system-bar inset and opted-in footer adds none; native frame already fits bars.
+  Legacy entry paths retain prior settings. Worker implementation, independent
+  static review and full Android test/debug gate pass: 738 tests, no failures,
+  errors or skips, clean diff check. APK SHA-256:
+  `88d8206717b68ded3112c821eff3681c5b26f2661601e1f95b7e3e38f9ec7de0`.
+  Installed in place on Samsung SM-S928B / Android 16: Success; cold launch
+  Status ok, 1,063 ms. Member unlock and direct Review retest requested.
+  Confirm actual window/content size and footer/IME/rotation on this APK before
+  accepting the workaround. No record saves or private evidence retained.
+- Full-screen retest on `812a1a7a...`: meal analysis completed and Review opened,
+  but the secondary footer still overlapped three-button navigation. The first
+  helper-only inset repair therefore fails physical acceptance.
+- Follow-up repair explicitly gives only contextual assistant review control of
+  its dialog window (`decorFitsSystemWindows=false`) and consumes system-bar
+  insets once at the Surface boundary. Existing inner IME padding remains;
+  footer manual navigation padding is skipped on this opted-in path. Other
+  review entries keep prior behavior. Independent static review found no blocker.
+  Full Android test/debug gate passes 738 tests, zero failures/errors/skips;
+  diff check clean. APK SHA-256:
+  `40239b5433705a48442d9d9bf61f9a7e99ea39003abb54a5d175f1a81610a374`.
+  Installed in place on Samsung SM-S928B / Android 16: Success, cold launch
+  Status ok in 1,868 ms. Member unlock and direct Review retest requested.
+  New-build footer/keyboard/landscape physical verification remains pending.
+- `812a1a7a...` physical Stop check: member selected a meal image; Prepare draft
+  entered loading with Stop visible. Tapping Stop returned immediately to the
+  empty inline capture, with no preview or proposal. No record saved. A later
+  inspection after a 20-second wait showed Chat in Android split-screen rather
+  than the same capture page; cause of that external/layout transition is not
+  established. No delayed-result/restoration pass is claimed from that capture.
+  Member requested to restore full screen and reselect image for final footer
+  verification. Stop's immediate UI reset is observed; stable late-result check,
+  footer acceptance, font scaling and TalkBack remain pending.
+- Assistant-capture review footer repair: opt-in Compose dialog navigation inset
+  is combined with the existing platform inset using max, not addition. The flag
+  travels through the review and dish editor; only contextual assistant capture
+  opts in, with false defaults elsewhere. No persistence/business-rule changes.
+  Independent final wiring review and full Android test/debug gate pass (738
+  tests, zero failures/errors/skips); diff check clean. APK SHA-256:
+  `812a1a7a939046dc9870db1570208a82b36bb94c4a4a7582bb0f001bb5a6a73e`.
+  Installed in place on Samsung SM-S928B / Android 16: Success; cold launch
+  Status ok, 3,181 ms. Member unlock and fresh meal-photo preview requested.
+  New-build physical footer acceptance remains pending; earlier meal-analysis
+  observations below apply to `3db12eb3...`.
+- Meal-photo follow-up on `3db12eb3...`: member-selected image preview and
+  Prepare draft succeeded; inline cancellable loading was visible and a validated
+  meal draft appeared. Review draft opened the shared complete meal editor,
+  including dish/food detail and uncertainty/review controls. Opened one dish,
+  cancelled its changes without editing, then Leave without saving returned to
+  the same contextual draft. No meal, personal dish or correction was saved.
+- Physical defect found in that editor: the bottom secondary action border
+  extends into three-button system navigation. Independent review traced the
+  manual inset query in SystemSafeBottomActions; a bounded assistant-entry-only
+  correction is in progress. Do not mark meal-review layout accepted yet.
+  Stop during actual work, partial/error, enlarged fonts and TalkBack remain open.
+- Physical retest of `3db12eb3...` on Samsung SM-S928B / Android 16: the same
+  member-selected dual-column label now produces all four reviewed nutrition
+  fields matching its left/per-serving column, including calories. This named
+  previously failing image passes; this is not a general OCR accuracy claim.
+  Preview, explicit Read label and inline Review succeed. No fields edited or
+  records saved; no private values/photo retained in repository evidence.
+- Same APK: Date focus stays visible above the keyboard; scrolling exposes the
+  whole reference-photo row and Save button above IME. Save untouched. Landscape
+  retains the draft, with fields/Close clear of right system navigation. Returned
+  to portrait and free rotation. Back from Review returns to draft; subsequent
+  Back requests discard confirmation. Confirmed discard returns to retained Chat.
+- Same APK: Analyse meal opens inline. OS image picker opened and was cancelled
+  with Back; camera opened and was cancelled without taking a photo. Both return
+  to the usable empty meal capture panel, with no preview or leftover draft.
+  Member-selected meal image requested for analysis/review/Stop checks. Enlarged
+  text, TalkBack and other remaining assistant gates stay open. Save/reopen is
+  excluded from this cycle by the explicit no-record-save instruction.
+- Follow-up after observed failure: detached numeric OCR lines now use their
+  individual element boxes before whole-line amount parsing. Synthetic regression
+  covers a separate Calories label plus one line containing both energy values.
+  Vertical row ownership rules remain unchanged; no speculative overlap expansion.
+  Complete Android test/debug gate passes 738 tests, zero failures/errors/skips;
+  diff check clean. APK SHA-256:
+  `3db12eb336d957c853f59c517abb6d674d0ad328ee68a7f43fe47574c95e958d`.
+  Installed in place on Samsung SM-S928B / Android 16: Success; cold launch
+  Status ok, 1,861 ms. Member unlock and repeat image selection requested.
+  Physical accuracy on this follow-up APK remains pending. No records saved.
+- Physical follow-up on `78188365...`: member unlocked; retained Today state and
+  Chat history visible, original icon opens the panel, five actions render.
+  Member selected the same dual-column label; preview > Read label > Review
+  succeeded, but calories remained unknown. This APK does not close OCR accuracy.
+  Optional detected-text view showed both energy figures grouped on one numeric
+  line separate from the Calories label. Parser currently rejects that whole
+  line instead of using its available element boxes; bounded follow-up in progress.
+  Back requested discard confirmation; Keep editing was selected. No record Save
+  or field edits. Private screenshots are temporary and not repository evidence.
+- Worker implementation and independent reviewer inspection replaced transitive
+  coordinate clustering with boundaries from paired values on individual rows.
+  Repeated paired macro rows establish the split for larger/centered calories;
+  otherwise all paired evidence is retained. Missing left values and values on
+  an ambiguous boundary stay unknown. Unpaired rows use a narrow left-edge
+  region so differing number widths do not discard aligned values.
+- Seven additional regressions cover centered/ambiguous calories, right-only
+  macros with inline or separate calorie boxes, narrow/scaled columns and
+  missing paired evidence. The complete required command
+  `:app:testDebugUnitTest :app:assembleDebug --no-daemon` passes 737 tests with
+  zero failures, errors or skips. `git diff --check` is clean. APK SHA-256:
+  `781883652102068a241cecf1015b0fab298fe06a9ec70f0adeb3dac49411c8ae`.
+- Installed on Samsung SM-S928B / Android 16 using authorized `adb install -r`:
+  Success. Cold launch Status ok, 1,112 ms. No clear/uninstall or record Save.
+  Member unlock requested; retained records still need fresh visual confirmation.
+- Real-label accuracy remains pending on this APK. Coordinate evidence cannot
+  reliably distinguish nearly overlapping unpaired columns; OCR remains an
+  editable draft requiring package comparison. No raw photo/OCR is retained.
+- Member explicitly requests no record saves. Save/reopen will not be exercised
+  in this cycle. Pending phone checks include fresh OCR, capture cancellation,
+  meal analysis/Stop/error/partial, enlarged text and TalkBack. Previous keyboard
+  and landscape observations below apply to the earlier installed APK only.
+
+## OCR column repair and remaining panel gates - 2026-10-25
+
+- Physical retest of `092f092c...` with the member-selected dual-column label:
+  preview, explicit Read label and inline Review succeeded. All three macros
+  matched the same left/per-serving column; calories remained unknown despite
+  visible energy values. This is partial improvement, not an OCR accuracy pass.
+  Investigating centered/larger energy-row geometry using synthetic fixtures;
+  no private OCR content or photo is retained here.
+- On that build, Date focus remained visible above the IME and scrolling exposed
+  the complete Save action above the keyboard. Save was not pressed and no fields
+  changed. Rotation retained the draft; review fields and Close stayed clear of
+  the right system bar. Free rotation restored. Font scaling/TalkBack and the
+  other pending assistant interaction gates remain open.
+- Resumed repair: local ML Kit element boxes now reach the deterministic parser.
+  Geometry takes precedence over flattened text and uses one shared left value
+  column; missing/ambiguous fields stay unknown. Anchored amounts reject merged
+  multi-value rows without element geometry. Split kJ/kcal/% units are handled;
+  trans-fat and calories-from-fat rows cannot substitute for totals. Accented
+  Spanish regression is included. Custom explorer/worker/reviewer contributed;
+  parent completed the interrupted worker patch and confirmed reviewer findings.
+- Final full Android test/debug assembly gate passes 730 tests, zero failures,
+  errors or skips; diff check clean. APK SHA-256:
+  `092f092c84b7d253e563753ece013fe78a824988d7e07ea8367a43e0a96166ce`.
+  Real dual-column photo accuracy and the landscape inset repair still require
+  verification on this build; automated results do not close physical gates.
+- This APK installed with `adb install -r` Success on Samsung SM-S928B / Android
+  16 and cold-launched with Status ok (1,324 ms). No clear/uninstall or record
+  Save was performed. Member unlock requested before continuing physical gates;
+  existing-record retention has not been freshly inspected on this build.
+- After member unlock, Today and retained Chat history were visible; original
+  assistant icon opened the panel and all five actions rendered. Label capture
+  opened inline. On this APK, landscape inspection shows Close and the content
+  clear of the right system navigation bar; scrolling reaches Take photo without
+  overlap. Rotation restored to free. This is a named visual/interaction check,
+  not complete accessibility or review-editor acceptance. Dual-column image
+  retest requires member selection; no record was saved.
+- Member authorized correcting mixed-column OCR and continuing phone checks,
+  requesting custom subagents. Explorer traced flattened-text precedence and
+  per-field spatial fallback; worker owns parser/tests and reviewer checks safety.
+- On the previously installed `a39cc92a...` APK, a synthetic unsaved product name
+  survived editor Back > draft > Review and rotation to landscape. No Save.
+  Landscape exposed a real defect: the right system navigation bar overlaid
+  Close and field edges. Panel now reserves horizontal safe-drawing insets;
+  fresh build and phone verification remain pending.
+- Changing system font scale to 1.3 recreated the activity and yielded a black
+  capture; no enlarged-text pass is claimed. Original font scale 1.0 and free
+  rotation mode restored. User unlock may be needed for further physical checks.
+  No raw photo or private extracted values are retained in repository evidence.
+
+## Integrated contextual capture - 2026-10-25
+
+- Follow-up with a member-selected label confirmed the private preview, actual
+  OCR draft and inline nutrition review. Date focus remained visible with the
+  keyboard open. No record was saved; extraction correctness was not accepted
+  (multi-column labels require comparison against the package). Verification of
+  the final action with the keyboard open was interrupted by a tool usage limit.
+  On resumption, Chat and the integrated menu were visible, but reopening label
+  capture showed its empty state; the prior transient draft was unavailable.
+  The cause across the interruption is not established. A fresh member-selected
+  image was requested to complete that keyboard check.
+- Resumed physical check on the same installed APK: member selected the label
+  again; preview, local OCR and inline review succeeded. With Date focused and
+  the keyboard open, scrolling exposed the complete reference-photo row and Save
+  button above the IME. This named portrait/default-font keyboard gate passes.
+  No values edited or records saved. OCR mixed serving/container columns in the
+  selected dual-column label; extraction correctness fails for this case and
+  remains an open nutrition-parser issue, not a passed scan accuracy gate.
+  Keyboard dismissed and review left open. No production source change/reinstall.
+
+- Final APK phone inspection after member unlock: options/actions render inline;
+  both capture actions open the new panel over Today, original icon/dock retained.
+  Meal capture Back returns to Chat and scrolling exposes the last note above
+  navigation. No old capture sheet observed. Left label capture open for a
+  member-selected image; actual preview/OCR/review and remaining physical gates
+  are still pending. No record Save or new message. Sanitized evidence in
+  `design/assistant-context-panel.md`; temporary captures removed.
+
+- Member identified old scan/meal capture routes behind the new action menu.
+  Both now open inline capture pages over the existing destination: source,
+  preview, optional meal description, actual local progress/Stop/cooldown,
+  partial or failed result, review and discard. Labels review inline; photo
+  drafts retain the complete shared meal editor. Today routes stay unchanged.
+- Options also offers Privacy and Lock. Original icon/navigation and twelve
+  unrelated tracked diffs preserved. No model, dependency, vault schema or
+  record-save authority changed. New parsing remains in a pure validation policy.
+- Complete Android test/assemble gate: 718 tests, zero failures/errors/skips.
+  Four regressions cover stale/cancelled/current photo results and label input
+  validation. Diff check clean; final APK identity in `design/assistant-context-panel.md`.
+- Reference phone Samsung SM-S928B / Android 16 connected. A temporary before
+  capture found the sleeping screen, so no before/after visual pass is claimed.
+  Initial integrated APK installed with `install -r` Success and cold launch
+  Status ok (1,195 ms). Final verified accessibility/setup APK also installed
+  with `install -r` Success and cold-launched Status ok (1,474 ms).
+  No clear/uninstall/private-data replacement or commit/push. Await member unlock.
+- Next bounded task: verify + > both capture pages and header options on phone,
+  then camera/picker cancellation, preview/keyboard, Stop/error/partial, reviews,
+  explicit Save/reopen, rotation/font scaling/TalkBack. Physical acceptance and
+  the separate drink/voice gates remain open.
+
+## Contextual assistant panel - 2026-10-24
+
+- Member rejected the first installed styling as unlike the approved prototype.
+  Visual correction replaces the old bubble/composer treatment and floating menus
+  with the prototype's white surface, soft bubbles, unified composer and inline
+  actions/options, and reuses the existing navigation dock. Earlier smoke evidence
+  is not visual acceptance; the corrected APK needs a fresh on-phone review.
+- Corrected build passes 714 tests and debug assembly; diff/preservation audit
+  passes. In the authorized active test cycle, `install -r` returned `Success`
+  and cold launch `Status: ok` (2,504 ms) on the same Samsung. Await member
+  unlock and a fresh prototype-versus-device visual check. Corrected APK hash
+  is recorded in `design/assistant-context-panel.md`.
+
+- Member approved only the assistant panel, keeping the current central icon,
+  all assistant functions and the rest of the app unchanged. Found and preserved
+  another session's uncommitted Chat drink-unit code/tests/docs on `ee36df2`.
+- Shared Chat now uses a resizable in-window panel with unchanged cards,
+  evidence, native Copy, voice activity/auto-submit, review and selected-meal
+  context. Existing tools move to `+`; New conversation and Assistant tools are
+  in header options. New UI remains outside MemberShell; that file only wires
+  entry/actions and the existing guarded transcript writer.
+- Final full debug test/build gate passed: 714 tests, zero failures/errors/skips,
+  including four layout policy tests; diff check passed. No phone installation or captures,
+  no physical acceptance, commit, push, dependency or data migration.
+- Member authorized installation and verification. Verified APK installed with
+  `adb install -r` (`Success`) on Samsung SM-S928B; cold launch returned
+  `Status: ok` (1,309 ms). No clear/uninstall; retained records have not yet been
+  fully verified. Member unlocked; retained conversation visibly restored.
+- Physical smoke passed for compact opening from the unchanged icon, expansion,
+  keyboard/composer visibility, both menu contents, Android Back dismissal and
+  reopening with retained history on Android 16. No message or record submitted.
+  Layout instrumentation failed; temporary visual fallback was used. Remaining
+  accessibility, rotation, voice/review and tool-route gates stay open.
+- Next bounded task: execute the remaining phone matrix in
+  `design/assistant-context-panel.md`. Keep the separate drink voice acceptance
+  gap open.
+
 ## MiniLM direct Chat slice — 2026-10-11
 
 - The member explicitly chose MiniLM and requested direct Metria integration
@@ -4596,6 +5122,54 @@ target-phone interaction recheck pending.
   Member unlock and exact Dinner Review retry requested; physical acceptance is
   pending. Check portion edits retain the type and an explicit member type change
   stays selected; Discard afterward to avoid recording a duplicate test meal.
+
+### Chat drink quantities - 2026-10-24
+
+- Prior drink checkpoint committed and pushed as `ee36df2` with member approval.
+  Member approves the next typed/spoken mL and measured-serving slice. Discovery
+  confirms grams-only Chat handoff beside existing source-backed Review conversion.
+  Extend host-owned initial quantity and current-draft overrides, preserve chosen
+  units and explicit-quantity precedence, and share the existing voice/text path.
+  Missing/ambiguous source evidence must retain the previous draft with feedback.
+  Design, scope and physical test plan: `drink-portions.md`. No new Save authority,
+  dependency or production network request. Implementation/review/build and all
+  new phone acceptance pending. ADB currently lists no phone; reconnect requested.
+
+- Chat drink implementation and independent review complete. Host-parsed quantity
+  metadata/snapshot overrides reuse the packaged conversion, same Review food and
+  request/session identity; initial quantity warning and unchanged-draft errors
+  preserve review. Root found/fixed fixed-range gram prefill and singular glass
+  parsing with regressions/follow-up review. Missing import from first compile
+  repaired. Final frozen-source gate passes 710 tests (zero failures/errors/skips),
+  debug/release builds, release vital lint and diff check. Debug SHA-256:
+  `49924366d169af0b9062f5e94037d7229ba2f7f166ee16b2110cad2a4c84ce8d`.
+  Samsung reconnected; install-r underway. New phone checks all pending. No new
+  dependency, member Save, private capture or commit/push. Trailing food names in
+  quantity corrections remain unsupported; use the closed amount phrase.
+
+- Verified 710-test APK installed with install-r (`Success`) and cold-launched
+  (`Status: ok`) on Samsung SM-S928B / Android 16, preserving app data. Member
+  initial 200 mL coffee / half-cup Review check requested; physical acceptance
+  remains pending. Unlock is a member action; no private capture or record Save.
+
+- Member confirms initial coffee Review shows 200 mL + Breakfast, and subsequent
+  "Make that half a cup" Review shows 0.5 of the listed cup, on the installed
+  710-test build. Named typed phone gates pass by member observation. Safe trace
+  confirms initial saved-dish probe/no-match/host drink drafting and delivery;
+  amounts are not logged, and inspected tail has no separate portion-applied
+  event. No private capture. Next: spoken mL correction and repeated Review;
+  gram switching, invalid retention and broader physical gates remain open.
+
+- Spoken check reported failed. Authorized Android CLI flat/no-idle inspection
+  finds consumption statements with a different amount instead of the requested
+  correction; safe trace shows accepted ASR, portion rejection, then a new drink
+  draft. No screenshot/raw device artifact committed. Original spoken amount
+  requested to distinguish recognition from intent/conversion. No code change or
+  spoken-quantity pass established from this report.
+
+- Member clarifies they may have spoken "thousand" accidentally. No ASR defect
+  confirmed. Fresh typed coffee plus spoken 100 mL correction requested; new
+  spoken acceptance remains open. No source change or reinstall required.
 
 ### Drink quantity units - 2026-10-22
 

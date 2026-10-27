@@ -56,9 +56,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -79,11 +81,13 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import app.metria.CatalogFood
 import app.metria.CatalogNutrition
 import app.metria.ChatPortionOverride
+import app.metria.ChatDrinkPortionPolicy
 import app.metria.FoodCatalog
 import app.metria.FoodCorrection
 import app.metria.ExplicitMealSlotPolicy
@@ -120,6 +124,7 @@ import app.metria.PersonalDishQuery
 import app.metria.PersonalDishValidation
 import app.metria.ui.components.MetriaEstimateBadge
 import app.metria.ui.theme.MetriaColors
+import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
@@ -263,9 +268,11 @@ internal fun initialDraftsWithPortionOverride(
     override: ChatPortionOverride?,
 ): List<MealReviewItemDraft> {
     val drafts = initialDrafts(items)
-    if (override == null || override.grams !in 1..2_000 || override.originalProposal != proposal) return drafts
+    if (override == null || override.drinkPortion != null || override.grams !in 1..2_000 || override.originalProposal != proposal) return drafts
     val original = proposal.items.getOrNull(override.itemIndex) ?: return drafts
-    val expectedTarget = app.metria.ChatPortionClarificationPolicy.target(proposal, "meal", true)
+    val expectedTarget = app.metria.ChatPortionClarificationPolicy.target(
+        proposal, "meal", true, allowCertainDrinkEdit = true,
+    )
     if (expectedTarget?.itemIndex != override.itemIndex ||
         !original.name.trim().equals(override.itemName, ignoreCase = true)
     ) return drafts
@@ -360,6 +367,49 @@ internal fun initialDraftsWithDrinkDefaults(
     val portion = DrinkDefaultsPolicy.previousPortion(draft.name, food, catalog, savedMeals) ?: return drafts
     val grams = DrinkPortionPolicy.canonicalGrams(portion) ?: return drafts
     return listOf(draft.copy(grams = grams.toString(), role = "drink", drinkPortion = portion, portionInput = null))
+}
+
+internal fun initialDraftsWithMemberDrinkQuantity(
+    drafts: List<MealReviewItemDraft>,
+    proposal: MealProposal,
+    catalog: OfflineFoodCatalog?,
+    corrections: List<FoodCorrection>,
+    hasPortionOverride: Boolean,
+): List<MealReviewItemDraft> {
+    val request = proposal.memberDrinkQuantity ?: return drafts
+    if (hasPortionOverride || drafts.size != 1 || proposal.items.size != 1) return drafts
+    val draft = drafts.single()
+    if (draft.evidence != "seen" || proposal.items.single().groupLabel?.isNotBlank() == true) return drafts
+    val portion = ChatDrinkPortionPolicy.resolve(request, draft.name, draft.description, catalog, corrections)
+        ?: return drafts
+    val grams = DrinkPortionPolicy.canonicalGrams(portion) ?: return drafts
+    return listOf(draft.copy(
+        grams = grams.toString(), role = "drink", drinkPortion = portion, portionInput = null,
+    ))
+}
+
+internal fun initialDraftsWithDrinkPortionOverride(
+    drafts: List<MealReviewItemDraft>,
+    proposal: MealProposal,
+    override: ChatPortionOverride?,
+    replacement: ChatFoodReplacementOverride?,
+    catalog: OfflineFoodCatalog?,
+    corrections: List<FoodCorrection>,
+): List<MealReviewItemDraft> {
+    val portion = override?.drinkPortion ?: return drafts
+    if (replacement != null || override.originalProposal != proposal || drafts.size != 1 || proposal.items.size != 1 ||
+        portion.catalogFoodId <= 0L || DrinkPortionPolicy.canonicalGrams(portion) != override.grams
+    ) return drafts
+    val original = proposal.items.single()
+    if (!original.name.trim().equals(override.itemName, ignoreCase = true) || original.evidence != "seen" ||
+        original.groupLabel?.isNotBlank() == true
+    ) return drafts
+    val food = catalog?.let { FoodCatalog.suggest(it, original.name, original.description, corrections) } ?: return drafts
+    if (food.fdcId != portion.catalogFoodId) return drafts
+    val rebound = DrinkPortionPolicy.forCatalog(portion, catalog) ?: return drafts
+    val grams = DrinkPortionPolicy.canonicalGrams(rebound) ?: return drafts
+    val draft = drafts.single()
+    return listOf(draft.copy(grams = grams.toString(), role = "drink", drinkPortion = rebound, portionInput = null))
 }
 
 private fun correctionSnapshot(
@@ -549,12 +599,28 @@ fun MetriaMealReviewSheet(
     onCancelFoodNameCorrection: (Long) -> Unit,
     onClearFoodNameCorrection: () -> Unit,
     onDismiss: () -> Unit,
-    onSave: (MealEntry, List<FoodCorrection>, List<PersonalDish>, MealCorrectionMemory?) -> String?,
+    onSave: suspend (MealEntry, List<FoodCorrection>, List<PersonalDish>, MealCorrectionMemory?) -> String?,
+    composeDialogNavigationInsets: Boolean = false,
+    suggestMealSlotFromTime: Boolean = false,
 ) {
-    val resolvedInitialMealSlot = ExplicitMealSlotPolicy.initialReviewSlot(initialMealSlot, proposal.memberMealSlot)
+    // Freeze the review time using the proposal identity before deriving the
+    // meal-slot-aware state key, so the fallback cannot key itself in a loop.
+    val reviewTimeKey = 31 * (31 * (31 * proposal.items.hashCode() + (initialSavedDishPrefill?.hashCode() ?: 0)) +
+        (initialPortionOverride?.hashCode() ?: 0) + (initialFoodReplacementOverride?.hashCode() ?: 0)) +
+        proposal.memberDrinkDefaultsAllowed.hashCode() + (proposal.memberDrinkQuantity?.hashCode() ?: 0)
+    val captureTimeText = rememberSaveable(reviewTimeKey) {
+        LocalTime.now().withSecond(0).withNano(0).toString()
+    }
+    val captureTime = remember(captureTimeText) { LocalTime.parse(captureTimeText) }
+    val resolvedInitialMealSlot = ExplicitMealSlotPolicy.initialReviewSlot(
+        initialMealSlot,
+        proposal.memberMealSlot,
+        captureTime.takeIf { suggestMealSlotFromTime },
+    )
     val draftKey = 31 * (31 * (31 * (31 * proposal.items.hashCode() + (initialSavedDishPrefill?.hashCode() ?: 0)) +
         (initialPortionOverride?.hashCode() ?: 0) + (initialFoodReplacementOverride?.hashCode() ?: 0)) +
-        (resolvedInitialMealSlot?.hashCode() ?: 0)) + proposal.memberDrinkDefaultsAllowed.hashCode()
+        (resolvedInitialMealSlot?.hashCode() ?: 0)) + proposal.memberDrinkDefaultsAllowed.hashCode() +
+        (proposal.memberDrinkQuantity?.hashCode() ?: 0)
     val proposalItems = remember(proposal, catalog, initialSavedDishPrefill) {
         if (initialSavedDishPrefill == null) reviewProposalItems(proposal, catalog) else emptyList()
     }
@@ -564,10 +630,17 @@ fun MetriaMealReviewSheet(
         initialSavedDishPrefill?.let { savedDishInitialDrafts(it).map { draft ->
             draft.copy(drinkPortion = draft.drinkPortion?.let { portion -> DrinkPortionPolicy.forCatalog(portion, catalog) })
         } }
-            ?: initialDraftsWithDrinkDefaults(
-                initialDraftsWithFoodReplacement(proposalItems, proposal, initialFoodReplacementOverride, initialPortionOverride),
-                proposal, catalog, corrections, savedMeals,
-                hasExplicitOverride = manualEntry || initialPortionOverride != null || initialFoodReplacementOverride != null,
+            ?: initialDraftsWithMemberDrinkQuantity(
+                initialDraftsWithDrinkDefaults(
+                    initialDraftsWithDrinkPortionOverride(
+                        initialDraftsWithFoodReplacement(proposalItems, proposal, initialFoodReplacementOverride, initialPortionOverride),
+                        proposal, initialPortionOverride, initialFoodReplacementOverride, catalog, corrections,
+                    ),
+                    proposal, catalog, corrections, savedMeals,
+                    hasExplicitOverride = manualEntry || initialPortionOverride != null || initialFoodReplacementOverride != null || proposal.memberDrinkQuantity != null,
+                ),
+                proposal, catalog, corrections,
+                hasPortionOverride = initialPortionOverride != null || initialFoodReplacementOverride != null,
             )
     }
     var items by rememberSaveable(draftKey, stateSaver = MealReviewItemsSaver) {
@@ -595,10 +668,6 @@ fun MetriaMealReviewSheet(
     var includedPossibleIds by rememberSaveable(draftKey, stateSaver = StringSetSaver) {
         mutableStateOf(emptySet())
     }
-    val captureTimeText = rememberSaveable(draftKey) {
-        LocalTime.now().withSecond(0).withNano(0).toString()
-    }
-    val captureTime = remember(captureTimeText) { LocalTime.parse(captureTimeText) }
     val initialDate = rememberSaveable(draftKey, initialRecordedDate) { (initialRecordedDate ?: LocalDate.now()).toString() }
     var date by rememberSaveable(draftKey, initialRecordedDate) { mutableStateOf(initialDate) }
     val initialTitle = rememberSaveable(draftKey) {
@@ -624,6 +693,7 @@ fun MetriaMealReviewSheet(
             "The saved drink unit is unavailable here. Review its gram portion or choose a unit again." else null
     ) }
     var showLeaveConfirmation by rememberSaveable(draftKey) { mutableStateOf(false) }
+    var saveInFlight by remember { mutableStateOf(false) }
 
     val initialExitState by rememberSaveable(draftKey, initialRecordedDate, stateSaver = MealReviewDraftStateSaver) {
         mutableStateOf(
@@ -746,13 +816,14 @@ fun MetriaMealReviewSheet(
         editingDishId = null
     }
     fun requestLeaveReview() {
+        if (saveInFlight) return
         if (hasSaveRelevantChanges) showLeaveConfirmation = true else onDismiss()
     }
 
     // The full-screen review has no draggable/hidden state. While the keyboard
     // is visible Android owns Back and dismisses only the IME; after that, Back
     // navigates editor -> review -> analysis result.
-    BackHandler(enabled = !imeVisible) {
+    BackHandler(enabled = !imeVisible || saveInFlight) {
         if (editingDishId != null) closeDishEditor() else requestLeaveReview()
     }
 
@@ -761,10 +832,24 @@ fun MetriaMealReviewSheet(
         properties = DialogProperties(
             dismissOnBackPress = false,
             dismissOnClickOutside = false,
-            usePlatformDefaultWidth = false,
+            usePlatformDefaultWidth = composeDialogNavigationInsets,
             decorFitsSystemWindows = true,
         ),
     ) {
+        val dialogWindow = (LocalView.current.parent as? DialogWindowProvider)?.window
+        DisposableEffect(dialogWindow, composeDialogNavigationInsets) {
+            if (composeDialogNavigationInsets && dialogWindow != null) {
+                // With decor fitting system windows, the native dialog frame is
+                // already the safe content area. Avoid Compose's full-screen
+                // DialogLayout measurement, which can extend below that frame.
+                dialogWindow.setLayout(
+                    WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.MATCH_PARENT,
+                )
+                dialogWindow.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+            }
+            onDispose { }
+        }
         Surface(
             color = MetriaColors.Canvas,
             modifier = Modifier.fillMaxSize(),
@@ -801,6 +886,7 @@ fun MetriaMealReviewSheet(
                     onCancelFoodNameCorrection = onCancelFoodNameCorrection,
                     onClearFoodNameCorrection = onClearFoodNameCorrection,
                     onCancel = ::closeDishEditor,
+                    composeDialogNavigationInsets = composeDialogNavigationInsets,
                     onApply = { updatedItems, updatedMatches, updatedIncluded, rememberDish ->
                         onClearFoodNameCorrection()
                         val oldIds = editingDish.items.mapTo(mutableSetOf()) { it.id }
@@ -826,6 +912,9 @@ fun MetriaMealReviewSheet(
                 usingPreviousDrinkPortion = initialSavedDishPrefill == null && proposal.memberDrinkDefaultsAllowed &&
                     initialItems.size == 1 && initialItems.single().drinkPortion != null &&
                     items.singleOrNull()?.resolvedDrink() == initialItems.single().resolvedDrink(),
+                unresolvedDrinkQuantity = initialSavedDishPrefill == null &&
+                    (proposal.memberDrinkQuantity != null || initialPortionOverride?.drinkPortion != null) &&
+                    initialItems.singleOrNull()?.drinkPortion == null,
                 items = items,
                 title = title,
                 onTitleChange = {
@@ -906,6 +995,10 @@ fun MetriaMealReviewSheet(
                     titleEdited = true
                 },
                 onDismiss = ::requestLeaveReview,
+                composeDialogNavigationInsets = composeDialogNavigationInsets,
+                saveInFlight = saveInFlight,
+                onSaveInFlightChange = { saveInFlight = it },
+                reviewingSavedDish = initialSavedDishPrefill != null,
                     onSave = {
                     val recordedAt = mealInstantForReview(date, captureTime)
                     val savedItems = items.map { item ->
@@ -989,10 +1082,11 @@ fun MetriaMealReviewSheet(
 }
 
 @Composable
-private fun MealReview(
+internal fun MealReview(
     proposal: MealProposal,
     manualEntry: Boolean,
     usingPreviousDrinkPortion: Boolean,
+    unresolvedDrinkQuantity: Boolean,
     items: List<MealReviewItemDraft>,
     title: String,
     onTitleChange: (String) -> Unit,
@@ -1024,10 +1118,19 @@ private fun MealReview(
     onAddDish: () -> Unit,
     onUseSimilarName: (MealEntry) -> Unit,
     onDismiss: () -> Unit,
-    onSave: () -> Unit,
+    saveInFlight: Boolean,
+    onSaveInFlightChange: (Boolean) -> Unit,
+    onSave: suspend () -> Unit,
+    composeDialogNavigationInsets: Boolean = false,
+    reviewingSavedDish: Boolean = false,
 ) {
+    val saveScope = rememberCoroutineScope()
     Column(Modifier.fillMaxSize().imePadding()) {
-        ReviewHeader(title = if (manualEntry) "Enter meal manually" else "Review this meal", onClose = onDismiss)
+        ReviewHeader(title = when {
+            reviewingSavedDish -> "Review saved dish"
+            manualEntry -> "Enter meal manually"
+            else -> "Review this meal"
+        }, onClose = onDismiss)
         androidx.compose.foundation.lazy.LazyColumn(
             modifier = Modifier.weight(1f).fillMaxWidth(),
             contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
@@ -1039,12 +1142,21 @@ private fun MealReview(
                     confidence = proposal.overallConfidence,
                     dishCount = items.dishGroups().size,
                     manualEntry = manualEntry,
+                    reviewingSavedDish = reviewingSavedDish,
                 )
             }
             if (usingPreviousDrinkPortion) {
                 item {
                     Text("Using your last saved drink portion. Edit it if this one is different.",
                         style = MaterialTheme.typography.bodySmall, color = MetriaColors.InkMuted)
+                }
+            }
+            if (unresolvedDrinkQuantity) {
+                item {
+                    Text(
+                        "I couldn't match that drink amount to a saved conversion. The estimate is unchanged; please check the portion before saving.",
+                        style = MaterialTheme.typography.bodySmall, color = MetriaColors.Estimated,
+                    )
                 }
             }
             if (!manualEntry && proposal.omittedItemCount > 0) {
@@ -1214,21 +1326,40 @@ private fun MealReview(
             }
             item { Spacer(Modifier.height(8.dp)) }
         }
-        SystemSafeBottomActions(verticalPadding = 14.dp) {
+        SystemSafeBottomActions(
+            verticalPadding = 14.dp,
+            composeDialogNavigationInsets = composeDialogNavigationInsets,
+        ) {
             Button(
-                onClick = if (MealReviewMode.needsFirstDish(manualEntry, items.size)) onAddDish else onSave,
+                onClick = {
+                    if (MealReviewMode.needsFirstDish(manualEntry, items.size)) onAddDish()
+                    else if (!saveInFlight) {
+                        onSaveInFlightChange(true)
+                        saveScope.launch {
+                            try { onSave() } finally { onSaveInFlightChange(false) }
+                        }
+                    }
+                },
+                enabled = !saveInFlight,
                 modifier = Modifier.fillMaxWidth().height(54.dp),
             ) {
                 Text(if (MealReviewMode.needsFirstDish(manualEntry, items.size)) "Add first dish" else "Save reviewed meal")
             }
             OutlinedButton(
                 onClick = onDismiss,
+                enabled = !saveInFlight,
                 modifier = Modifier.fillMaxWidth().height(48.dp),
             ) {
                 Text("Leave without saving")
             }
         }
     }
+    if (saveInFlight) AlertDialog(
+        onDismissRequest = {},
+        title = { Text("Saving meal") },
+        text = { Text("Saving this reviewed meal securely on this phone.") },
+        confirmButton = {},
+    )
 }
 
 @Composable
@@ -1247,7 +1378,13 @@ private fun ReviewHeader(title: String, onClose: () -> Unit) {
 }
 
 @Composable
-private fun ReviewIntro(referenceThumbnailBase64: String?, confidence: String, dishCount: Int, manualEntry: Boolean) {
+private fun ReviewIntro(
+    referenceThumbnailBase64: String?,
+    confidence: String,
+    dishCount: Int,
+    manualEntry: Boolean,
+    reviewingSavedDish: Boolean = false,
+) {
     Row(
         Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -1263,10 +1400,12 @@ private fun ReviewIntro(referenceThumbnailBase64: String?, confidence: String, d
             }
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (manualEntry) Text("Manual entry", style = MaterialTheme.typography.titleSmall)
+            if (reviewingSavedDish) Text("Saved dish", style = MaterialTheme.typography.titleSmall)
+            else if (manualEntry) Text("Manual entry", style = MaterialTheme.typography.titleSmall)
             else MetriaEstimateBadge("AI estimate · ${confidence.replaceFirstChar(Char::uppercase)} confidence")
             Text(
                 when {
+                    reviewingSavedDish -> "Review the saved foods and portions for this meal. Change anything that is different before saving."
                     manualEntry -> "No foods were taken from the rejected draft. Add and review them before saving."
                     dishCount == 1 -> "Metria found one dish. Check the foods and portions before saving."
                     else -> "Metria found $dishCount dishes. Check each one before saving."
@@ -1518,6 +1657,7 @@ private fun DishEditor(
     onClearFoodNameCorrection: () -> Unit,
     onCancel: () -> Unit,
     onApply: (List<MealReviewItemDraft>, Map<String, Long>, Set<String>, Boolean) -> Unit,
+    composeDialogNavigationInsets: Boolean = false,
 ) {
     var localItems by rememberSaveable(dish.id, stateSaver = MealReviewItemsSaver) { mutableStateOf(dish.items) }
     var movedItems by rememberSaveable("${dish.id}-moved", stateSaver = MealReviewItemsSaver) { mutableStateOf(emptyList()) }
@@ -1698,7 +1838,7 @@ private fun DishEditor(
             }
             item { Spacer(Modifier.height(8.dp)) }
         }
-        SystemSafeBottomActions {
+        SystemSafeBottomActions(composeDialogNavigationInsets = composeDialogNavigationInsets) {
                 Button(
                     onClick = {
                         if (localItems.isEmpty() && movedItems.isEmpty() && canRemoveLastComponent) {
@@ -1745,12 +1885,13 @@ private fun DishEditor(
 @Composable
 private fun SystemSafeBottomActions(
     verticalPadding: androidx.compose.ui.unit.Dp = 12.dp,
+    composeDialogNavigationInsets: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val context = LocalContext.current
     val view = LocalView.current
     val density = LocalDensity.current
-    val navigationBottomPixels = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+    val platformNavigationBottomPixels = if (composeDialogNavigationInsets) 0 else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
         context.getSystemService(WindowManager::class.java)
             ?.currentWindowMetrics
             ?.windowInsets
@@ -1763,6 +1904,9 @@ private fun SystemSafeBottomActions(
             ?.bottom
             ?: 0
     }
+    // The contextual review dialog is measured inside its fitted native frame,
+    // which already excludes system bars. A footer inset here would double it.
+    val navigationBottomPixels = platformNavigationBottomPixels
     val navigationBottom = with(density) { navigationBottomPixels.toDp() }
 
     Surface(color = MetriaColors.Surface, tonalElevation = 2.dp) {

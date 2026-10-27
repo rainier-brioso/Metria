@@ -21,6 +21,8 @@ object NativeDrinkReportPolicy {
     ): String? {
         if (!noSavedDishMatch || hasRequiredRead || hasCurrentDraft || hasSelectedMeal || hasPendingConfirmation) return null
         val text = memberText.trim()
-        return text.takeIf { it.length in 8..160 && report.matches(it) }
+        return text.takeIf {
+            it.length in 8..160 && (report.matches(it) || ChatDrinkPortionPolicy.reportQuantity(it) != null)
+        }
     }
 }

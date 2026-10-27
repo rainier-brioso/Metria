@@ -4,6 +4,11 @@ This is the canonical testing entry point for Metria. It is written for a new
 agent or developer who has no access to prior chat history. Milestone-specific
 expected results and evidence remain in the applicable checkpoint document.
 
+For targeted visual debugging, read
+[`metria-visual-qa`](skills/metria-visual-qa/SKILL.md) and the supporting
+[tool selection and research](testing/visual-debugging.md). These supplement the
+required gates below; they do not authorize saves, installs or private-data export.
+
 ## 1. Evidence levels
 
 Keep these claims separate:
@@ -197,7 +202,9 @@ Verify:
 
 Verify:
 
-- the label flow starts OCR directly after capture;
+- capture shows a private preview; OCR starts only on explicit Read label;
+- two-column labels use one consistent value column; missing or ambiguous
+  values stay unknown rather than being filled from another column;
 - values remain editable and are not silently saved;
 - malformed or ambiguous values fail safely;
 - camera retry and existing-photo selection work;

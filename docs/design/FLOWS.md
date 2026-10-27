@@ -1,5 +1,40 @@
 # Metria primary UX flows
 
+Assistant prototype completion (approved 2026-10-26): + > My saved dishes >
+search/select a current local dish > existing unsaved Review > explicit Save >
+Chat receipt and View meal. Empty/no-match lists offer a clear explanation and
+Back to chat; selection itself never records a meal. Contextual label Review
+also has an editable/clearable local-time category and returns a transactional
+receipt on Save. View meal > edit > explicit Save returns an atomic Meal updated
+acknowledgement/link; failed saves keep the editor without success feedback.
+Other destination flows remain governed by their existing contracts.
+
+Assistant save follow-up (2026-10-26): contextual meal capture/manual fallback
+Save returns to Chat with the final saved-meal acknowledgement and View meal.
+Success is transactional with the meal; failures keep Review and show no receipt.
+An initial capture may create a fresh receipt-only conversation on explicit Save,
+without restoring expired messages. Assistant Review uses the existing local-time
+category as an editable default after explicit Today/member choices. Clearing the
+category remains a valid choice. No existing saved meal is reclassified.
+
+Assistant panel capture (2026-10-25): + > Analyse meal / Scan nutrition label
+opens a page in the same panel over the current destination. Take photo / Choose
+image > private preview > explicit Prepare draft / Read label > progress with
+Stop > Review/Discard. Labels edit inline; photo drafts use the shared full meal
+editor. Cancel review returns to the draft, successful explicit Save to Chat.
+Leaving an unsaved capture asks to discard; source cancellation returns to capture.
+Privacy and Lock are also available in conversation options. Today routes remain
+unchanged. Acceptance: `assistant-context-panel.md`.
+
+Chat drink quantities (2026-10-24, in development): an explicit single-drink
+amount or an eligible live-draft correction may use mL or a source-defined serving
+through the shared typed/spoken handler. Acknowledge the applied unit and retain
+it in Review. Missing conversion, ambiguous serving size or invalid amount keeps
+the previous draft and explains how to continue. Explicit current amounts override
+remembered portions; food changes retire the old conversion. Existing Stop/lock,
+Review, Discard and explicit Save behavior remains. No additional confirmation
+screen or automatic record is introduced. Scope: `../drink-portions.md`.
+
 Drink defaults (2026-10-22): an unspecified single-drink text draft can start with
 the last confirmed same-drink unit and portion, with a brief editable-default note.
 Explicit current quantities, saved dishes, photo/manual and mixed meals take
@@ -394,6 +429,19 @@ is introduced. All history retains its separate date-grouped view.
 **States:** no data, partial estimates only, goal absent, one-day history, selected day, all history, empty history tab, changed range, cycle-aware context enabled/disabled.
 
 ## 6. Ask Metria
+
+**Contextual panel - 2026-10-24:** the unchanged central icon now opens the
+shared conversation directly in an expandable panel. Actions and conversation
+options open inline views with Back to chat; the original bottom navigation
+stays visible when the keyboard is closed. `+` retains Speak, Chat,
+Analyse meal, Scan nutrition label and Add weight; `...` retains confirmed New
+conversation and access to existing Assistant tools. Expand/reduce preserves
+the same live composition. Keyboard/short windows/enlarged text use full height.
+Tool navigation retains the transcript first, or stays in Chat on save failure.
+No new context authority, saved-meal edit or automatic Save is added. This
+supersedes the initial action-selector/full-screen presentation only; all
+existing action, voice and review contracts below remain. Scope and physical
+acceptance: [assistant-context-panel.md](assistant-context-panel.md).
 
 **Continuous activity - 2026-10-21:** ordinary Chat voice stays in the timeline,
 using one activity card from Ready/Listening through Transcribing and the normal

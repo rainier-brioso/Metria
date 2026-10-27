@@ -106,7 +106,11 @@ Compact visual treatment composed of icon/pattern, color, and short label. Detai
 
 ### Primary capture control
 
-The persistent Metria action opens a compact action menu for voice, chat, meal photo, nutrition label, and manual entry. Listening and processing states replace the idle icon clearly; they do not navigate unexpectedly.
+The persistent Metria action opens the contextual assistant panel directly. Its
+`+` menu retains voice, chat, meal photo, nutrition label and manual weight entry.
+The current green icon and its position are unchanged. Listening and processing
+remain explicit cancellable states. See [the approved panel slice](assistant-context-panel.md)
+for the bounded implementation and pending physical gates.
 
 ### Focused editor
 

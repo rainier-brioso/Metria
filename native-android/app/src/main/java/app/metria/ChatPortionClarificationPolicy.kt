@@ -18,6 +18,7 @@ data class ChatPortionOverride(
     val itemIndex: Int,
     val itemName: String,
     val grams: Int?,
+    val drinkPortion: DrinkPortion? = null,
 )
 
 data class ChatPortionClarificationOffer(
@@ -28,6 +29,7 @@ data class ChatPortionClarificationOffer(
     val answered: Boolean = false,
     val grams: Int? = null,
     val feedback: String? = null,
+    val drinkPortion: DrinkPortion? = null,
 )
 
 /** Frozen host-owned target for one model-interpreted correction to a live draft. */
@@ -37,6 +39,7 @@ data class ChatCurrentDraftPortionContext(
     val originalProposal: MealProposal,
     val target: ChatPortionTarget,
     val currentGrams: Int?,
+    val drinkPortion: DrinkPortion? = null,
 )
 
 enum class CurrentDraftTurnDisposition {
@@ -105,6 +108,7 @@ object ChatPortionClarificationPolicy {
         proposal: MealProposal,
         operation: String?,
         ordinaryChatDraft: Boolean,
+        allowCertainDrinkEdit: Boolean = false,
     ): ChatPortionTarget? {
         if (!ordinaryChatDraft || operation !in setOf("meal", "agent_meal_draft", "agent_meal_portion_edit", "agent_meal_food_edit") ||
             proposal.omittedItemCount != 0 || proposal.partialCategory != null || proposal.items.isEmpty()
@@ -112,6 +116,14 @@ object ChatPortionClarificationPolicy {
 
         val uncertain = proposal.items.withIndex().filter { (_, item) ->
             item.estimatedGramsRange.min < item.estimatedGramsRange.max
+        }
+        if (uncertain.isEmpty() && allowCertainDrinkEdit && proposal.items.size == 1) {
+            val item = proposal.items.single()
+            val name = item.name.trim()
+            if ((item.role == "drink" || proposal.memberDrinkQuantity != null || proposal.memberDrinkDefaultsAllowed) &&
+                item.evidence == "seen" && name.isNotEmpty() &&
+                item.groupLabel?.isNotBlank() != true && !joinedFoodName.containsMatchIn(name)
+            ) return ChatPortionTarget(0, name, item.estimatedGramsRange.min, item.estimatedGramsRange.max)
         }
         if (uncertain.size != 1) return null
         val (index, item) = uncertain.single()
@@ -164,7 +176,7 @@ object ChatPortionClarificationPolicy {
         if (!unlocked || stopping || pending || request != activeRequestId ||
             request != handledReplyRequestId || operation !in setOf("meal", "agent_meal_draft", "agent_meal_portion_edit", "agent_meal_food_edit")
         ) return null
-        val target = target(current, operation, ordinaryChatDraft = true) ?: return null
+        val target = target(current, operation, ordinaryChatDraft = true, allowCertainDrinkEdit = true) ?: return null
         if (acceptedOverride != null && !isCurrent(
                 acceptedOverride, current, request, conversationGeneration, unlocked, stopping,
             )
@@ -175,6 +187,7 @@ object ChatPortionClarificationPolicy {
             originalProposal = current,
             target = target,
             currentGrams = acceptedOverride?.grams,
+            drinkPortion = acceptedOverride?.drinkPortion,
         )
     }
 
@@ -190,21 +203,29 @@ object ChatPortionClarificationPolicy {
         previousRequestId == context.sourceRequestId &&
         conversationGeneration == context.conversationGeneration && operation in setOf("meal", "agent_meal_draft", "agent_meal_portion_edit", "agent_meal_food_edit") &&
         proposal != null && proposal == context.originalProposal &&
-        target(proposal, operation, ordinaryChatDraft = true) == context.target
+        target(
+            proposal, operation, ordinaryChatDraft = true,
+            allowCertainDrinkEdit = proposal?.memberDrinkQuantity != null || proposal?.memberDrinkDefaultsAllowed == true ||
+                proposal?.items?.singleOrNull()?.role == "drink",
+        ) == context.target
 
     fun overrideForCurrentDraft(
         context: ChatCurrentDraftPortionContext,
         resultRequestId: Long,
         grams: Int?,
+        drinkPortion: DrinkPortion? = null,
     ): ChatPortionOverride? {
         if (grams != null && grams !in 1..2_000) return null
+        if (drinkPortion != null && (DrinkPortionPolicy.canonicalGrams(drinkPortion) != grams || grams == null)) return null
         val item = context.originalProposal.items.getOrNull(context.target.itemIndex) ?: return null
         if (!item.name.trim().equals(context.target.itemName, ignoreCase = true) ||
-            item.estimatedGramsRange.min >= item.estimatedGramsRange.max
+            (item.estimatedGramsRange.min >= item.estimatedGramsRange.max &&
+                !(item.evidence == "seen" && (item.role == "drink" || context.originalProposal.memberDrinkQuantity != null ||
+                    context.originalProposal.memberDrinkDefaultsAllowed)))
         ) return null
         return ChatPortionOverride(
             resultRequestId, context.conversationGeneration, context.originalProposal,
-            context.target.itemIndex, context.target.itemName, grams,
+            context.target.itemIndex, context.target.itemName, grams, drinkPortion,
         )
     }
 
@@ -214,18 +235,37 @@ object ChatPortionClarificationPolicy {
         conversationGeneration: Long,
         target: ChatPortionTarget,
         reply: ChatPortionReply,
+        drinkPortion: DrinkPortion? = null,
     ): ChatPortionOverride? {
         val grams = when (reply) {
             is ChatPortionReply.Grams -> reply.value.takeIf { it in 1..2_000 } ?: return null
             ChatPortionReply.Skip -> null
             else -> return null
         }
+        if (drinkPortion != null && (DrinkPortionPolicy.canonicalGrams(drinkPortion) != grams || grams == null)) return null
         if (originalProposal.items.getOrNull(target.itemIndex)?.let { item ->
                 item.name.trim().equals(target.itemName, ignoreCase = true) &&
                     item.estimatedGramsRange.min < item.estimatedGramsRange.max
             } != true
         ) return null
-        return ChatPortionOverride(requestId, conversationGeneration, originalProposal, target.itemIndex, target.itemName, grams)
+        return ChatPortionOverride(requestId, conversationGeneration, originalProposal, target.itemIndex, target.itemName, grams, drinkPortion)
+    }
+
+    fun overrideForDrinkReview(
+        originalProposal: MealProposal,
+        requestId: Long,
+        conversationGeneration: Long,
+        target: ChatPortionTarget,
+        drinkPortion: DrinkPortion,
+    ): ChatPortionOverride? {
+        val grams = DrinkPortionPolicy.canonicalGrams(drinkPortion) ?: return null
+        val item = originalProposal.items.getOrNull(target.itemIndex) ?: return null
+        if (!item.name.trim().equals(target.itemName, ignoreCase = true) || item.evidence != "seen" ||
+            item.groupLabel?.isNotBlank() == true
+        ) return null
+        return ChatPortionOverride(
+            requestId, conversationGeneration, originalProposal, target.itemIndex, target.itemName, grams, drinkPortion,
+        )
     }
 
     fun isCurrent(
@@ -235,7 +275,9 @@ object ChatPortionClarificationPolicy {
         conversationGeneration: Long,
         unlocked: Boolean,
         stopping: Boolean,
-    ): Boolean = unlocked && !stopping && requestId == override.requestId &&
+    ): Boolean = unlocked && !stopping &&
+        (override.drinkPortion == null || DrinkPortionPolicy.canonicalGrams(override.drinkPortion) == override.grams) &&
+        requestId == override.requestId &&
         conversationGeneration == override.conversationGeneration && proposal == override.originalProposal &&
         proposal.items.getOrNull(override.itemIndex)?.name?.trim()?.equals(override.itemName, ignoreCase = true) == true
 

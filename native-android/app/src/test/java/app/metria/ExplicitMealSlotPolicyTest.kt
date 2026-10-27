@@ -3,6 +3,7 @@ package app.metria
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import java.time.LocalTime
 
 class ExplicitMealSlotPolicyTest {
     private val parsed = MealProposalParser.parseOrThrow(
@@ -50,6 +51,39 @@ class ExplicitMealSlotPolicyTest {
         assertEquals("dinner", ExplicitMealSlotPolicy.initialReviewSlot(null, "dinner"))
         assertEquals("dinner", ExplicitMealSlotPolicy.initialReviewSlot("unknown", "dinner"))
         assertNull(ExplicitMealSlotPolicy.initialReviewSlot(null, "unknown"))
+    }
+
+    @Test
+    fun optionalLocalReviewTimeIsOnlyAFallbackAfterTodayAndMemberChoices() {
+        val time = LocalTime.of(12, 30)
+
+        assertEquals("lunch", ExplicitMealSlotPolicy.initialReviewSlot("lunch", "dinner", time))
+        assertEquals("dinner", ExplicitMealSlotPolicy.initialReviewSlot("unknown", "dinner", time))
+        assertEquals("lunch", ExplicitMealSlotPolicy.initialReviewSlot(null, "unknown", time))
+        // Existing callers omit the time and retain the old non-assistant behavior.
+        assertNull(ExplicitMealSlotPolicy.initialReviewSlot(null, null))
+    }
+
+    @Test
+    fun localReviewTimeUsesMealSlotBoundaries() {
+        val cases = listOf(
+            4 to "dinner",
+            5 to "breakfast",
+            10 to "breakfast",
+            11 to "lunch",
+            15 to "lunch",
+            16 to "snack",
+            18 to "snack",
+            19 to "dinner",
+        )
+
+        cases.forEach { (hour, expected) ->
+            assertEquals("hour $hour", expected, ExplicitMealSlotPolicy.initialReviewSlot(
+                todayMealSlot = null,
+                memberMealSlot = null,
+                reviewTime = LocalTime.of(hour, 0),
+            ))
+        }
     }
 
     @Test

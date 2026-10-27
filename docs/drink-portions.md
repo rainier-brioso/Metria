@@ -233,3 +233,94 @@ for this acceptance update; commit and push still require explicit approval.
 On 2026-10-24 the member explicitly approved committing and pushing this reviewed
 checkpoint. Acceptance scope and the broader open physical gates above remain
 unchanged.
+
+## Chat and spoken drink quantities - 2026-10-24
+
+Member approves the next slice: explicit drink amounts such as "I had 200 mL of
+coffee" and contextual corrections such as "Make that half a cup". Ordinary
+speech already enters the same Chat text handler; do not introduce a separate
+audio conversion path. Support bounded English mL and measured-serving expressions
+with finite positive amounts. Whole-gram corrections keep their existing behavior.
+No unrestricted natural-language quantity claim is made by this slice.
+
+The host parses the original member text, binds one complete drink to one
+unambiguous packaged food, and resolves the requested unit through
+`DrinkPortionPolicy`. A cup is a source-defined serving, not an assumed generic
+volume. Different cup sizes require clarification. Missing mL evidence cannot
+fall back to water density. Preserve the precise source-bound snapshot beside the
+canonical grams so Review and deterministic nutrition agree. An explicit current
+quantity wins over a remembered default; grams or a food replacement invalidate
+the previous drink conversion. Model output cannot author a conversion factor.
+
+Idle/no draft uses normal Chat handling. An eligible initial drink report follows
+the existing draft task and its loading/cancellation behavior. A supported live
+correction updates the unsaved draft and acknowledges its unit; invalid or
+ambiguous corrections keep the previous draft with an explanation. Unrelated
+requests follow ordinary handling. Stop, lock, new work and stale voice/context
+proofs cannot apply a late correction. Reopening Review retains the accepted unit
+in the same live session; history alone cannot recreate editing authority. Only
+explicit Save teaches the next default or changes records. No new controls or
+screen layout are introduced.
+
+Acceptance plan: automated parser/conversion, ambiguity/missing-source, current
+identity, override precedence and Review-restoration tests; complete Android gate
+and independent review. Then install in place and check an initial coffee mL
+amount, repeated mL/cup/gram corrections, unsupported/invalid quantity retention
+and a spoken correction on Samsung. Physical gates remain pending until observed;
+the earlier checkpoint's wider UI/recovery/accessibility gaps remain open.
+
+Implementation/review evidence: new `ChatDrinkPortionPolicy` parses bounded
+positive quantities from original text. mL requires explicit volume evidence;
+servings match the primary source measure, excluding parenthetical size words.
+Cup requests require one unambiguous source with a one-cup basis; other measured
+servings account for the numeric source basis. Plain ambiguous ounces are rejected.
+Optional host-only proposal quantity metadata remains outside model JSON. The
+request-bound override retains the validated snapshot across repeated Review,
+Skip and unchanged-draft replies. Explicit grams clear it; successful food rename
+retires it, and a new unit correction after a rename requires Review's food match.
+An unresolved initial quantity has a concise Review warning and cannot silently
+be treated as a successfully applied conversion.
+
+Independent review found no blocking conversion/session issue. A trailing food
+suffix such as "Make that 200 mL of coffee" is outside the correction grammar and
+gets unchanged-draft feedback; use "Make that 200 mL" for this slice. Root review
+fixed gram corrections on fixed-range drink estimates and singular glass parsing,
+with regressions and independent follow-up review. Initial compile's missing
+import was repaired. Final frozen-source gate:
+`rtk proxy .\gradlew.bat :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease --no-daemon`
+passes 710 tests, zero failures/errors/skips, both APK builds and release vital
+lint. Diff check passes. Debug APK SHA-256:
+`49924366d169af0b9062f5e94037d7229ba2f7f166ee16b2110cad2a4c84ce8d`.
+Samsung reconnected; authorized in-place installation is underway. All new phone
+checks remain pending. No member record was saved, private screen captured, new
+dependency added, commit made or push performed for this follow-up.
+
+The verified 710-test APK installed in place (`Success`) and cold-launched
+(`Status: ok`) on Samsung SM-S928B / Android 16, preserving existing app storage.
+Member unlock and initial 200 mL coffee / half-cup Review acceptance requested.
+No new phone interaction gate is passed merely by installation.
+
+Member confirms both named typed checks on the installed 710-test Samsung build:
+initial coffee Review shows 200 mL and Breakfast; after leaving without saving,
+"Make that half a cup" shows 0.5 of the listed cup serving in Review. This is
+member-observed amount/type acceptance. Safe retained trace confirms MiniLM saved
+dish probing, no-match continuation, `host_drink_draft` and completed Chat reply;
+it does not independently establish the displayed amounts, and no separate
+`portion_applied` event appears in the inspected tail. No private text/record or
+screen captured. Spoken correction, gram switching/invalid retention and wider
+physical gates remain open. Next: a spoken mL correction and repeated Review.
+
+Member reports spoken quantity/Review check failed and authorizes screen
+inspection. Content-free trace shows accepted transcription, a native portion
+rejection, then a separate new drink draft. Android CLI flat layout (no-idle,
+because status-bar animation prevented idle) reveals two consumption statements
+with 2000 mL, not the requested 250 mL correction. No screenshot or raw hierarchy
+file was saved in the repository. The spoken original amount is not yet known;
+ask member whether this was recognition error or intentional wording before
+changing quantity authority. Spoken correction acceptance remains open; do not
+infer a converter defect or silently rescale a recognized number.
+
+Member says they may have spoken "thousand" by mistake. This does not establish
+an ASR defect or a successful spoken correction. Retry with a fresh typed 200 mL
+coffee draft and spoken "Make that one hundred milliliters", checking the actual
+transcribed amount and repeated Review before drawing conclusions.

@@ -42,7 +42,7 @@ object PrivateConversationPolicy {
         record ?: return null
         if (!now.isBefore(record.updatedAt.plus(retention))) return null
         val messages = normalizedMessages(record.messages)
-        if (messages.none(PrivateConversationMessage::fromMember)) return null
+        if (messages.none(PrivateConversationMessage::fromMember) && messages.none { it.hasSavedMealLink() }) return null
         return record.copy(messages = messages)
     }
 
@@ -51,9 +51,12 @@ object PrivateConversationPolicy {
         now: Instant = Instant.now(),
     ): PrivateConversationRecord? {
         val normalized = normalizedMessages(messages)
-        if (normalized.none(PrivateConversationMessage::fromMember)) return null
+        if (normalized.none(PrivateConversationMessage::fromMember) && normalized.none { it.hasSavedMealLink() }) return null
         return PrivateConversationRecord(normalized, now)
     }
+
+    private fun PrivateConversationMessage.hasSavedMealLink(): Boolean =
+        !fromMember && !localEvidence && savedMealId != null
 
     private fun normalizedMessages(messages: List<PrivateConversationMessage>): List<PrivateConversationMessage> =
         messages.asSequence()

@@ -114,7 +114,7 @@ fun SavedMealEditorScreen(
     onClearFoodNameCorrection: () -> Unit,
     onDismiss: () -> Unit,
     onAskAboutMeal: () -> Boolean,
-    onSave: (MealEntry) -> String?,
+    onSave: suspend (MealEntry) -> String?,
     onDelete: () -> String?,
 ) {
     var items by rememberSaveable(meal.id, stateSaver = EditableSavedFoodsSaver) { mutableStateOf(meal.items.map {
@@ -139,6 +139,7 @@ fun SavedMealEditorScreen(
     var confirmReferenceRemoval by rememberSaveable(meal.id) { mutableStateOf(false) }
     var confirmMealDeletion by rememberSaveable(meal.id) { mutableStateOf(false) }
     var confirmNutritionCoverageLoss by rememberSaveable(meal.id) { mutableStateOf(false) }
+    var saveInFlight by remember { mutableStateOf(false) }
     var confirmAskAboutMeal by rememberSaveable(meal.id) { mutableStateOf(false) }
     var askAfterCoverageConfirmation by remember { mutableStateOf(false) }
     var removeReferenceThumbnail by rememberSaveable(meal.id) { mutableStateOf(false) }
@@ -208,7 +209,7 @@ fun SavedMealEditorScreen(
     val initialEditSnapshot by rememberSaveable(meal.id) { mutableStateOf(editSnapshot()) }
     val sheetState = rememberGuardedEditorSheetState(
         hasChanges = editSnapshot() != initialEditSnapshot,
-        saving = false,
+        saving = saveInFlight,
     ) { confirmLeave = true }
     val sheetScope = rememberCoroutineScope()
     fun closeFoodEditor(cancel: Boolean) {
@@ -226,6 +227,7 @@ fun SavedMealEditorScreen(
         error = null
     }
     fun requestDismiss() {
+        if (saveInFlight) return
         if (catalogSearchIndex != null) catalogSearchIndex = null
         else if (editingFoodIndex != null) closeFoodEditor(cancel = true)
         else if (editSnapshot() != initialEditSnapshot) confirmLeave = true
@@ -244,7 +246,7 @@ fun SavedMealEditorScreen(
         }
     }
 
-    fun saveMealDraft(coverageLossConfirmed: Boolean = false, askAfterSaving: Boolean = false) {
+    suspend fun saveMealDraft(coverageLossConfirmed: Boolean = false, askAfterSaving: Boolean = false) {
         error = null
         val isCatalogBacked = isCatalogMeal || meal.nutrition?.source == "member_confirmed_catalog" || savedCatalogFoodIds.isNotEmpty()
         if (!SavedMealEditPolicy.canSaveCatalogBackedEdit(isCatalogBacked, catalog != null, unresolvedKeptMatch)) {
@@ -307,6 +309,18 @@ fun SavedMealEditorScreen(
         error = onSave(updated)
         if (error == null && askAfterSaving) {
             onAskAboutMeal()
+        }
+    }
+
+    fun launchSave(coverageLossConfirmed: Boolean = false, askAfterSaving: Boolean = false) {
+        if (saveInFlight) return
+        sheetScope.launch {
+            saveInFlight = true
+            try {
+                saveMealDraft(coverageLossConfirmed, askAfterSaving)
+            } finally {
+                saveInFlight = false
+            }
         }
     }
 
@@ -514,7 +528,7 @@ fun SavedMealEditorScreen(
         }
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (editingFoodIndex == null) {
-                Button(onClick = { saveMealDraft() }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Save meal changes") }
+                Button(onClick = { launchSave() }, enabled = !saveInFlight, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Save meal changes") }
                 TextButton(onClick = ::requestDismiss, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Leave without saving") }
             } else {
                 Button(onClick = {
@@ -527,7 +541,13 @@ fun SavedMealEditorScreen(
         }
         }
     }
-    if (confirmLeave) AlertDialog(
+    if (saveInFlight) AlertDialog(
+        onDismissRequest = {},
+        title = { Text("Saving meal changes") },
+        text = { Text("Saving the reviewed changes securely on this phone.") },
+        confirmButton = {},
+    )
+    if (confirmLeave && !saveInFlight) AlertDialog(
         onDismissRequest = { confirmLeave = false },
         title = { Text("Leave without saving?") },
         text = { Text("Your changes to this meal will be lost.") },
@@ -541,7 +561,7 @@ fun SavedMealEditorScreen(
         confirmButton = {
             Button(onClick = {
                 confirmAskAboutMeal = false
-                saveMealDraft(askAfterSaving = true)
+                launchSave(askAfterSaving = true)
             }) { Text("Save and ask") }
         },
         dismissButton = {
@@ -595,7 +615,7 @@ fun SavedMealEditorScreen(
                     confirmNutritionCoverageLoss = false
                     val askAfterSaving = askAfterCoverageConfirmation
                     askAfterCoverageConfirmation = false
-                    saveMealDraft(coverageLossConfirmed = true, askAfterSaving = askAfterSaving)
+                    launchSave(coverageLossConfirmed = true, askAfterSaving = askAfterSaving)
                 }) { Text(if (hasRemainingEstimate) "Save partial estimate" else "Save without estimate") }
             },
             dismissButton = { TextButton(onClick = { confirmNutritionCoverageLoss = false; askAfterCoverageConfirmation = false }) { Text("Keep editing") } },

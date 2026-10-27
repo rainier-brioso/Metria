@@ -87,6 +87,23 @@ class ChatPortionClarificationPolicyTest {
         assertEquals(15, retainedForRetry.grams)
     }
 
+    @Test fun aSourceBoundDrinkQuantityCanReplaceEvenACertainEstimateButCannotOutliveItsSession() {
+        val drink = item("coffee", 200, 200).copy(role = "drink", evidence = "seen")
+        val p = proposal(listOf(drink)).copy(memberDrinkQuantity = ChatDrinkQuantity(200.0, "ml"))
+        val target = requireNotNull(ChatPortionClarificationPolicy.target(
+            p, "agent_meal_draft", true, allowCertainDrinkEdit = true,
+        ))
+        val portion = DrinkPortion(200.0, "ml", "mL", 1.0, 171890L, "fixture", "1 cup (8 fl oz)")
+        val context = ChatCurrentDraftPortionContext(17, 4, p, target, 200, portion)
+        val override = requireNotNull(ChatPortionClarificationPolicy.overrideForCurrentDraft(context, 17, 119, portion.copy(amount = 119.0)))
+        assertEquals(119, override.grams)
+        assertEquals(119.0, override.drinkPortion?.amount)
+        assertTrue(ChatPortionClarificationPolicy.isCurrent(override, p, 17, 4, true, false))
+        assertFalse(ChatPortionClarificationPolicy.isCurrent(override, p, 18, 4, true, false))
+        assertFalse(ChatPortionClarificationPolicy.isCurrent(override, p.copy(assumptions = listOf("changed")), 17, 4, true, false))
+        assertNull(ChatPortionClarificationPolicy.overrideForCurrentDraft(context, 17, 118, portion.copy(amount = 119.0)))
+    }
+
     @Test fun typedCorrectionRequiresOneExplicitMatchingWholeGramLiteral() {
         assertEquals(22, ChatPortionClarificationPolicy.matchingTypedCorrection("Actually, make that 022 g", 22))
         assertEquals(200, ChatPortionClarificationPolicy.matchingTypedCorrection("Please change it to 200 grams.", 200))
