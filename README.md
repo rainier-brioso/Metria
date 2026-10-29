@@ -51,16 +51,17 @@ Broader conversation across goals and trends remains future work.
 | Component | Role | Processing location |
 | --- | --- | --- |
 | Gemma through LiteRT-LM | Local meal, photo and conversational assistance | Android phone |
-| MiniLM | Optional, bounded routing for supported local record questions in debug builds; falls back to Gemma when unavailable or uncertain | Android phone |
+| MiniLM | Integrated local routing for supported record questions in the current debug/demo builds; uncertain or unsupported requests continue through Gemma | Android phone |
 | NVIDIA `nvidia/Nemotron-3.5-Super-VL` | Cloud photo/text meal drafts and conversational action selection | Nebius Token Factory |
 | Android on-device speech recognition | Transcribes voice in cloud mode; Nemotron receives text, not audio | Android phone |
 | ML Kit | Nutrition-label text recognition | Android phone |
 | Metria's deterministic host code | Authorizes tools, reads records, calculates nutrition, validates drafts and saves confirmed edits | Android phone |
 
-Gemma handles the local voice path. MiniLM is a routing model, not a nutrition
-generator or medical decision model. Its pinned model artifact is provisioned
-separately and excluded from Git; see [MiniLM integration](docs/minilm-chat-integration.md).
-The cloud route calls Nemotron directly and does not use MiniLM.
+Gemma handles the local voice path. MiniLM selects supported local record
+operations automatically, with host validation and a Gemma fallback. The current
+debug APK includes its model; the person installing that APK has nothing extra
+to configure for MiniLM. The cloud route calls Nemotron directly and does not
+use MiniLM. See [MiniLM integration](docs/minilm-chat-integration.md).
 
 ## Privacy and processing choices
 
@@ -94,10 +95,18 @@ for app compilation and Java 21 or newer for JVM tests that load LiteRT-LM tool
 declarations. From the repository root on Windows:
 
 ```powershell
+python tools/decision_model/prepare_minilm.py
 Set-Location native-android
 .\gradlew.bat :app:testDebugUnitTest :app:assembleDebug --no-daemon
 Set-Location ..
 ```
+
+The preparation command uses Python 3 to download the exact public MiniLM
+revision, verify its size and SHA-256, and place it in the Android assets before
+building. Its approximately 23 MB weight file is excluded from Git but included
+in the resulting debug/demo APK. This is a developer build step, not an end-user
+download. The production `release` build variant currently leaves MiniLM routing
+disabled; activating and verifying that variant remains separate work.
 
 The APK is `native-android/app/build/outputs/apk/debug/app-debug.apk`. Install it
 through Android Studio or ADB, select your actual connected device, and use
