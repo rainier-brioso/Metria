@@ -1,0 +1,11 @@
+**
+!broker/
+broker/**
+!broker/*.py
+!broker/Dockerfile
+!broker/Dockerfile.local
+broker/test_*.py
+broker/__pycache__/
+!shared/
+shared/**
+!shared/assistant-contract.json

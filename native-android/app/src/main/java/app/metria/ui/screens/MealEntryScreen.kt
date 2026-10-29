@@ -60,6 +60,7 @@ import app.metria.MealEntryResultPolicy
 import app.metria.MealProposal
 import app.metria.ModelStatus
 import app.metria.VoiceEntryText
+import app.metria.ui.components.AssistantProviderLabel
 import kotlinx.coroutines.delay
 
 /** Dedicated Today entry. Completed speech creates a draft; only review can save it. */
@@ -217,7 +218,8 @@ fun MealEntryScreen(
             }
         }
     }
-    LaunchedEffect(modelStatus.assistantRequestId, modelStatus.state, modelStatus.coachToolCall) {
+    LaunchedEffect(modelStatus.assistantRequestId, modelStatus.state, modelStatus.assistantOperation,
+        modelStatus.coachToolCall, modelStatus.assistantProposal, modelStatus.coachReply, modelStatus.assistantDiagnostic) {
         val voiceId = voiceRequestId
         if (MealEntryResultPolicy.isCompletedResult(voiceId, modelStatus, "coach_audio")) {
             voiceRequestId = null
@@ -241,7 +243,8 @@ fun MealEntryScreen(
             val proposal = MealEntryResultPolicy.proposal(modelStatus)
             if (proposal != null) reviewCurrent.value(proposal)
             else {
-                entryError = "Couldn't prepare a meal draft. Try again or enter it manually."
+                entryError = MealEntryResultPolicy.feedback(draftId, modelStatus)
+                    ?: "Couldn't prepare a meal draft. Try again or enter it manually."
                 draftFailureDetails = if (BuildConfig.DEBUG) MealEntryResultPolicy.draftDebugDetails(draftId, modelStatus) else null
             }
         }
@@ -249,9 +252,9 @@ fun MealEntryScreen(
 
     val voiceBusy = voiceRequestId != null && modelStatus.assistantRequestId == voiceRequestId && modelStatus.state == "thinking"
     val draftBusy = draftRequestId != null && modelStatus.assistantRequestId == draftRequestId && modelStatus.state == "thinking"
-    val preparing = modelStatus.state == "ready" || modelStatus.state == "initializing" || modelStatus.state == "testing"
-    val unavailable = modelStatus.state in setOf("failed", "absent", "removed")
-    val canCreateDraft = modelStatus.state == "loaded" && VoiceEntryText.validated(description) != null &&
+    val preparing = !modelStatus.cloudSelected && modelStatus.state in setOf("ready", "initializing", "testing")
+    val unavailable = if (modelStatus.cloudSelected) !modelStatus.cloudReady else modelStatus.state in setOf("failed", "absent", "removed")
+    val canCreateDraft = MealEntryResultPolicy.canPrepare(modelStatus) && VoiceEntryText.validated(description) != null &&
         !recording && !voiceBusy && !draftBusy && !draftSubmitting
     val currentDraftFailure = draftFailureDetails?.takeIf {
         BuildConfig.DEBUG && MealEntryResultPolicy.draftDebugDetails(it.requestId, modelStatus) == it
@@ -267,6 +270,9 @@ fun MealEntryScreen(
             }
             Text("Add $slotLabel", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
         }
+        AssistantProviderLabel(cloud = modelStatus.cloudSelected)
+        if (modelStatus.cloudSelected) Text("Voice recognition stays on this phone. Your description is sent to cloud to prepare a draft.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
         when {
             draftBusy || draftSubmitting -> LoadingMealEntry("Preparing meal draft…") {
@@ -352,7 +358,7 @@ fun MealEntryScreen(
                 )
                 if (preparing) Text("Getting Metria ready…", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (unavailable) EntryMessage("The local assistant is unavailable. Try again when it is ready.", isError = true)
-                entryError?.let { EntryMessage(it, isError = true) }
+                entryError?.let { EntryMessage(it, isError = modelStatus.assistantDiagnostic != null || it != modelStatus.coachReply) }
                 if (currentDraftFailure != null) TextButton(
                     onClick = { showDraftDetails = true },
                     modifier = Modifier.heightIn(min = 48.dp),

@@ -1,5 +1,31 @@
 # Metria screen contracts
 
+Provider visibility (approved 2026-10-29): meal text/voice entry, Chat and photo
+capture/preview show a quiet icon plus Local · Gemma or Cloud · Nemotron label.
+It identifies the selected route, not connectivity or the provenance of older
+messages. Label OCR always identifies Local · ML Kit. Cloud voice explains that
+recognition stays on-device and only the description goes to cloud. Keep labels
+readable without color, wrapping with font scale, and subordinate to the primary
+action. Meal-entry clarification stays editable on the same screen, with the
+actual safe failure message instead of replacing all outcomes with one error.
+
+Onboarding inset repair (2026-10-29): reserve safe drawing insets around the
+entire screen, keep Continue/Back in a fixed footer above system navigation,
+and scroll the explanatory content independently when height/font scaling
+requires it. Assistant-choice chips wrap instead of clipping. Preserve the
+selected page across activity recreation; do not complete setup or download a
+model during visual verification. Onboarding content/consent stays unchanged.
+
+Cloud provider choice (approved 2026-10-27): onboarding and Settings expose a
+focused Gemma/local versus Nemotron/cloud choice. Cloud setup has labelled broker
+address and private access pass, a clear transmission disclosure and one primary
+connect/enable action. Pass is masked and transient; loading/error/cancel states
+must remain keyboard-safe. Cloud preview labels provider and selected image/text
+before sending. No Gemma download gate in cloud mode. Cloud microphone uses
+Android on-device transcription, never raw audio upload. Switching providers
+preserves records and cannot apply a late result from previous work. See
+`../cloud-assistant-integration.md` for acceptance and content boundaries.
+
 Assistant completion (approved 2026-10-26): My saved dishes is an inline panel
 page with Back to chat, a labelled search field, readable selectable dish rows
 and explicit empty/no-match states. Selection opens the shared unsaved Review;

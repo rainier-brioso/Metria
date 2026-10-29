@@ -49,6 +49,7 @@ import java.time.ZoneId
 
 class MainActivity : FragmentActivity() {
     private lateinit var modelLifecycle: ModelLifecycle
+    private lateinit var cloudPhotoAccess: CloudPhotoAccess
     private lateinit var assistantTraceStore: AssistantTraceStore
     private lateinit var debugImageCaptureStore: DebugImageCaptureStore
     private lateinit var vault: EncryptedVault
@@ -67,7 +68,9 @@ class MainActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         assistantTraceStore = AssistantTraceStore(noBackupFilesDir, BuildConfig.DEBUG)
         debugImageCaptureStore = DebugImageCaptureStore(noBackupFilesDir, BuildConfig.DEBUG)
+        cloudPhotoAccess = CloudPhotoAccess(applicationContext)
         modelLifecycle = ModelLifecycle(applicationContext, filesDir, cacheDir, assistantTraceStore, debugImageCaptureStore)
+        modelLifecycle.configureCloudPhoto(cloudPhotoAccess, cloudPhotoAccess.selectedMode() == "cloud")
         vault = EncryptedVault(applicationContext, assistantTraceStore::recordMealWrite)
         modelLifecycle.setAnalysisAuditSink { audit ->
             runOnUiThread {
@@ -170,8 +173,37 @@ class MainActivity : FragmentActivity() {
     /** This stores no health data; it only prevents repeating the first-run explanation. */
     fun hasCompletedOnboarding(): Boolean = onboardingPreferences.getBoolean("completed", false)
 
-    fun completeOnboarding() {
+    fun completeOnboarding(photoMode: String = "local") {
+        require(photoMode == "local" || photoMode == "cloud")
+        cloudPhotoAccess.setSelectedMode(photoMode)
+        modelLifecycle.configureCloudPhoto(cloudPhotoAccess, photoMode == "cloud")
         onboardingPreferences.edit().putBoolean("completed", true).apply()
+    }
+
+    fun photoAnalysisMode(): String = cloudPhotoAccess.selectedMode()
+
+    fun cloudPhotoConfigured(): Boolean = cloudPhotoAccess.isConfigured()
+
+    fun cloudPhotoEndpoint(): String? = cloudPhotoAccess.endpoint()
+
+    fun configureCloudPhoto(endpoint: String, pass: CharArray): String? = cloudPhotoAccess.configure(endpoint, pass)
+
+    fun selectPhotoAnalysisMode(mode: String) {
+        require(mode == "local" || mode == "cloud")
+        if (mode != cloudPhotoAccess.selectedMode()) {
+            modelLifecycle.cancelImageAnalysis()
+            modelLifecycle.cancelAssistantRequest()
+        }
+        cloudPhotoAccess.setSelectedMode(mode)
+        modelLifecycle.configureCloudPhoto(cloudPhotoAccess, mode == "cloud")
+    }
+
+    fun disconnectCloudPhoto() {
+        modelLifecycle.cancelImageAnalysis()
+        modelLifecycle.cancelAssistantRequest()
+        cloudPhotoAccess.clear()
+        cloudPhotoAccess.setSelectedMode("local")
+        modelLifecycle.configureCloudPhoto(cloudPhotoAccess, false)
     }
 
     fun modelStatus(): ModelStatus = modelLifecycle.status()

@@ -7,6 +7,18 @@ import org.junit.Test
 
 class MealProposalParserTest {
     @Test
+    fun emptyClarificationNeverBecomesAReviewableMeal() {
+        val proposal = MealProposalParser.parse(
+            """{"kind":"meal_proposal","items":[],"assumptions":[],"questions":["What foods were in the meal?"],"overall_confidence":"low"}"""
+        )
+        assertNull(proposal)
+
+        assertNull(MealProposalParser.parse(
+            """{"kind":"meal_proposal","items":[],"assumptions":[],"questions":[],"overall_confidence":"low"}"""
+        ))
+    }
+
+    @Test
     fun classifiesMalformedResponsesWithoutIncludingModelContent() {
         val result = MealProposalParser.parseWithDiagnostic("private model prose containing a unique secret")
 

@@ -1,5 +1,12 @@
 # Optional Nebius assistance: data and consent design
 
+**Scope revision, approved 2026-10-27:** member now requests optional cloud for
+all Gemma assistant tasks, with local/cloud choice in onboarding and Settings.
+See `cloud-assistant-integration.md` for selected photo/description, bounded text
+and host-authorized action scope. Voice is on-device transcription then text.
+The summary-only/photo-excluded first scope below is historical; its strict DTOs
+must not be repurposed for arbitrary photo/chat payloads.
+
 **Status:** member-selected design direction, 2026-10-02. Live sharing is not
 enabled. Provider retention, service identity, and
 physical acceptance remain open. WhatsApp remains deferred.

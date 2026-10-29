@@ -1,24 +1,182 @@
 # Metria
 
-Metria is a private, offline-first wellness companion for manually tracked
-weight, meals, habits, and understandable personal trends.
+**Your nutrition assistant, under your control.**
 
-It is an independent consumer app. It may later be embedded as an optional
-module in Smart Gym, but it must remain useful without a gym account, wristband,
-or internet connection.
+**Local AI. Private records. Cloud when you choose.**
 
-## Product promise
+Metria is an offline-first Android wellness companion for meals, weight and
+personal goals. Speak about a meal, describe it or take a photo; review the AI
+draft, adjust its foods and portions, and save it to an encrypted vault on your
+phone. Ask supported questions about your saved records, then follow your day
+and trends through Today, Progress and Goals.
 
-- Your body data is private by default.
-- Entries remain editable, understandable, and explicitly confirmed.
-- Nutrition values are estimates unless they come from verified labelled data.
-- The assistant proposes actions; the app validates and saves only what the
-  member accepts.
-- The core tracker works without network access.
+The choice of where AI runs is part of the product: **Gemma on-device**, or
+**NVIDIA Nemotron on Nebius Token Factory** after you explicitly choose cloud.
 
-## First release
+## What makes Metria different
 
-Manual weight logging, trend charts, conversationally assisted meal entry,
-transparent calorie/macronutrient estimates, and a local encrypted vault.
+- **A usable local AI path.** After downloading and preparing Gemma on a
+  compatible phone, local assistance runs on-device. The current local prototype
+  requires no Metria account, subscription or cloud inference credits.
+- **Control over cloud processing.** Choose local or cloud during onboarding,
+  switch later in Settings, and see the selected provider in Chat, meal entry
+  and photo analysis. There is no silent provider fallback.
+- **An encrypted record on your phone.** Meals, weight and goals stay in the
+  local vault. Optional cloud processes explicitly submitted content; it does
+  not become the store for your wellness history.
+- **Answers tied to actual records.** The assistant selects a supported action;
+  the app authorizes the local read and validates its answer. Model output alone
+  cannot establish a saved meal or authorize Save.
+- **Estimates you can inspect.** AI proposes foods and uncertain portions.
+  Nutrition is calculated from matched food data and quantities, with visible
+  uncertainty and explicit review before Save.
 
-See [the product plan](docs/plan.md) and [the architecture](docs/architecture.md).
+Photo logging and conversational assistance support this experience. The central
+promise is the combination of local AI, local records and explicit cloud choice.
+
+## A short walkthrough
+
+1. Set up your goal and choose the local or cloud assistant.
+2. Add a meal by voice, text or photo. Review the proposed foods and portions.
+3. Save only when the draft matches what you intended to record.
+4. Ask **“How many calories were in my latest meal?”** to inspect the saved
+   estimate through a supported local-record lookup.
+5. Explore Today, Progress and Goals for your recorded totals and trends.
+
+Conversational access covers supported tools, not every value on every screen.
+Broader conversation across goals and trends remains future work.
+
+## Which model does what?
+
+| Component | Role | Processing location |
+| --- | --- | --- |
+| Gemma through LiteRT-LM | Local meal, photo and conversational assistance | Android phone |
+| MiniLM | Optional, bounded routing for supported local record questions in debug builds; falls back to Gemma when unavailable or uncertain | Android phone |
+| NVIDIA `nvidia/Nemotron-3.5-Super-VL` | Cloud photo/text meal drafts and conversational action selection | Nebius Token Factory |
+| Android on-device speech recognition | Transcribes voice in cloud mode; Nemotron receives text, not audio | Android phone |
+| ML Kit | Nutrition-label text recognition | Android phone |
+| Metria's deterministic host code | Authorizes tools, reads records, calculates nutrition, validates drafts and saves confirmed edits | Android phone |
+
+Gemma handles the local voice path. MiniLM is a routing model, not a nutrition
+generator or medical decision model. Its pinned model artifact is provisioned
+separately and excluded from Git; see [MiniLM integration](docs/minilm-chat-integration.md).
+The cloud route calls Nemotron directly and does not use MiniLM.
+
+## Privacy and processing choices
+
+**Local:** member records, submitted prompts, photos and model output stay on
+the phone for local assistant processing. Initial model downloads need internet;
+core tracking and prepared local inference work offline.
+
+**Cloud:** the submitted text, bounded necessary conversation context, or the
+selected prepared photo and description pass through the broker to Nebius.
+There is no bulk vault export; record tools and Save execute on the phone.
+Cloud inference needs internet and consumes the operator's Nebius credits.
+Cloud speech recognition requires an available on-device Android recognizer;
+unsupported devices offer typing.
+
+The demo's temporary HTTPS tunnel uses Cloudflare, which terminates TLS. Normal
+broker operation does not persist request/response content. Explicit fictional
+test capture retains bounded provider responses and errors privately for
+debugging; never enable it with real personal data or real conversation history.
+This is not a claim about independent providers' data-retention policies.
+
+See [the architecture](docs/architecture.md), [product safety rules](docs/m1-product-safety-foundation.md)
+and [cloud integration](docs/cloud-assistant-integration.md).
+
+## Run the Android app
+
+The active application is [`native-android/`](native-android/README.md): Kotlin,
+Jetpack Compose and LiteRT-LM. The root Expo shell is historical prototype work.
+
+Use Android Studio with Android SDK 35 and configured Java toolchains: Java 17
+for app compilation and Java 21 or newer for JVM tests that load LiteRT-LM tool
+declarations. From the repository root on Windows:
+
+```powershell
+Set-Location native-android
+.\gradlew.bat :app:testDebugUnitTest :app:assembleDebug --no-daemon
+Set-Location ..
+```
+
+The APK is `native-android/app/build/outputs/apk/debug/app-debug.apk`. Install it
+through Android Studio or ADB, select your actual connected device, and use
+`install -r` for an update that preserves existing app data. Follow
+[the testing and installation runbook](docs/TESTING.md) for device selection,
+model setup and physical verification. Biometric unlock remains a user action.
+
+For a separate onboarding recording installation, build `:app:assembleDemo`.
+**Metria Demo** uses a different app ID and independent storage; it does not copy
+the normal app's records, downloaded model or cloud connection. See
+[onboarding recording setup](docs/demo/onboarding-installation.md).
+
+## Try Nemotron with your own Nebius key
+
+The current demo runs the broker on your PC using Docker and a temporary HTTPS
+tunnel. **Nemotron runs remotely on Nebius Token Factory.** A judge can run their
+own broker with their own Nebius key; no shared public key or funded public
+service is embedded in the APK. A provider endpoint serves the model; the broker
+adds app authentication and durable consumption limits.
+
+Prerequisites: Docker Desktop running Linux containers, PowerShell, internet,
+and a Nebius Token Factory API key with access to the model above. No USB,
+router port forwarding or PC GPU is needed for this cloud route.
+
+Check the tunnel without a key or inference:
+
+```powershell
+.\broker\local-docker.ps1 -Action Check
+```
+
+Then start the broker in its normal, content-free logging mode:
+
+```powershell
+.\broker\local-docker.ps1
+```
+
+1. Stop any earlier broker first. Enter your Nebius key at the hidden prompt.
+2. Wait for **HTTPS broker verified**. Keep that terminal and the PC running.
+3. In Metria's cloud settings, enter that HTTPS URL and the private pass from
+   `.local-state/nebius-app-test/app-test.pass`. The key stays in the broker.
+4. Choose cloud and try an invented meal description or the generated photo at
+   [`broker/fixtures/synthetic-meal.png`](broker/fixtures/synthetic-meal.png).
+   Use an installation and conversation containing fictional data only.
+5. Review the draft. Try the latest-meal question after saving a fictional meal.
+
+For fictional debugging only, start with `-CaptureFictionalResponses` to retain
+the complete bounded provider output/error and available usage. The pass,
+installation binding and quota ledger survive restarts. Current rehearsal limits
+are 10 attempts per pass, 20 global attempts per day and lifetime, three per
+minute, and one active request per installation. Dispatched failures consume an
+attempt. A pass expires seven days after issuance; restarts do not extend it.
+These are attempt limits, not an exact currency cap. Cost reports are estimates.
+
+The URL changes when the tunnel restarts: update it in the app and retain the
+same pass. Rebuilding the image requires restarting the running broker to apply
+changes. Stopping the broker makes cloud assistance unavailable; switching to
+Gemma is an explicit user choice.
+
+See [Docker setup and troubleshooting](broker/DOCKER-LOCAL.md),
+[the Python alternative](broker/LOCAL-APP-TEST.md), and
+[broker tests and architecture](broker/README.md).
+
+## Demo status and limitations
+
+- Member-confirmed phone flows include cloud photo drafts, a latest-meal calorie
+  answer, and voice transcription followed by a Nemotron meal draft. Local
+  Gemma meal entry and the separate onboarding recording app have also been used.
+- The latest verified gate passes **770 Android tests** and **130 broker tests**.
+  Build success is separate from physical acceptance; detailed gaps and evidence
+  live in [the checkpoint](docs/nebius-assistant-checkpoints.md).
+- Food identity and portions can be wrong. Review estimates; Metria is a wellness
+  prototype and does not diagnose or prescribe.
+- Local model speed, memory use and voice availability depend on the phone.
+  Physical development checks use a Samsung SM-S928B with Android 16.
+- There is currently no permanent public broker, published GitHub APK release or
+  public demo-video URL. Recording materials are in [the demo folder](docs/demo/).
+- **Before public submission:** choose and add a project open-source license,
+  publish the installable APK and the demo video, and verify the evaluator setup.
+  Model and dataset licenses are separate from the project's license.
+
+Development direction: [product plan](docs/plan.md). Reproducible checks and
+installation: [testing runbook](docs/TESTING.md).

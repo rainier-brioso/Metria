@@ -6,6 +6,11 @@
 
 ## Intent
 
+Cloud choice (approved 2026-10-27): onboarding and Settings offer Gemma/local or
+NVIDIA Nemotron/cloud. Cloud connection/pass entry opens a focused view. Explain
+transmission at the choice and identify cloud on the send/analyze action. No API
+keys or model JSON in member flows. Preserve local tracking and reviewed saves.
+
 Metria should feel like a thoughtful personal companion, not a database editor and not a medical dashboard. The member should understand today in seconds, record something with one obvious action, and reach detail only when they ask for it.
 
 The supplied reference screens are useful for their hierarchy, whitespace, rounded cards, strong metrics, visual meal rows, and central capture action. Metria must develop its own botanical identity and must not reproduce another app's branding, layouts, artwork, or assets.

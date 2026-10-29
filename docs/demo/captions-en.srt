@@ -1,0 +1,113 @@
+1
+00:00:00,000 --> 00:00:07,000
+Your nutrition assistant, under your control.
+Local AI. Private records. Cloud when you choose.
+
+2
+00:00:07,000 --> 00:00:12,000
+This is Metria. I choose a fictional food photo
+and confirm cloud analysis.
+
+3
+00:00:12,000 --> 00:00:17,000
+NVIDIA Nemotron returns a draft
+with foods, portions, and uncertainty.
+
+4
+00:00:17,000 --> 00:00:21,000
+I review it, then choose to save.
+
+5
+00:00:22,000 --> 00:00:26,000
+Now I ask: “How many calories
+were in my latest meal?”
+
+6
+00:00:26,000 --> 00:00:30,000
+Metria answers from the meal
+saved on this phone.
+
+7
+00:00:31,000 --> 00:00:37,000
+The model selects a tool. Metria reads
+the local record and checks the answer.
+
+8
+00:00:38,000 --> 00:00:45,000
+Nutrition is calculated from food data and portions,
+rather than invented by the chat model.
+
+9
+00:00:46,000 --> 00:00:50,000
+The assistant proposes.
+The user decides what gets saved.
+
+10
+00:00:51,000 --> 00:00:59,000
+Gemma assists on-device. MiniLM can route
+supported local questions without invoking Gemma.
+
+11
+00:00:59,000 --> 00:01:04,000
+Or choose Nemotron through Nebius,
+which selects tools for cloud chat.
+
+12
+00:01:04,000 --> 00:01:10,000
+Cloud processes submitted content. Saved records
+and tool execution stay on your phone.
+
+13
+00:01:11,000 --> 00:01:15,000
+For this demo, the broker
+runs locally in Docker.
+
+14
+00:01:16,000 --> 00:01:21,000
+You enter your own Nebius API key
+at a hidden prompt.
+
+15
+00:01:22,000 --> 00:01:28,000
+The app connects through a temporary HTTPS tunnel,
+using a private access pass.
+
+16
+00:01:29,000 --> 00:01:35,000
+The broker keeps the provider key outside the app
+and enforces request limits.
+
+17
+00:01:36,000 --> 00:01:42,000
+The cloud model is NVIDIA Nemotron 3.5 Super VL,
+served by Nebius Token Factory.
+
+18
+00:01:43,000 --> 00:01:48,000
+It handles the photo draft and chat decisions.
+Record tools execute on the phone.
+
+19
+00:01:49,000 --> 00:01:56,000
+Photo analysis is an estimate. Hidden ingredients
+and uncertain portions still need review.
+
+20
+00:01:57,000 --> 00:02:03,000
+The app validates model output,
+and saving always requires your confirmation.
+
+21
+00:02:05,000 --> 00:02:12,000
+Cloud mode needs internet and Nebius credits.
+This demo has no permanently hosted broker.
+
+22
+00:02:14,000 --> 00:02:21,000
+To reproduce it, run Docker locally with your own key
+and follow the setup guide.
+
+23
+00:02:22,000 --> 00:02:28,000
+Metria brings meal review and record-grounded
+answers into one workflow.

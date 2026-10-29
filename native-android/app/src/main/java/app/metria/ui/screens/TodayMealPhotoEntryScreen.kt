@@ -71,6 +71,8 @@ fun TodayMealPhotoLoadingScreen(
     onBack: () -> Unit,
     message: String,
     onStop: (() -> Unit)? = null,
+    cloud: Boolean? = null,
+    localName: String = "Gemma",
 ) {
     BackHandler(onBack = onBack)
     Column(Modifier.fillMaxWidth().padding(vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -80,6 +82,7 @@ fun TodayMealPhotoLoadingScreen(
             }
             Text("Add to $slotLabel", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
         }
+        cloud?.let { app.metria.ui.components.AssistantProviderLabel(cloud = it, localName = localName) }
         Column(Modifier.fillMaxWidth().padding(vertical = 32.dp), horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp)) {
             CircularProgressIndicator(Modifier.semantics {

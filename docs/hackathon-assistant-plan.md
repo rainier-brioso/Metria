@@ -77,6 +77,15 @@ on the physical phone under `docs/design/QUALITY-GATES.md`.
 
 ## Nebius assistance and demonstration
 
+**Judge reproducibility requirement, 2026-10-27:** a judge must be able to run
+the fictional-data demo with their own Nebius Token Factory key, endpoint and
+available NVIDIA model, following README instructions from a fresh checkout.
+The evaluator operates the local broker and supplies its secret privately;
+the APK and repository never contain the key. No author account, credits or
+private workstation state may be required. See `nebius-account-and-secrets.md`
+for the acceptance contract. This is a requirement, not a completed live test
+or Android integration.
+
 The member chose optional real-data cloud assistance with explicit consent and
 a revised privacy contract. See [optional-cloud-assistant-spec.md](optional-cloud-assistant-spec.md)
 for the concrete first scope: a default-off, app-initiated request relay,

@@ -94,6 +94,7 @@ import app.metria.ui.components.AssistantPanelAction
 import app.metria.ui.components.AssistantPanelActions
 import app.metria.ui.components.AssistantPanelHeader
 import app.metria.ui.components.AssistantPanelChoices
+import app.metria.ui.components.AssistantProviderLabel
 
 data class MetriaChatMessage(
     val text: String,
@@ -258,6 +259,9 @@ fun MetriaAssistantConversationScreen(
     onOpenSavedMeal: (String) -> Unit,
     onReviewSavedDish: (String) -> Unit = {},
     onSelectSavedDish: (String) -> Unit = {},
+    cloudConnectionRequired: Boolean = false,
+    cloudSelected: Boolean = false,
+    onOpenCloudSettings: () -> Unit = {},
     onDiscardMealDraft: () -> Unit,
     onToggleVoice: () -> Unit,
     onEditLatestMemberMessage: (String) -> Unit,
@@ -323,6 +327,7 @@ fun MetriaAssistantConversationScreen(
                 onOptions = { keyboardController?.hide(); panelView = if (panelView == "options") "chat" else "options" },
                 optionsEnabled = canEditMessage,
             )
+            AssistantProviderLabel(cloud = cloudSelected, modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp))
             if (panelView != "chat") {
                 if (panelView == "dishes") {
                     Column(Modifier.weight(1f).fillMaxWidth()) {
@@ -407,6 +412,11 @@ fun MetriaAssistantConversationScreen(
                 if (savedDishChoices.isNotEmpty()) {
                     item {
                         SavedDishChoicesCard(savedDishChoices, onReviewSavedDish)
+                    }
+                }
+                if (cloudConnectionRequired) {
+                    item(key = "cloud_connection_required") {
+                        CloudConnectionRequiredCard(onOpenCloudSettings)
                     }
                 }
                 assistantDiagnostic?.let { message -> item { ErrorMessage(message, allowCopy = true) } }
@@ -706,6 +716,18 @@ private fun MealDraftCard(
             portionFeedback?.let { Text(it, color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall) }
             Button(onClick = { onReview(proposal) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Review meal") }
             MealDraftDiscardAction(onDiscard = onDiscard)
+        }
+    }
+}
+
+@Composable
+private fun CloudConnectionRequiredCard(onOpenSettings: () -> Unit) {
+    Surface(color = MetriaColors.AccentSoft, shape = MaterialTheme.shapes.medium) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Nemotron is selected. Connect your private pass to use the cloud assistant.", style = MaterialTheme.typography.bodyMedium)
+            Button(onClick = onOpenSettings, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                Text("Open cloud setup")
+            }
         }
     }
 }

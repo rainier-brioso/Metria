@@ -24,6 +24,22 @@ object NativeMealDraftPolicy {
             normalized.length <= 80 && Regex("^(?:yes|yeah|yep|yup|sure|ok|okay) \\d+(?:\\s|$)").containsMatchIn(normalized)
     }
 
+    fun explicitlyConfirmsMealDraft(text: String): Boolean = normalizeConfirmation(text) in setOf(
+        "yes", "yeah", "yep", "yup", "sure", "ok", "okay", "yes please", "yeah please",
+        "please do", "go ahead", "please go ahead and record it", "record it", "log it", "add it",
+        "do that", "sounds good", "that sounds good", "let's do it", "lets do it",
+    )
+
+    fun explicitlyDeclinesMealDraft(text: String): Boolean {
+        val normalized = normalizeConfirmation(text)
+        return normalized in setOf("no", "nope", "no thanks", "not now", "cancel", "never mind", "nevermind") ||
+            normalized.startsWith("no ") || normalized.startsWith("nope ")
+    }
+
+    private fun normalizeConfirmation(text: String): String = text.trim().lowercase(java.util.Locale.ROOT)
+        .replace(Regex("[,;:]"), " ").replace(Regex("[.!?]+$"), "")
+        .replace(Regex("\\s+"), " ").trim()
+
     /**
      * Accept only a closed first-person meal report for a possible one-turn meal candidate.
      * Completed cooking/preparation reports are eligible because members may describe food
@@ -82,9 +98,10 @@ object NativeMealDraftPolicy {
         candidate: MealConfirmationContext?,
         previousRequestId: Long?,
         conversationGeneration: Long?,
+        currentMemberReply: String? = null,
     ): String? = candidateSource(
         call, "confirm_meal_draft", requiredTool, candidate, previousRequestId, conversationGeneration,
-    )
+    )?.takeIf { currentMemberReply == null || explicitlyConfirmsMealDraft(currentMemberReply) }
 
     fun declinesCandidate(
         call: PrivateCoachToolCall?,
@@ -92,9 +109,10 @@ object NativeMealDraftPolicy {
         candidate: MealConfirmationContext?,
         previousRequestId: Long?,
         conversationGeneration: Long?,
+        currentMemberReply: String? = null,
     ): Boolean = candidateSource(
         call, "decline_meal_draft", requiredTool, candidate, previousRequestId, conversationGeneration,
-    ) != null
+    )?.let { currentMemberReply == null || explicitlyDeclinesMealDraft(currentMemberReply) } == true
 
     private fun candidateSource(
         call: PrivateCoachToolCall?,

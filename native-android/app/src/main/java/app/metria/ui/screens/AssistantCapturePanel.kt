@@ -32,6 +32,8 @@ import kotlinx.coroutines.delay
 fun AssistantCapturePanel(
     initialPurpose: String,
     status: ModelStatus,
+    photoAnalysisMode: String,
+    cloudPhotoConfigured: Boolean,
     bottomBar: @Composable (requestExit: (() -> Unit) -> Unit) -> Unit,
     onBackToChat: () -> Unit,
     onClose: () -> Unit,
@@ -64,6 +66,7 @@ fun AssistantCapturePanel(
     var error by remember { mutableStateOf<String?>(null) }
     var pendingExit by remember { mutableStateOf<(() -> Unit)?>(null) }
     var labelSaveInFlight by remember { mutableStateOf(false) }
+    var confirmCloudPhoto by remember { mutableStateOf(false) }
     var secondsLeft by remember { mutableStateOf(0) }
     val labelEditorState = rememberSaveableStateHolder()
     val label = purpose == "label"
@@ -140,6 +143,7 @@ fun AssistantCapturePanel(
             }
             Text(if (editingLabel) "Review nutrition label" else if (label) "Scan nutrition label" else "Analyse meal",
                 style = MaterialTheme.typography.headlineMedium)
+            AssistantProviderLabel(cloud = !label && photoAnalysisMode == "cloud", localName = if (label) "ML Kit" else "Gemma")
             when {
                 editingLabel && labelReady -> labelEditorState.SaveableStateProvider("label-review") {
                     AssistantLabelReviewContent(
@@ -185,7 +189,7 @@ fun AssistantCapturePanel(
                                 encoded = status.referenceThumbnailBase64, size = 192.dp, contentScale = ContentScale.Fit)
                             else Icon(if (label) Icons.Rounded.DocumentScanner else Icons.Rounded.CameraAlt,
                                 contentDescription = null, tint = MetriaColors.Verified, modifier = Modifier.size(48.dp))
-                            Text(if (status.imageState == "ready") "Your private photo" else "Take a photo or choose an image")
+                            Text(if (status.imageState == "ready") "Your photo" else "Take a photo or choose an image")
                         }
                     }
                     if (attempted || status.imageState == "failed") {
@@ -202,15 +206,21 @@ fun AssistantCapturePanel(
                         }, label = { Text("Meal details (optional)") }, supportingText = { Text("${description.length}/${MealPhotoContext.MAX_LENGTH}") },
                             modifier = Modifier.fillMaxWidth(), minLines = 2)
                         Button(onClick = {
-                            attempted = true
-                            if (label) readLabel() else {
-                                val next = analyzeImage(description)
-                                requestId = next.imageAnalysisRequestId?.takeIf { next.imageState == "analyzing" && it != status.imageAnalysisRequestId }
+                            if (!label && photoAnalysisMode == "cloud") confirmCloudPhoto = true
+                            else {
+                                attempted = true
+                                if (label) readLabel() else {
+                                    val next = analyzeImage(description)
+                                    requestId = next.imageAnalysisRequestId?.takeIf { next.imageState == "analyzing" && it != status.imageAnalysisRequestId }
+                                }
                             }
-                        }, enabled = label || status.state == "loaded", modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                            Text(if (label) "Read label" else "Prepare draft")
+                        }, enabled = label || (if (photoAnalysisMode == "cloud") cloudPhotoConfigured else status.state == "loaded"),
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                            Text(if (label) "Read label" else if (photoAnalysisMode == "cloud") "Analyze in cloud" else "Prepare draft")
                         }
-                        if (!label && status.state != "loaded") {
+                        if (!label && photoAnalysisMode == "cloud") {
+                            Text(if (cloudPhotoConfigured) "Your photo and optional details go to Metria's broker and Nebius only after you confirm. Saved records stay here." else "Connect a private cloud pass in Privacy & settings to use cloud photo analysis.", color = MetriaColors.InkMuted)
+                        } else if (!label && status.state != "loaded") {
                             Text(if (status.state in setOf("ready", "initializing", "verifying", "downloading"))
                                 "The assistant is getting ready. You can keep this preview open."
                                 else "Set up the assistant to analyse a meal photo.", color = MetriaColors.InkMuted)
@@ -223,7 +233,8 @@ fun AssistantCapturePanel(
                     AssistantCaptureSourceAction(
                         text = "Choose image", primary = false, onClick = { choose(false) },
                     )
-                    Text("Review before saving. Photos are processed on this phone.", style = MaterialTheme.typography.bodySmall, color = MetriaColors.InkMuted)
+                    Text(if (photoAnalysisMode == "cloud") "Cloud photo analysis is optional; each photo is sent only after confirmation." else "Review before saving. Photos are processed on this phone.",
+                        style = MaterialTheme.typography.bodySmall, color = MetriaColors.InkMuted)
                 }
             }
         }
@@ -234,6 +245,18 @@ fun AssistantCapturePanel(
             confirmButton = { TextButton(onClick = { pendingExit = null; reset(); action() }) { Text("Discard") } },
             dismissButton = { TextButton(onClick = { pendingExit = null }) { Text("Keep editing") } })
     }
+    if (confirmCloudPhoto && cloudPhotoConfigured) AlertDialog(
+        onDismissRequest = { confirmCloudPhoto = false },
+        title = { Text("Send this photo for cloud analysis?") },
+        text = { Text("This prepared photo and its optional meal details will be sent to Metria's broker and Nebius. Saved meals and weight records are not included. The returned foods and portions are estimates; you will review them before saving.") },
+        confirmButton = { Button(onClick = {
+            confirmCloudPhoto = false
+            attempted = true
+            val next = analyzeImage(description)
+            requestId = next.imageAnalysisRequestId?.takeIf { next.imageState == "analyzing" && it != status.imageAnalysisRequestId }
+        }) { Text("Analyze this photo") } },
+        dismissButton = { TextButton(onClick = { confirmCloudPhoto = false }) { Text("Keep this phone") } },
+    )
 }
 
 @Composable

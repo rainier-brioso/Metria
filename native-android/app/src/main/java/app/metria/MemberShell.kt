@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -103,6 +104,7 @@ import app.metria.ui.screens.MetriaAssistantConversationScreen
 import app.metria.ui.screens.MetriaAssistantHome
 import app.metria.ui.screens.MetriaChatMessage
 import app.metria.ui.screens.MetriaSavedDishChoice
+import app.metria.ui.screens.FirstRunOnboarding
 import app.metria.ui.screens.MetriaPrivacySettingsScreen
 import app.metria.ui.screens.MetriaProgressScreen
 import app.metria.ui.screens.MetriaTodayScreen
@@ -124,6 +126,9 @@ private fun mealInstantForDate(date: String, localTime: LocalTime): Instant? =
 fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
     var status by remember { mutableStateOf(vault.status()) }
     var hasCompletedOnboarding by remember { mutableStateOf(activity.hasCompletedOnboarding()) }
+    var photoAnalysisMode by remember { mutableStateOf(activity.photoAnalysisMode()) }
+    val providerScope = rememberCoroutineScope()
+    var providerChangeInFlight by remember { mutableStateOf(false) }
     var setupModelStatus by remember { mutableStateOf(activity.modelStatus()) }
     var destination by rememberSaveable { mutableStateOf("Today") }
     // The unchanged central icon opens the shared contextual conversation directly.
@@ -331,9 +336,12 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
     MetriaTheme {
         when (val vaultStatus = status) {
             EncryptedVault.Status.Missing -> if (!hasCompletedOnboarding) FirstRunOnboarding(
-                onComplete = { activity.completeOnboarding(); hasCompletedOnboarding = true },
+                selectedMode = photoAnalysisMode,
+                onModeChange = { photoAnalysisMode = it },
+                onComplete = { activity.completeOnboarding(photoAnalysisMode); hasCompletedOnboarding = true },
             ) else AssistantSetupGate(
                 modelStatus = setupModelStatus,
+                cloudPhotoMode = photoAnalysisMode == "cloud",
                 download = { setupModelStatus = activity.downloadLocalAssistant() },
                 cancelDownload = { setupModelStatus = activity.cancelLocalAssistantDownload() },
                 continueToApp = { activity.authenticateVault(true) },
@@ -344,9 +352,10 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
             is EncryptedVault.Status.RecoveryRequired -> VaultGate("Vault unavailable", vaultStatus.message) {}
             is EncryptedVault.Status.Failed -> VaultGate("Try again", vaultStatus.message) { status = vault.status() }
             is EncryptedVault.Status.Unlocked -> {
-                if (setupModelStatus.state in setOf("absent", "removed", "failed", "downloading", "verifying")) {
+                if (photoAnalysisMode != "cloud" && setupModelStatus.state in setOf("absent", "removed", "failed", "downloading", "verifying")) {
                     AssistantSetupGate(
                         modelStatus = setupModelStatus,
+                        cloudPhotoMode = false,
                         download = { setupModelStatus = activity.downloadLocalAssistant() },
                         cancelDownload = { setupModelStatus = activity.cancelLocalAssistantDownload() },
                         continueToApp = {},
@@ -450,6 +459,8 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                                     cleared == ConversationPersistenceResult.SAVED
                                 },
                                 modelStatus = modelStatus,
+                                photoAnalysisMode = photoAnalysisMode,
+                                cloudPhotoConfigured = activity.cloudPhotoConfigured(),
                                 showLoadingPreview = false,
                                 initialImagePurpose = assistantImagePurpose,
                                 onInitialImagePurposeHandled = { assistantImagePurpose = null },
@@ -540,6 +551,42 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                                 foodCorrectionCount = vaultStatus.foodCorrections.size,
                                 legacyFoodCorrectionCount = vaultStatus.foodCorrections.count { it.sourceMealId == null },
                                 archiveMessage = archiveMessage,
+                                photoAnalysisMode = photoAnalysisMode,
+                                cloudPhotoConfigured = activity.cloudPhotoConfigured(),
+                                cloudPhotoEndpoint = activity.cloudPhotoEndpoint(),
+                                onSelectPhotoAnalysisMode = { mode ->
+                                    if (!providerChangeInFlight && (mode == "local" || activity.cloudPhotoConfigured())) {
+                                        providerChangeInFlight = true
+                                        providerScope.launch {
+                                            try {
+                                                withContext(Dispatchers.Default) { activity.selectPhotoAnalysisMode(mode) }
+                                            } finally {
+                                                withContext(NonCancellable + Dispatchers.Main.immediate) {
+                                                    photoAnalysisMode = activity.photoAnalysisMode()
+                                                    modelStatus = activity.modelStatus()
+                                                    providerChangeInFlight = false
+                                                }
+                                            }
+                                        }
+                                    }
+                                },
+                                onConfigureCloudPhoto = activity::configureCloudPhoto,
+                                onDisconnectCloudPhoto = {
+                                    if (!providerChangeInFlight) {
+                                        providerChangeInFlight = true
+                                        providerScope.launch {
+                                            try {
+                                                withContext(Dispatchers.Default) { activity.disconnectCloudPhoto() }
+                                            } finally {
+                                                withContext(NonCancellable + Dispatchers.Main.immediate) {
+                                                    photoAnalysisMode = activity.photoAnalysisMode()
+                                                    modelStatus = activity.modelStatus()
+                                                    providerChangeInFlight = false
+                                                }
+                                            }
+                                        }
+                                    }
+                                },
                                 onChangeUnit = { status = vault.setDisplayUnit(if (vaultStatus.displayUnit == "kg") "lb" else "kg") },
                                 onEditNutritionTargets = { editNutritionTargets = true },
                                 onEditCycleContext = { editCycleContext = true },
@@ -626,6 +673,8 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                 assistantCapturePurpose?.let { purpose ->
                     app.metria.ui.screens.AssistantCapturePanel(
                         initialPurpose = purpose,
+                        photoAnalysisMode = photoAnalysisMode,
+                        cloudPhotoConfigured = activity.cloudPhotoConfigured(),
                         initialRecordedDate = pendingMealDate?.let { runCatching { LocalDate.parse(it) }.getOrNull() },
                         initialMealSlot = pendingMealSlot,
                         status = modelStatus,
@@ -713,6 +762,7 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                 }
                 if (quickAssistantOpen) {
                     PrivateAssistantChat(
+                        photoAnalysisMode = photoAnalysisMode,
                         bottomBar = {
                             MetriaBottomNavigation(
                                 current = destination,
@@ -1267,52 +1317,9 @@ private fun VaultGate(title: String, body: String, autoAuthenticate: Boolean = f
 }
 
 @Composable
-private fun FirstRunOnboarding(onComplete: () -> Unit) {
-    var page by remember { mutableStateOf(0) }
-    val pages = listOf(
-        Triple("Your health data stays with you", "Metria has no account and no default cloud sync. Your entries are encrypted on this phone.", "Private by default"),
-        Triple("You stay in control", "Your fingerprint unlocks the vault. Create a recovery archive later if you want a way back after device loss or a biometric change.", "Protected on this phone"),
-        Triple("Your private assistant powers Metria", "Metria installs its assistant on your phone during setup. It can understand voice or text, draft actions, and guide you—while you always confirm important changes.", "Private intelligence, on your phone"),
-    )
-    val current = pages[page]
-    Surface(color = MetriaCanvas, modifier = Modifier.fillMaxSize()) {
-        Column(
-            modifier = Modifier.fillMaxSize().padding(28.dp),
-            verticalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text("METRIA", color = Plum, style = MaterialTheme.typography.labelLarge)
-                Text("${page + 1} of ${pages.size}", color = Color(0xFF655D6E), style = MaterialTheme.typography.labelMedium)
-                Card(colors = CardDefaults.cardColors(containerColor = PlumSoft)) {
-                    Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text(current.third, color = Plum, style = MaterialTheme.typography.labelLarge)
-                        Text(current.first, style = MaterialTheme.typography.headlineMedium, color = Ink)
-                        Text(current.second, color = Color(0xFF4E4655), style = MaterialTheme.typography.bodyLarge)
-                    }
-                }
-            }
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    repeat(pages.size) { index ->
-                        Surface(
-                            color = if (index == page) Plum else Color(0xFFE0D8E4),
-                            shape = CircleShape,
-                            modifier = Modifier.weight(1f).height(6.dp),
-                        ) {}
-                    }
-                }
-                Button(onClick = { if (page == pages.lastIndex) onComplete() else page += 1 }, modifier = Modifier.fillMaxWidth()) {
-                    Text(if (page == pages.lastIndex) "Set up my private assistant" else "Continue")
-                }
-                if (page > 0) Button(onClick = { page -= 1 }, modifier = Modifier.fillMaxWidth()) { Text("Back") }
-            }
-        }
-    }
-}
-
-@Composable
 private fun AssistantSetupGate(
     modelStatus: ModelStatus,
+    cloudPhotoMode: Boolean = false,
     download: () -> Unit,
     cancelDownload: () -> Unit,
     continueToApp: () -> Unit,
@@ -1323,8 +1330,11 @@ private fun AssistantSetupGate(
             verticalArrangement = Arrangement.Center,
         ) {
             Text("METRIA", color = Plum, style = MaterialTheme.typography.labelLarge)
-            Text("Set up your private assistant", style = MaterialTheme.typography.displaySmall, modifier = Modifier.padding(top = 20.dp))
-            when (modelStatus.state) {
+            Text(if (cloudPhotoMode) "Set up Metria" else "Set up your private assistant", style = MaterialTheme.typography.displaySmall, modifier = Modifier.padding(top = 20.dp))
+            if (cloudPhotoMode) {
+                Text("Meal photos will use cloud analysis after you connect a private pass in Settings. The selected photo is sent only after you confirm each analysis. You can choose on-device analysis any time.", modifier = Modifier.padding(top = 12.dp, bottom = 24.dp))
+                Button(onClick = continueToApp, modifier = Modifier.fillMaxWidth()) { Text("Protect my records") }
+            } else when (modelStatus.state) {
                 "absent", "removed", "failed" -> {
                     Text("Metria needs its on-device assistant before you begin. It is about 2.6 GB, remains in this phone’s private storage, and after setup it can work offline.", modifier = Modifier.padding(top = 12.dp, bottom = 24.dp))
                     if (modelStatus.state == "failed") Text(modelStatus.reason, color = Color(0xFFB3261E), modifier = Modifier.padding(bottom = 12.dp))
@@ -1439,6 +1449,8 @@ private fun AssistantScreen(
     onConversationChanged: suspend (List<PrivateConversationMessage>) -> Boolean,
     onNewConversation: suspend () -> Boolean,
     modelStatus: ModelStatus,
+    photoAnalysisMode: String,
+    cloudPhotoConfigured: Boolean,
     showLoadingPreview: Boolean,
     initialImagePurpose: String?,
     onInitialImagePurposeHandled: () -> Unit,
@@ -1507,7 +1519,7 @@ private fun AssistantScreen(
     }
     LaunchedEffect(initialImagePurpose, modelStatus.state) {
         val purpose = initialImagePurpose ?: return@LaunchedEffect
-        if (modelStatus.state == "loaded") {
+        if (modelStatus.state == "loaded" || photoAnalysisMode == "cloud") {
             if (beginImageFlow().imageState != "cooling_down") sourceChoice = purpose
             onInitialImagePurposeHandled()
         }
@@ -1559,9 +1571,15 @@ private fun AssistantScreen(
                     "reading_label" -> discardImage
                     else -> null
                 },
+                cloud = when (modelStatus.imageState) {
+                    "analyzing" -> photoAnalysisMode == "cloud"
+                    "reading_label" -> false
+                    else -> null
+                },
+                localName = if (modelStatus.imageState == "reading_label") "ML Kit" else "Gemma",
             )
         } else if (modelStatus.imageState == "analyzing") {
-            app.metria.ui.screens.MealPhotoAnalysisProgress(loading.first, loading.second, stopPhotoAnalysis)
+            app.metria.ui.screens.MealPhotoAnalysisProgress(loading.first, loading.second, stopPhotoAnalysis, cloud = photoAnalysisMode == "cloud")
         } else AppleByteLoading(loading.first, loading.second)
         return
     }
@@ -1574,7 +1592,7 @@ private fun AssistantScreen(
         return
     }
     if (photoReviewHandoff.ready(modelStatus)) {
-        app.metria.ui.screens.MealPhotoAnalysisProgress("Preparing your meal…", "", stopPhotoAnalysis)
+        app.metria.ui.screens.MealPhotoAnalysisProgress("Preparing your meal…", "", stopPhotoAnalysis, cloud = photoAnalysisMode == "cloud")
         return
     }
     if (contextualMealSlot != null) app.metria.ui.screens.TodayMealPhotoEntryScreen(
@@ -1617,6 +1635,8 @@ private fun AssistantScreen(
             purpose = requireNotNull(pendingImagePurpose),
             thumbnail = modelStatus.referenceThumbnailBase64.takeIf { modelStatus.imageState == "ready" },
             imageState = modelStatus.imageState,
+            photoAnalysisMode = photoAnalysisMode,
+            cloudPhotoConfigured = cloudPhotoConfigured,
             description = photoDescription,
             onDescriptionChange = { photoDescription = it },
             onPurposeChange = { pendingImagePurpose = it; photoDescription = "" },
@@ -1751,9 +1771,11 @@ internal class AssistantPendingSubmissionGate {
         previousRequestId: Long?,
         state: String,
         operation: String?,
+        cloudReady: Boolean = false,
     ): Long? {
         if (activeToken != token) return null
-        val accepted = requestId != null && requestId != previousRequestId && state in setOf("thinking", "loaded") &&
+        val accepted = requestId != null && requestId != previousRequestId &&
+            (state in setOf("thinking", "loaded") || cloudReady) &&
             operation?.let { it.startsWith("coach") || it.startsWith("agent") } == true
         if (!accepted) {
             activeToken = null
@@ -1762,7 +1784,10 @@ internal class AssistantPendingSubmissionGate {
             return null
         }
         lifecycleRequestId = requestId
-        if (observedTerminalRequestId == requestId || state == "loaded") {
+        val cloudTurnInFlight = cloudReady && operation in setOf("agent_turn", "coach_intent")
+        if (observedTerminalRequestId == requestId || (state == "loaded" && !cloudTurnInFlight) ||
+            (cloudReady && !cloudTurnInFlight && operation?.startsWith("agent") == true)
+        ) {
             activeToken = null
             lifecycleRequestId = null
             observedTerminalRequestId = null
@@ -1771,10 +1796,12 @@ internal class AssistantPendingSubmissionGate {
     }
 
     @Synchronized
-    fun observeLifecycle(requestId: Long?, state: String): Boolean {
-        if (activeToken == null || state !in setOf("thinking", "loaded")) return false
+    fun observeLifecycle(requestId: Long?, state: String, operation: String? = null, cloudReady: Boolean = false): Boolean {
+        val cloudTurnInFlight = cloudReady && operation in setOf("agent_turn", "coach_intent")
+        val available = state in setOf("thinking", "loaded") || (cloudReady && !cloudTurnInFlight)
+        if (activeToken == null || !available) return false
         if (lifecycleRequestId == null) {
-            if (state == "loaded") observedTerminalRequestId = requestId
+            if (state == "loaded" || (cloudReady && !cloudTurnInFlight)) observedTerminalRequestId = requestId
             return false
         }
         if (requestId != lifecycleRequestId) return false
@@ -2034,6 +2061,7 @@ private class PrivateAssistantConversationSession(
             previousRequestId = pendingSubmission.value?.takeIf { it.token == token }?.previousRequestId,
             state = result.state,
             operation = result.assistantOperation,
+            cloudReady = result.cloudReady,
         )
         if (requestId == null && !pendingSubmissionGate.isActive(token)) {
             pendingSubmission.value = null
@@ -2043,10 +2071,12 @@ private class PrivateAssistantConversationSession(
         return requestId
     }
 
-    fun observePendingLifecycle(requestId: Long?, state: String): Boolean {
-        val submissionObserved = pendingSubmissionGate.observeLifecycle(requestId, state)
+    fun observePendingLifecycle(status: ModelStatus): Boolean {
+        val submissionObserved = pendingSubmissionGate.observeLifecycle(status.assistantRequestId, status.state,
+            status.assistantOperation, status.cloudReady)
         if (submissionObserved) pendingSubmission.value = null
-        val continuationObserved = pendingContinuationGate.observeLifecycle(requestId, state)
+        val continuationObserved = pendingContinuationGate.observeLifecycle(status.assistantRequestId, status.state,
+            status.assistantOperation, status.cloudReady)
         if (continuationObserved) {
             pendingContinuation.value = false
             pendingContinuationToken = null
@@ -2075,6 +2105,7 @@ private class PrivateAssistantConversationSession(
             previousRequestId = previousRequestId,
             state = result.state,
             operation = result.assistantOperation,
+            cloudReady = result.cloudReady,
         )
         if (requestId == null && !pendingContinuationGate.isActive(token)) {
             pendingContinuation.value = false
@@ -2235,6 +2266,7 @@ private fun rememberPrivateAssistantConversationSession(): PrivateAssistantConve
 
 @Composable
 private fun PrivateAssistantChat(
+    photoAnalysisMode: String,
     bottomBar: @Composable () -> Unit,
     conversationSession: PrivateAssistantConversationSession,
     foodCatalog: OfflineFoodCatalog?,
@@ -2284,6 +2316,8 @@ private fun PrivateAssistantChat(
     onReviewSavedDish: (PersonalDish) -> Boolean,
 ) {
     val context = LocalContext.current
+    fun assistantReady(status: ModelStatus): Boolean = if (photoAnalysisMode == "cloud") status.cloudReady
+        else status.state == "loaded"
     var input by conversationSession.input
     var submittedQuestion by conversationSession.submittedQuestion
     var submittedConversationContext by conversationSession.submittedContext
@@ -2438,7 +2472,7 @@ private fun PrivateAssistantChat(
                 }
                 if (requestId == null && stillPending) {
                     conversationSession.recoverableDiagnostic.value = continuationFailureDiagnostic(result.coachDiagnostic)
-                } else if (result.state == "loaded" && result.coachDiagnostic != null) {
+                } else if (assistantReady(result) && result.coachDiagnostic != null) {
                     conversationSession.recoverableDiagnostic.value = result.coachDiagnostic
                 }
             } catch (_: CancellationException) {
@@ -2518,7 +2552,7 @@ private fun PrivateAssistantChat(
     fun currentVoiceContexts(status: ModelStatus): Pair<ChatCurrentDraftFoodContext?, ChatCurrentDraftPortionContext?> =
         liveFoodEditContext(status) to livePortionEditContext(status)
     fun captureVoiceHandoff(token: Long, status: ModelStatus): OneUseChatVoiceDraftHandoff? {
-        if (status.state != "loaded") return null
+        if (!assistantReady(status)) return null
         val (food, portion) = currentVoiceContexts(status)
         return OneUseChatVoiceDraftHandoff.capture(
             token, food, portion,
@@ -2527,7 +2561,7 @@ private fun PrivateAssistantChat(
         )
     }
     fun captureVoiceRequestProof(token: Long, status: ModelStatus): OneUseChatVoiceRequestProof? {
-        if (status.state != "loaded" || status.assistantRequestId != activeAssistantRequestId ||
+        if (!assistantReady(status) || status.assistantRequestId != activeAssistantRequestId ||
             !isVaultUnlocked() || conversationSession.assistantStopping.value ||
             conversationSession.pendingSubmission.value != null || conversationSession.pendingContinuation.value
         ) return null
@@ -2558,7 +2592,7 @@ private fun PrivateAssistantChat(
         val busyForThisTranscript = status.state == "thinking" &&
             status.voiceTranscriptionState == "processing" &&
             status.voiceTranscriptionCaptureToken == handoff.captureToken()
-        if (status.state != "loaded" && !busyForThisTranscript) return false
+        if (!assistantReady(status) && !busyForThisTranscript) return false
         val (food, portion) = currentVoiceContexts(status)
         return handoff.isCurrent(
             token, food, portion,
@@ -2789,7 +2823,10 @@ private fun PrivateAssistantChat(
             val capture = voiceCaptureGeneration
             setVoiceRecording(false)
             audioRecorder.stop()?.let { submitVoiceClip(it, capture) }
-                ?: run { voiceMessage = "No local voice clip was captured. Try again." }
+                ?: run {
+                    voiceMessage = if (audioRecorder.awaitingRecognition()) "Recognizing speech on this phone…"
+                    else "No voice clip was captured. Try again."
+                }
         } else {
             if (!voiceEntryOpen && !voiceMealEntry) {
                 voiceEntryOpen = true
@@ -3344,7 +3381,7 @@ private fun PrivateAssistantChat(
             requestId = requestId,
             transcript = persistedTranscript,
             isCurrent = {
-                isVaultUnlocked() && modelStatus.state == "loaded" &&
+                isVaultUnlocked() && assistantReady(modelStatus) &&
                     modelStatus.assistantRequestId == requestId &&
                     modelStatus.companionNavigation?.requestId == navigation.requestId &&
                     activeAssistantRequestId == requestId &&
@@ -3420,7 +3457,7 @@ private fun PrivateAssistantChat(
         }
     }
     LaunchedEffect(modelStatus.assistantRequestId, modelStatus.state) {
-        conversationSession.observePendingLifecycle(modelStatus.assistantRequestId, modelStatus.state)
+        conversationSession.observePendingLifecycle(modelStatus)
     }
     fun isSavedDishChoiceBound(state: PendingSavedDishChoices): Boolean =
         SavedDishChoicePolicy.isCurrent(
@@ -3435,7 +3472,7 @@ private fun PrivateAssistantChat(
 
     fun canSelectSavedDishChoice(state: PendingSavedDishChoices): Boolean =
         isSavedDishChoiceBound(state) && modelStatus.assistantRequestId == state.requestId &&
-            modelStatus.state == "loaded" && conversationSession.pendingSubmission.value == null &&
+            assistantReady(modelStatus) && conversationSession.pendingSubmission.value == null &&
             !conversationSession.pendingContinuation.value &&
             !savedDishChoiceSelectionInFlight
 
@@ -3704,7 +3741,7 @@ private fun PrivateAssistantChat(
                 requestId = modelStatus.assistantRequestId,
                 conversationGeneration = conversationSession.conversationGeneration.value,
                 unlocked = isVaultUnlocked(), stopping = conversationSession.assistantStopping.value,
-            ) && modelStatus.state == "loaded" && handledReplyRequestId == portionOffer.requestId &&
+            ) && assistantReady(modelStatus) && handledReplyRequestId == portionOffer.requestId &&
                 activeAssistantRequestId == portionOffer.requestId &&
                 conversationSession.pendingSubmission.value == null && !conversationSession.pendingContinuation.value
         ) {
@@ -3980,12 +4017,12 @@ private fun PrivateAssistantChat(
                     voiceMessage = "Metria could not produce readable speech. Try again or type instead."
                     return@LaunchedEffect
                 }
-                if (latest.state == "thinking" || modelStatus.state != "loaded") {
+                if (latest.state == "thinking" || !assistantReady(modelStatus)) {
                     // Keep the one-shot claim available while this same capture still owns native inference.
                     gate.claim(proof.captureToken(), transcriptionId, recognized, runtimeReleased = false)
                     return@LaunchedEffect
                 }
-                if (latest.state != "loaded" || !voiceRequestProofIsCurrent(proof, proof.captureToken(), latest) ||
+                if (!assistantReady(latest) || !voiceRequestProofIsCurrent(proof, proof.captureToken(), latest) ||
                     modelStatus.state != latest.state ||
                     modelStatus.voiceTranscriptionState != latest.voiceTranscriptionState ||
                     modelStatus.voiceTranscriptionId != transcriptionId ||
@@ -4052,8 +4089,8 @@ private fun PrivateAssistantChat(
                 (modelStatus.voiceTranscriptionState == "processing" ||
                     (modelStatus.voiceTranscriptionState == "ready" && modelStatus.state == "thinking"))
                 else modelResultIsCurrent && modelStatus.state == "thinking",
-            ready = modelStatus.state == "loaded",
-            unavailable = modelStatus.state in setOf("failed", "absent", "removed"),
+            ready = assistantReady(modelStatus),
+            unavailable = !assistantReady(modelStatus) && modelStatus.state in setOf("failed", "absent", "removed"),
             automaticChatSubmission = chatVoiceCapture,
             inlineChat = !voiceMealEntry,
             stopping = chatVoiceCapture && modelStatus.state == "thinking" &&
@@ -4190,7 +4227,7 @@ private fun PrivateAssistantChat(
             offer, modelStatus.assistantProposal, modelStatus.assistantRequestId,
             conversationSession.conversationGeneration.value, isVaultUnlocked(),
             conversationSession.assistantStopping.value,
-        ) && modelStatus.state == "loaded" && handledReplyRequestId == offer.requestId &&
+        ) && assistantReady(modelStatus) && handledReplyRequestId == offer.requestId &&
             activeAssistantRequestId == offer.requestId &&
             conversationSession.pendingSubmission.value == null && !conversationSession.pendingContinuation.value
     }
@@ -4199,7 +4236,7 @@ private fun PrivateAssistantChat(
             override, modelStatus.assistantProposal ?: return@takeIf false,
             modelStatus.assistantRequestId, conversationSession.conversationGeneration.value,
             isVaultUnlocked(), conversationSession.assistantStopping.value,
-        ) && modelStatus.state == "loaded" && activeAssistantRequestId == override.requestId &&
+        ) && assistantReady(modelStatus) && activeAssistantRequestId == override.requestId &&
             handledReplyRequestId == override.requestId &&
             conversationSession.pendingSubmission.value == null && !conversationSession.pendingContinuation.value
     }
@@ -4208,7 +4245,7 @@ private fun PrivateAssistantChat(
             override, modelStatus.assistantProposal ?: return@takeIf false,
             modelStatus.assistantRequestId, conversationSession.conversationGeneration.value,
             isVaultUnlocked(), conversationSession.assistantStopping.value,
-        ) && modelStatus.state == "loaded" && activeAssistantRequestId == override.requestId &&
+        ) && assistantReady(modelStatus) && activeAssistantRequestId == override.requestId &&
             handledReplyRequestId == override.requestId &&
             conversationSession.pendingSubmission.value == null && !conversationSession.pendingContinuation.value
     }
@@ -4256,6 +4293,7 @@ private fun PrivateAssistantChat(
             }
         },
         voiceActivity = voiceEntryContent,
+        cloudSelected = modelStatus.cloudSelected,
         composerFocusRequest = composerFocusRequest,
         messages = messages.mapIndexed { index, message -> MetriaChatMessage(
             text = message.text,
@@ -4311,7 +4349,7 @@ private fun PrivateAssistantChat(
                 },
         savedWeight = savedWeight,
         mealProposal = displayedMealProposal.takeIf {
-            modelResultIsCurrent && modelStatus.state == "loaded" &&
+            modelResultIsCurrent && assistantReady(modelStatus) &&
                 conversationSession.pendingSubmission.value == null &&
                 !conversationSession.pendingContinuation.value &&
                 !conversationSession.assistantStopping.value
@@ -4333,7 +4371,9 @@ private fun PrivateAssistantChat(
         recordingVoice = recordingVoice,
         preparingVoice = startVoiceImmediately && !recordingVoice,
         voiceMessage = voiceMessage,
-        modelReady = modelStatus.state == "loaded",
+        modelReady = assistantReady(modelStatus),
+        cloudConnectionRequired = photoAnalysisMode == "cloud" && !modelStatus.cloudReady,
+        onOpenCloudSettings = { onPanelAction(AssistantPanelAction.PRIVACY) },
         selectedMealContextTitle = selectedMealContextTitle,
         onClearSelectedMealContext = clearSelectedMealContext,
         onBack = onBack,
@@ -4378,7 +4418,7 @@ private fun PrivateAssistantChat(
                         isCurrent = {
                             isVaultUnlocked() && activeAssistantRequestId == requestId &&
                                 conversationSession.isCurrentNavigationRequest(requestId) &&
-                                modelStatus.assistantRequestId == requestId && modelStatus.state == "loaded" &&
+                                modelStatus.assistantRequestId == requestId && assistantReady(modelStatus) &&
                                 modelStatus.assistantProposal == sourceProposal &&
                                 conversationSession.pendingSubmission.value == null &&
                                 !conversationSession.pendingContinuation.value &&

@@ -11,6 +11,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import app.metria.MealPhotoContext
 import app.metria.ui.components.MetriaMealThumbnail
+import app.metria.ui.components.AssistantProviderLabel
 import androidx.activity.compose.BackHandler
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CameraAlt
@@ -19,12 +20,13 @@ import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.CheckCircle
 
 @Composable
-fun MealPhotoAnalysisProgress(title: String, detail: String, onStop: () -> Unit) {
+fun MealPhotoAnalysisProgress(title: String, detail: String, onStop: () -> Unit, cloud: Boolean = false) {
     BackHandler(onBack = onStop)
     Card {
         // Assistant's parent owns scrolling. A nested vertical scroller here is
         // measured with infinite height and crashes when analysis begins.
         Column(Modifier.fillMaxWidth().padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            AssistantProviderLabel(cloud = cloud)
             CircularProgressIndicator()
             Text("Preparing your meal…", style = MaterialTheme.typography.headlineSmall)
             OutlinedButton(onClick = onStop, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Stop analysis") }
@@ -59,6 +61,8 @@ fun MealPhotoPreviewSheet(
     purpose: String,
     thumbnail: String?,
     imageState: String,
+    photoAnalysisMode: String,
+    cloudPhotoConfigured: Boolean,
     description: String,
     onDescriptionChange: (String) -> Unit,
     onPurposeChange: (String) -> Unit,
@@ -67,6 +71,7 @@ fun MealPhotoPreviewSheet(
     onAnalyze: () -> Unit,
 ) {
     var showTips by rememberSaveable { mutableStateOf(false) }
+    var confirmCloudAnalysis by rememberSaveable { mutableStateOf(false) }
     val ready = imageState == "ready"
     val label = purpose == "label"
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
@@ -75,13 +80,14 @@ fun MealPhotoPreviewSheet(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text(if (label) "Preview label" else "Preview meal", style = MaterialTheme.typography.headlineMedium)
+            AssistantProviderLabel(cloud = !label && photoAnalysisMode == "cloud", localName = if (label) "ML Kit" else "Gemma")
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(selected = !label, onClick = { onPurposeChange("meal") }, label = { Text("Meal photo") }, modifier = Modifier.heightIn(min = 48.dp))
                 FilterChip(selected = label, onClick = { onPurposeChange("label") }, label = { Text("Nutrition label") }, modifier = Modifier.heightIn(min = 48.dp))
             }
             if (ready) {
                 MetriaMealThumbnail(encoded = thumbnail, size = 192.dp, contentScale = ContentScale.Fit)
-                Text("Preview of your private photo", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Preview of your photo", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else if (imageState == "preparing") {
                 LinearProgressIndicator(Modifier.fillMaxWidth())
                 Text("Preparing your photo…")
@@ -104,10 +110,25 @@ fun MealPhotoPreviewSheet(
                     minLines = 2,
                 )
             }
-            Text("Processed on this phone. Review the draft before saving.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Button(onClick = onAnalyze, enabled = ready, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                Text(if (label) "Read label" else "Create meal draft")
+            Text(
+                when {
+                    label -> "Label text is read on this phone. Review it before saving."
+                    photoAnalysisMode == "cloud" -> "This photo and its optional details will be sent to Metria's broker and Nebius only if you choose Analyze in cloud. Saved records stay on this phone. Review the draft before saving."
+                    else -> "Processed on this phone. Review the draft before saving."
+                },
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Button(onClick = {
+                if (!label && photoAnalysisMode == "cloud") confirmCloudAnalysis = true else onAnalyze()
+            },
+                enabled = ready && (label || photoAnalysisMode != "cloud" || cloudPhotoConfigured),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                Text(if (label) "Read label" else if (photoAnalysisMode == "cloud") "Analyze in cloud" else "Create meal draft")
             }
+            if (!label && photoAnalysisMode == "cloud" && !cloudPhotoConfigured) Text(
+                "Connect a private evaluator pass in Settings to use cloud photo analysis.",
+                color = MaterialTheme.colorScheme.error,
+            )
             OutlinedButton(onClick = onReplace, enabled = imageState != "preparing", modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Use another photo") }
             TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Cancel") }
         }
@@ -142,4 +163,11 @@ fun MealPhotoPreviewSheet(
             },
         )
     }
+    if (confirmCloudAnalysis && cloudPhotoConfigured) AlertDialog(
+        onDismissRequest = { confirmCloudAnalysis = false },
+        title = { Text("Send this photo for cloud analysis?") },
+        text = { Text("The prepared photo shown here and its optional meal details will be sent to Metria's broker and Nebius. Saved records are not included. Metria will return an estimate for you to review before saving.") },
+        confirmButton = { Button(onClick = { confirmCloudAnalysis = false; onAnalyze() }) { Text("Analyze this photo") } },
+        dismissButton = { TextButton(onClick = { confirmCloudAnalysis = false }) { Text("Keep this phone") } },
+    )
 }

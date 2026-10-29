@@ -1,0 +1,14 @@
+# Local PC rehearsal: broker + temporary HTTPS tunnel, no published origin ports.
+FROM python:3.12-slim AS tunnel
+ARG TARGETARCH
+RUN python -c "import hashlib,pathlib,urllib.request; arch='${TARGETARCH}'; expected={'amd64':'e1bc0cf084fd9e590554fe769a86b1db46701c3f847a43d902f7b974a4e16298','arm64':'72e0d05a67e09da87cf495e409a28c3cc5994dd23fc66a982eebea6a55923b7d'}[arch]; data=urllib.request.urlopen('https://github.com/cloudflare/cloudflared/releases/download/2026.10.5/cloudflared-linux-'+arch,timeout=120).read(); assert hashlib.sha256(data).hexdigest()==expected,'cloudflared checksum mismatch'; pathlib.Path('/cloudflared').write_bytes(data)"
+
+FROM python:3.12-slim
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+WORKDIR /app
+COPY --from=tunnel --chmod=755 /cloudflared /usr/local/bin/cloudflared
+COPY broker/ /app/broker/
+COPY shared/assistant-contract.json /app/shared/assistant-contract.json
+RUN mkdir /app/.local-state && chown 10001:10001 /app/.local-state
+USER 10001:10001
+ENTRYPOINT ["python", "broker/local_tunnel.py"]

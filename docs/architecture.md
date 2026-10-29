@@ -1,5 +1,67 @@
 # Metria architecture
 
+Cloud meal-format repair (2026-10-29): the provider receives a constrained JSON
+schema with a proposal object in reply, avoiding a JSON-encoded string inside
+model-authored JSON. The broker serializes that object for the unchanged Android
+wire contract, then runs existing field/portion/action validation. No malformed
+output repair, hidden retry, new tool or save authority. Reported usage is retained
+on rejected decisions. A focused meal entry displays a validated clarification
+without treating it as a meal; selected route is visible independently of readiness.
+
+Shared provider contract (approved 2026-10-28): `shared/assistant-contract.json`
+owns common assistant policy/examples and the existing 13 tool declarations,
+parameters, limits and task allowlists. Gradle generates LiteRT tool sets and
+native policy constants from it; the broker reads the same file. Both argument
+validators consume this metadata before existing contextual host authorization.
+Provider adapters retain only runtime framing/transport and task extraction
+formats. Record reads, deterministic nutrition, draft review and Save stay on
+device. No new action, cloud record export or automatic execution is introduced.
+
+Fictional app rehearsal exception (approved 2026-10-28): the local HTTPS launcher
+may explicitly enable `--capture-fictional-responses` for operator-declared
+fictional photo/chat inputs only. Retain bounded full provider response/error
+bodies before validation plus original connection exception details in private,
+Git-ignored captures, censoring the provider key. No incoming photo, message,
+pass or auth-header capture; responses can echo fictional inputs. Hosted/default
+serving remains content-free. This extends the earlier desktop-only exception
+below; real member content remains excluded. See `broker/LOCAL-APP-TEST.md`.
+
+Optional cloud provider (approved 2026-10-27): member requests whole-assistant
+Gemma/local versus Nebius Super VL/cloud selection in onboarding and Settings.
+Cloud may process explicitly submitted text/context and a selected prepared
+photo/description through the authenticated quota-bound broker. No bulk vault
+export or remote Save. Real content must never enter synthetic debug capture.
+Cloud voice uses Android on-device speech-to-text and sends text only; Super VL
+has no audio input. Existing schema, grounding, deterministic nutrition, reviewed
+save and stale-result guards remain authoritative. This revises earlier
+photo-exclusion scope; acceptance is tracked in `cloud-assistant-integration.md`.
+
+Synthetic vision experiment (approved 2026-10-27): the desktop Super VL probe may
+retain its complete code-owned fictional request and pinned AI-generated image,
+plus a bounded/redacted provider response, usage and cost estimate in private
+Git-ignored files. No arbitrary/member photo input, key/header capture, Android
+upload or hosted integration is enabled. Member requests evaluating a cloud
+replacement for Gemma; production consent, retention and runtime migration remain
+separate work. See `broker/VISION-PROBE.md`.
+
+Fictional provider-debug capture (approved 2026-10-27): the desktop-only Nebius
+sample probe may explicitly retain a bounded model response for diagnosis,
+including rejected output, in private Git-ignored local files. It must exclude
+credentials/auth headers and redact echoed provider keys. This exception applies
+only to code-owned invented samples, is off by default, and is not wired into
+the hosted judge broker or the Android/member-data path. Host validation and
+spending limits remain authoritative. See `broker/README.md` and the Nebius
+checkpoint for capture controls and evidence.
+
+Judge demo boundary (approved 2026-10-27): an optional operator-funded broker
+may accept privately issued evaluator passes and code-owned fictional scenarios.
+The broker generates the sample summaries; the client cannot submit real vault
+content on this path. Pass binding, revocation and durable quotas precede live
+dispatch. Provider keys remain server-side. This is separate from the proposed
+real-data consent flow and does not enable it. Backend preparation and deployment
+gates are in `nebius-broker-security-design.md` and `broker/DEPLOYMENT.md`;
+the Android judge entry is not yet integrated.
+
 Contextual assistant completion (approved 2026-10-26): label insertion and
 assistant-origin meal update may opt into a host-authored conversation receipt
 inside the same encrypted-vault transaction, with conversation rollback on

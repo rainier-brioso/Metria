@@ -1,5 +1,13 @@
 # Metria testing and physical-device runbook
 
+Cloud integration acceptance (2026-10-27): see `cloud-assistant-integration.md`.
+Test selected local/cloud mode, missing/revoked pass without fallback, prior local
+record answers excluded from outbound history, explicit photo confirmation,
+no-Gemma cloud start, Stop/lock/stale outputs, on-device voice availability and
+one-use transcript handling. Never send real member data as a test fixture or
+enable synthetic raw capture in the Android/hosted member path. Build evidence
+does not replace physical or hosting acceptance.
+
 This is the canonical testing entry point for Metria. It is written for a new
 agent or developer who has no access to prior chat history. Milestone-specific
 expected results and evidence remain in the applicable checkpoint document.
@@ -45,6 +53,14 @@ The production Android application is under `native-android/`. The Expo shell
 at the repository root is retained as historical spike evidence.
 
 ## 3. Automated Android gate
+
+Shared assistant contract: Android and the Python broker consume
+`shared/assistant-contract.json`; both suites run the same 47 conformance vectors.
+Android additionally verifies the actual generated LiteRT annotations and source
+fingerprint. These JVM tests require Java 21+ because the SDK ToolSet is Java 21
+bytecode. The test launcher uses the current Gradle JVM if suitable, otherwise
+Java 21. Production compilation target remains Java 17. Generated tool sources
+are build outputs, not checked-in declarations. See `../shared/README.md`.
 
 Run the complete gate after every Android implementation change and before an
 installation or handoff:

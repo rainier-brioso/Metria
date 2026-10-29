@@ -1,5 +1,12 @@
 # M4 local assistant checkpoints
 
+Optional cloud provider integration (2026-10-28): member explicitly requests the
+whole-assistant local/cloud choice, including onboarding and Settings switch.
+Implementation and remaining acceptance are tracked in
+`nebius-assistant-checkpoints.md` and `cloud-assistant-integration.md`. This does
+not close earlier local physical gates, authorize real-data uploads as testing,
+or establish a deployed service. No installation/record mutation in this slice.
+
 ## Post-demo acceptance backlog - 2026-10-27
 
 Member explicitly defers the remaining assistant physical checks until after

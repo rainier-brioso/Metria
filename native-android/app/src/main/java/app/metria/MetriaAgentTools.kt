@@ -1,93 +1,6 @@
 package app.metria
 
-import com.google.ai.edge.litertlm.Tool
-import com.google.ai.edge.litertlm.ToolParam
-import com.google.ai.edge.litertlm.ToolSet
 import com.google.ai.edge.litertlm.ToolCall
-
-/**
- * Approved Gate A: use LiteRT-LM's native tool protocol for bounded read-only chat.
- * Execution remains manual, so these declarations expose schemas to Gemma but never receive
- * vault access. MemberShell validates and executes the selected operation against a snapshot.
- */
-class MetriaReadToolSet : ToolSet {
-    @Tool(description = "Read the exact saved meal currently selected by the member. Use only for questions in a meal-specific conversation. This reads one locally selected record and never searches by name or date.")
-    fun read_selected_meal(): Map<String, Any> = hostExecutionOnly("read_selected_meal", "")
-
-    @Tool(description = "Read the most recent recorded meal and its saved calorie/protein estimates within the last 90 days. Use for my last meal or mi ultima comida. Returns one meal, missing/partial estimates, or an empty/ambiguous result; never a day total.")
-    fun read_latest_meal(): Map<String, Any> = hostExecutionOnly("read_latest_meal", "")
-
-    @Tool(description = "Read a grounded overview of the member's nutrition, goals, meals, and weight trend for today or the last seven days. Use this for broad questions such as how am I doing or how is my week.")
-    fun read_progress_overview(
-        @ToolParam(description = "Exactly today or week. Week means the rolling last seven days including today.") period: String,
-    ): Map<String, Any> = hostExecutionOnly("read_progress_overview", period)
-
-    @Tool(description = "Read the member's calorie and protein summary for today or the last seven days.")
-    fun read_nutrition_summary(
-        @ToolParam(description = "Exactly today or week.") period: String,
-    ): Map<String, Any> = hostExecutionOnly("read_nutrition_summary", period)
-
-    @Tool(description = "Read the member's weight entries in a bounded relative-day range.")
-    fun read_weight(
-        @ToolParam(description = "Oldest day offset from today, from 0 through 90.") from_days_ago: Int,
-        @ToolParam(description = "Newest day offset from today, from 0 through from_days_ago.") to_days_ago: Int,
-    ): Map<String, Any> = hostExecutionOnly("read_weight", "$from_days_ago:$to_days_ago")
-
-    @Tool(description = "Read meals saved on one relative day, optionally limited to one meal slot.")
-    fun read_meals(
-        @ToolParam(description = "Day offset from today, from 0 through 90. Zero is today.") days_ago: Int,
-        @ToolParam(description = "Optional breakfast, lunch, dinner, or snack filter.") meal_slot: String? = null,
-    ): Map<String, Any> = hostExecutionOnly("read_meals", "$days_ago:${meal_slot.orEmpty()}")
-
-    @Tool(description = "Read nutrition estimates from meals recorded on exactly one relative day within the last 90 days. Returns recorded estimates and coverage only, never a historical goal or complete-intake claim.")
-    fun read_day_nutrition(
-        @ToolParam(description = "Exact day offset from today, from 0 through 90. Zero is today.") days_ago: Int,
-    ): Map<String, Any> = hostExecutionOnly("read_day_nutrition", days_ago.toString())
-
-    @Tool(description = "Search the member's private saved dishes by a short food or dish name.")
-    fun search_saved_dishes(
-        @ToolParam(description = "A short dish or food query, between 2 and 120 characters.") query: String,
-    ): Map<String, Any> = hostExecutionOnly("search_saved_dishes", query)
-
-    private fun hostExecutionOnly(name: String, request: String): Map<String, Any> = mapOf(
-        "status" to "host_execution_required",
-        "tool" to name,
-        "request" to request,
-    )
-}
-
-/** No save capability and no model-authored description: the host uses the current member turn. */
-class MetriaMealDraftToolSet : ToolSet {
-    @Tool(description = "Prepare an editable, unsaved meal draft from food the member describes in the current message. Normally use when they describe food they ate or want to record, even without saying log or save. If they explicitly ask you to ask first, wait, or not prepare a draft yet, do not call this tool; ask one short confirmation question instead. Do not use for a bare confirmation of a previous message; use confirm_meal_draft only when trusted host context says a candidate is available and the conversation clearly confirms it. Do not use for questions about saved meals, nutrition advice, hypothetical meals, or medical concerns. The member must review and explicitly save the meal.")
-    fun draft_meal(): Map<String, Any> = mapOf("status" to "host_execution_required", "tool" to "draft_meal")
-
-    @Tool(description = "Confirm the immediately preceding member food report as the meal to prepare for review. Use only when trusted host context says a one-turn candidate is available and the conversation clearly shows the member confirms preparing that same report. Do not use for a decline, correction, added or changed food, unrelated question, or ambiguity. This only requests an unsaved editable draft; it never saves a meal.")
-    fun confirm_meal_draft(): Map<String, Any> = mapOf("status" to "host_execution_required", "tool" to "confirm_meal_draft")
-
-    @Tool(description = "Decline preparing the immediately preceding member food report as a meal draft. Use only when trusted host context says a one-turn candidate is available and the member clearly declines that offer. This clears the candidate and prepares no draft; it never saves or changes a meal.")
-    fun decline_meal_draft(): Map<String, Any> = mapOf("status" to "host_execution_required", "tool" to "decline_meal_draft")
-
-}
-
-/** Present only for a turn whose host froze the identity of a live eligible draft. */
-class MetriaCurrentDraftPortionToolSet : ToolSet {
-    @Tool(description = "Request a change to the portion of the one current unsaved meal draft when the member clearly asks to change it and gives one explicit whole-number gram amount. Use only for the current member's clear correction. Give only the gram amount from the current member message. This cannot choose food or save the draft.")
-    fun adjust_current_draft_portion(
-        @ToolParam(description = "One whole gram amount from 1 to 2000 explicitly stated in the current member message.") grams: Int,
-    ): Map<String, Any> = mapOf("status" to "host_execution_required", "tool" to "adjust_current_draft_portion", "grams" to grams)
-}
-
-/** Present only when the host froze the one eligible current draft food. */
-class MetriaCurrentDraftFoodToolSet : ToolSet {
-    @Tool(description = "Request replacing the one food in the current unsaved draft when the member clearly corrects its identity. Use only a short replacement food name stated literally in the current member message. Do not use for a question, denial, addition, removal, portion change, or a request naming multiple foods. This cannot choose a row or save the draft.")
-    fun replace_current_draft_food(
-        @ToolParam(description = "One short replacement food phrase, copied from the current member message. No IDs, amounts, portions, nutrition, or additional foods.") replacement_name: String,
-    ): Map<String, Any> = mapOf(
-        "status" to "host_execution_required",
-        "tool" to "replace_current_draft_food",
-        "replacement_name" to replacement_name,
-    )
-}
 
 /** Converts native LiteRT tool calls into Metria's existing host-side action allowlist. */
 object MetriaNativeToolCallAdapter {
@@ -95,37 +8,32 @@ object MetriaNativeToolCallAdapter {
 
     internal fun adapt(toolName: String, arguments: Map<String, *>): PrivateCoachToolCall? {
         val name = toolName.trim().lowercase()
+        if (!AssistantContractPolicy.accepts(name, arguments)) return null
         return when (name) {
             "draft_meal", "confirm_meal_draft", "decline_meal_draft", "read_latest_meal", "read_selected_meal" -> if (arguments.isEmpty()) PrivateCoachToolCall(intent = name) else null
             "adjust_current_draft_portion" -> {
-                if (arguments.keys != setOf("grams")) return null
                 val raw = arguments["grams"] as? Number ?: return null
-                val value = raw.toDouble()
-                val grams = raw.toInt().takeIf { value == it.toDouble() && it in 1..2_000 } ?: return null
-                PrivateCoachToolCall(intent = name, grams = grams)
+                PrivateCoachToolCall(intent = name, grams = raw.toInt())
             }
             "replace_current_draft_food" -> {
-                if (arguments.keys != setOf("replacement_name")) return null
                 val replacement = (arguments["replacement_name"] as? String)
                     ?.trim()
-                    ?.takeIf { it.length in 2..60 }
                     ?: return null
                 PrivateCoachToolCall(intent = name, replacementName = replacement)
             }
             "read_progress_overview" -> {
-                val period = arguments.string("period")?.takeIf { it in setOf("today", "week") }
+                val period = arguments.string("period")
                     ?: return null
                 PrivateCoachToolCall(intent = name, period = period)
             }
             "read_nutrition_summary" -> {
-                val period = arguments.string("period")?.takeIf { it in setOf("today", "week") }
+                val period = arguments.string("period")
                     ?: return null
                 PrivateCoachToolCall(intent = name, period = period)
             }
             "read_weight" -> {
                 val fromDaysAgo = arguments.int("from_days_ago") ?: return null
                 val toDaysAgo = arguments.int("to_days_ago") ?: return null
-                if (fromDaysAgo !in 0..90 || toDaysAgo !in 0..fromDaysAgo) return null
                 PrivateCoachToolCall(
                     intent = name,
                     fromDaysAgo = fromDaysAgo,
@@ -133,17 +41,16 @@ object MetriaNativeToolCallAdapter {
                 )
             }
             "read_meals" -> {
-                val daysAgo = arguments.int("days_ago")?.takeIf { it in 0..90 } ?: return null
+                val daysAgo = arguments.int("days_ago") ?: return null
                 val mealSlot = arguments.string("meal_slot")
-                if (mealSlot != null && mealSlot !in MealSlots.allowed) return null
                 PrivateCoachToolCall(intent = name, daysAgo = daysAgo, mealSlot = mealSlot)
             }
             "read_day_nutrition" -> {
-                val daysAgo = arguments.int("days_ago")?.takeIf { it in 0..90 } ?: return null
+                val daysAgo = arguments.int("days_ago") ?: return null
                 PrivateCoachToolCall(intent = name, period = "historical_day", daysAgo = daysAgo)
             }
             "search_saved_dishes" -> {
-                val query = arguments.string("query")?.takeIf { it.length in 2..120 } ?: return null
+                val query = arguments.string("query") ?: return null
                 PrivateCoachToolCall(intent = name, query = query)
             }
             else -> null
@@ -151,6 +58,7 @@ object MetriaNativeToolCallAdapter {
     }
 
     private fun Map<String, *>.string(key: String): String? = this[key]
+        ?.takeUnless { it === org.json.JSONObject.NULL }
         ?.toString()
         ?.trim()
         ?.takeIf(String::isNotEmpty)

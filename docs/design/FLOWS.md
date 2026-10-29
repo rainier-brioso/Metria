@@ -1,5 +1,22 @@
 # Metria primary UX flows
 
+Meal entry/cloud feedback (2026-10-29): after on-device dictation, a cloud meal
+description requests an unsaved draft. A clarification returns to the editable
+description with the actual question; a failure shows the safe failure explanation.
+No automatic retry or save. Local/cloud route remains visible in text/voice entry,
+Chat and photo preview/analysis; label OCR identifies its local ML Kit processor.
+
+Cloud provider (approved 2026-10-27): choose Gemma/local or Nemotron/cloud during
+onboarding; Settings permits switching later after active work stops. Cloud
+configuration is a focused HTTPS broker/private pass flow with explicit data
+sharing disclosure. Cloud needs no Gemma download. Preview the prepared photo
+and optional description, then explicitly analyze with cloud. Chat sends the
+submitted message and bounded necessary context; host read/action guards remain.
+Cloud voice transcribes on-device before normal text submission. Stop, lock and
+new requests reject stale delivery; offline/error offers explicit retry, typing
+or local selection without automatic fallback. Records and Review/Save are
+unchanged. Acceptance: `../cloud-assistant-integration.md`.
+
 Assistant prototype completion (approved 2026-10-26): + > My saved dishes >
 search/select a current local dish > existing unsaved Review > explicit Save >
 Chat receipt and View meal. Empty/no-match lists offer a clear explanation and

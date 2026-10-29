@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -30,19 +31,22 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.RadioButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -66,6 +70,12 @@ import app.metria.PersonalDish
 import app.metria.DebugImageCaptureStore
 import app.metria.ui.theme.MetriaColors
 import java.time.ZoneId
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Approved direction: a calm, single-screen settings hub. Routine status and choices stay
@@ -86,6 +96,12 @@ fun MetriaPrivacySettingsScreen(
     foodCorrectionCount: Int,
     legacyFoodCorrectionCount: Int,
     archiveMessage: String?,
+    photoAnalysisMode: String,
+    cloudPhotoConfigured: Boolean,
+    cloudPhotoEndpoint: String?,
+    onSelectPhotoAnalysisMode: (String) -> Unit,
+    onConfigureCloudPhoto: (String, CharArray) -> String?,
+    onDisconnectCloudPhoto: () -> Unit,
     onChangeUnit: () -> Unit,
     onEditNutritionTargets: () -> Unit,
     onEditCycleContext: () -> Unit,
@@ -142,11 +158,22 @@ fun MetriaPrivacySettingsScreen(
     }
 
     SettingsSection("Private features") {
+        CloudPhotoSettings(
+            mode = photoAnalysisMode,
+            configured = cloudPhotoConfigured,
+            currentEndpoint = cloudPhotoEndpoint,
+            onSelectMode = onSelectPhotoAnalysisMode,
+            onConfigure = onConfigureCloudPhoto,
+            onDisconnect = onDisconnectCloudPhoto,
+        )
+        SettingsDivider()
         SettingsRow(
             icon = Icons.Rounded.SmartToy,
-            title = "Local assistant",
-            supporting = assistantStatusSummary(modelStatus.state),
-            accessibilityLabel = "Local assistant. ${assistantStatusSummary(modelStatus.state)}. Show details",
+            title = if (photoAnalysisMode == "cloud") "Cloud assistant" else "Local assistant",
+            supporting = if (photoAnalysisMode == "cloud") {
+                if (modelStatus.cloudReady) "Connected · requests run when you use the assistant" else "Connect a private pass to use cloud assistance"
+            } else assistantStatusSummary(modelStatus.state),
+            accessibilityLabel = "${if (photoAnalysisMode == "cloud") "Cloud" else "Local"} assistant. Show details",
             onClick = { assistantDetailsOpen = true },
         )
         SettingsDivider()
@@ -253,8 +280,8 @@ fun MetriaPrivacySettingsScreen(
         }) { Text("Clear corrections") } },
         dismissButton = { TextButton(onClick = { clearMealLearningOpen = false }) { Text("Keep corrections") } },
     )
-    if (privacyDetailsOpen) PrivacyDetailsDialog(onDismiss = { privacyDetailsOpen = false })
-    if (assistantDetailsOpen) AssistantDetailsDialog(modelStatus, onDismiss = { assistantDetailsOpen = false })
+    if (privacyDetailsOpen) PrivacyDetailsDialog(photoAnalysisMode, onDismiss = { privacyDetailsOpen = false })
+    if (assistantDetailsOpen) AssistantDetailsDialog(modelStatus, photoAnalysisMode, onDismiss = { assistantDetailsOpen = false })
     if (assistantStyleOpen) AssistantStyleDialog(
         selected = assistantStyle,
         error = assistantStyleError,
@@ -275,6 +302,120 @@ fun MetriaPrivacySettingsScreen(
         onSetDebugImageCaptureEnabled,
         onClearDebugImageCapture,
         onDismiss = { diagnosticsOpen = false },
+    )
+}
+
+@Composable
+private fun CloudPhotoSettings(
+    mode: String,
+    configured: Boolean,
+    currentEndpoint: String?,
+    onSelectMode: (String) -> Unit,
+    onConfigure: (String, CharArray) -> String?,
+    onDisconnect: () -> Unit,
+) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    var endpoint by rememberSaveable(currentEndpoint) { mutableStateOf(currentEndpoint.orEmpty()) }
+    var pass by remember { mutableStateOf("") }
+    var consent by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    var confirmCloud by remember { mutableStateOf(false) }
+    var connectDialog by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    SettingsRow(
+        icon = Icons.Rounded.Security,
+        title = "Assistant mode",
+        supporting = when {
+            mode == "cloud" && configured -> "Cloud assistant enabled · photos still need confirmation"
+            mode == "cloud" -> "Connect a private pass to use the cloud assistant"
+            else -> "On this phone · switch any time"
+        },
+        accessibilityLabel = "Assistant mode. ${if (mode == "cloud") "Cloud assistant" else "On this phone"}.",
+        onClick = { expanded = !expanded },
+    )
+    if (expanded) {
+        Column(Modifier.fillMaxWidth().padding(start = 56.dp, end = 12.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                RadioButton(selected = mode == "local", onClick = { onSelectMode("local"); consent = false }, modifier = Modifier.size(48.dp))
+                Column {
+                    Text("Gemma · on this phone")
+                    Text("Works offline. Photos are analyzed locally.", color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                RadioButton(selected = mode == "cloud" && configured, enabled = configured,
+                    onClick = { if (configured) confirmCloud = true }, modifier = Modifier.size(48.dp))
+                Column {
+                    Text("Nemotron · cloud")
+                    Text("Your new message and up to 9 earlier messages you sent go to Metria's broker and Nebius. Saved records stay on this phone.",
+                        color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            if (!configured) {
+                Text("Connect your private evaluator pass. The pass is exchanged for a protected access credential and is not saved by the app.",
+                    color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall)
+                Button(onClick = { connectDialog = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                    Text("Connect Nemotron")
+                }
+            } else if (mode == "local") {
+                OutlinedButton(onClick = { confirmCloud = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                    Text("Use Nemotron cloud assistant")
+                }
+            }
+            if (configured) {
+                if (mode == "cloud") TextButton(onClick = { onSelectMode("local"); consent = false }, modifier = Modifier.heightIn(min = 48.dp)) {
+                    Text("Switch to Gemma on this phone")
+                }
+                TextButton(onClick = onDisconnect, modifier = Modifier.heightIn(min = 48.dp)) {
+                    Text("Disconnect cloud pass")
+                }
+            }
+        }
+    }
+    if (confirmCloud) AlertDialog(
+        onDismissRequest = { confirmCloud = false },
+        title = { Text("Use the cloud assistant?") },
+        text = { Text("Cloud chat sends your new message plus up to 9 earlier messages you sent to Metria's broker and Nebius. Saved meals and weight records stay in the vault on this phone. A meal photo and its optional details are sent only after you review and confirm that photo.") },
+        confirmButton = { Button(onClick = { onSelectMode("cloud"); confirmCloud = false }) { Text("Use Nemotron") } },
+        dismissButton = { TextButton(onClick = { confirmCloud = false }) { Text("Keep this phone") } },
+    )
+    if (connectDialog) AlertDialog(
+        onDismissRequest = { if (!busy) connectDialog = false },
+        title = { Text("Connect Nemotron") },
+        text = {
+            Column(Modifier.fillMaxWidth().imePadding().heightIn(max = 440.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Metria sends the private pass to your chosen broker for activation. After activation, the app keeps only an encrypted access credential.", color = MetriaColors.InkMuted)
+                OutlinedTextField(endpoint, { endpoint = it }, label = { Text("Metria broker address") },
+                    placeholder = { Text("https://broker.example") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                    singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(pass, { pass = it; error = null }, label = { Text("Private evaluator pass") },
+                    visualTransformation = PasswordVisualTransformation(), singleLine = true, modifier = Modifier.fillMaxWidth())
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(consent, { consent = it }, modifier = Modifier.size(48.dp))
+                    Text("I agree to send my new message and up to 9 earlier messages I sent when I use Nemotron. I will confirm each meal photo before it is sent.",
+                        modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                }
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            }
+        },
+        confirmButton = { Button(enabled = !busy && consent && pass.isNotBlank() && endpoint.isNotBlank(), onClick = {
+            val secret = pass.toCharArray()
+            pass = ""
+            busy = true
+            error = null
+            scope.launch {
+                val failure = withContext(Dispatchers.IO) { onConfigure(endpoint, secret) }
+                secret.fill('\u0000')
+                busy = false
+                error = failure
+                if (failure == null) {
+                    connectDialog = false
+                    onSelectMode("cloud")
+                }
+            }
+        }) { Text(if (busy) "Connecting…" else "Connect and enable Nemotron") } },
+        dismissButton = { TextButton(enabled = !busy, onClick = { connectDialog = false }) { Text("Cancel") } },
     )
 }
 
@@ -498,14 +639,18 @@ private fun ArchivePassphraseDialog(onDismiss: () -> Unit, onConfirm: (CharArray
 }
 
 @Composable
-private fun PrivacyDetailsDialog(onDismiss: () -> Unit) {
+private fun PrivacyDetailsDialog(mode: String, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Your privacy in Metria") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 PrivacyDetail("Encrypted records", "Weights, meals, goals, cycle context, and saved dishes stay in your protected vault.")
-                PrivacyDetail("Local assistance", "The assistant model processes meal photos and prompts on this phone. Temporary originals are deleted after processing.")
+                if (mode == "cloud") {
+                    PrivacyDetail("Cloud assistance", "When cloud mode is connected and you use a cloud feature, that request is sent through Metria's broker to Nebius for processing. Saved wellness records remain in the encrypted vault on this phone. Meal photos and their optional details require a separate confirmation before sending.")
+                } else {
+                    PrivacyDetail("Local assistance", "The assistant model processes meal photos and prompts on this phone. Temporary originals are deleted after processing.")
+                }
                 PrivacyDetail("Spelling help", "Metria may check up to three possible misspelled words individually with your phone's selected spell checker. That service follows its own privacy settings. Your full question and saved records are not provided to it.")
                 PrivacyDetail("Member-controlled recovery", "Nothing syncs automatically. Only an encrypted archive you create can restore your records elsewhere.")
                 PrivacyDetail("Biometric protection", "Android tells Metria only whether unlock succeeded. Metria never receives or stores your fingerprint.")
@@ -524,14 +669,18 @@ private fun PrivacyDetail(title: String, body: String) {
 }
 
 @Composable
-private fun AssistantDetailsDialog(status: ModelStatus, onDismiss: () -> Unit) {
+private fun AssistantDetailsDialog(status: ModelStatus, mode: String, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Local assistant") },
+        title = { Text(if (mode == "cloud") "Cloud assistant" else "Local assistant") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(assistantStatusSummary(status.state), style = MaterialTheme.typography.titleSmall)
-                Text("The assistant model runs on this phone. Metria does not send your prompts, photos, or records to its servers.", color = MetriaColors.InkMuted)
+                Text(if (mode == "cloud") {
+                    if (status.cloudReady) "Connected and ready when you use a cloud feature" else "Connect your private pass to enable the cloud assistant"
+                } else assistantStatusSummary(status.state), style = MaterialTheme.typography.titleSmall)
+                Text(if (mode == "cloud") {
+                    "Requests you submit in cloud mode go through Metria's broker to Nebius. Meal photos need a separate review and confirmation. Saved records stay in your encrypted vault on this phone."
+                } else "The assistant model runs on this phone. Metria does not send your prompts, photos, or records to its servers.", color = MetriaColors.InkMuted)
                 Text("Spelling help may check up to three possible misspelled words individually with your phone's selected spell checker, following that service's privacy settings. Your full question and saved records are not provided to it.", color = MetriaColors.InkMuted)
                 Text("Model storage: ${formatStorage(status.expectedBytes)}", color = MetriaColors.InkMuted)
                 Text("Removing the app removes both the model and your local vault unless you first create a recovery archive.", color = MetriaColors.InkMuted)

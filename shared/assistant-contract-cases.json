@@ -1,0 +1,333 @@
+[
+  {
+    "name": "read_selected_meal",
+    "arguments": {},
+    "accepted": true
+  },
+  {
+    "name": "read_selected_meal",
+    "arguments": {
+      "save": true
+    },
+    "accepted": false
+  },
+  {
+    "name": "read_latest_meal",
+    "arguments": {},
+    "accepted": true
+  },
+  {
+    "name": "read_latest_meal",
+    "arguments": {
+      "save": true
+    },
+    "accepted": false
+  },
+  {
+    "name": "read_progress_overview",
+    "arguments": {
+      "period": "today"
+    },
+    "accepted": true
+  },
+  {
+    "name": "read_progress_overview",
+    "arguments": {
+      "period": "today",
+      "save": true
+    },
+    "accepted": false
+  },
+  {
+    "name": "read_nutrition_summary",
+    "arguments": {
+      "period": "today"
+    },
+    "accepted": true
+  },
+  {
+    "name": "read_nutrition_summary",
+    "arguments": {
+      "period": "today",
+      "save": true
+    },
+    "accepted": false
+  },
+  {
+    "name": "read_weight",
+    "arguments": {
+      "from_days_ago": 0,
+      "to_days_ago": 0
+    },
+    "accepted": true
+  },
+  {
+    "name": "read_weight",
+    "arguments": {
+      "from_days_ago": 0,
+      "to_days_ago": 0,
+      "save": true
+    },
+    "accepted": false
+  },
+  {
+    "name": "read_meals",
+    "arguments": {
+      "days_ago": 0
+    },
+    "accepted": true
+  },
+  {
+    "name": "read_meals",
+    "arguments": {
+      "days_ago": 0,
+      "save": true
+    },
+    "accepted": false
+  },
+  {
+    "name": "read_day_nutrition",
+    "arguments": {
+      "days_ago": 0
+    },
+    "accepted": true
+  },
+  {
+    "name": "read_day_nutrition",
+    "arguments": {
+      "days_ago": 0,
+      "save": true
+    },
+    "accepted": false
+  },
+  {
+    "name": "search_saved_dishes",
+    "arguments": {
+      "query": "rice"
+    },
+    "accepted": true
+  },
+  {
+    "name": "search_saved_dishes",
+    "arguments": {
+      "query": "rice",
+      "save": true
+    },
+    "accepted": false
+  },
+  {
+    "name": "draft_meal",
+    "arguments": {},
+    "accepted": true
+  },
+  {
+    "name": "draft_meal",
+    "arguments": {
+      "save": true
+    },
+    "accepted": false
+  },
+  {
+    "name": "confirm_meal_draft",
+    "arguments": {},
+    "accepted": true
+  },
+  {
+    "name": "confirm_meal_draft",
+    "arguments": {
+      "save": true
+    },
+    "accepted": false
+  },
+  {
+    "name": "decline_meal_draft",
+    "arguments": {},
+    "accepted": true
+  },
+  {
+    "name": "decline_meal_draft",
+    "arguments": {
+      "save": true
+    },
+    "accepted": false
+  },
+  {
+    "name": "adjust_current_draft_portion",
+    "arguments": {
+      "grams": 1
+    },
+    "accepted": true
+  },
+  {
+    "name": "adjust_current_draft_portion",
+    "arguments": {
+      "grams": 1,
+      "save": true
+    },
+    "accepted": false
+  },
+  {
+    "name": "replace_current_draft_food",
+    "arguments": {
+      "replacement_name": "rice"
+    },
+    "accepted": true
+  },
+  {
+    "name": "replace_current_draft_food",
+    "arguments": {
+      "replacement_name": "rice",
+      "save": true
+    },
+    "accepted": false
+  },
+  {
+    "name": "read_meals",
+    "arguments": {
+      "days_ago": 0,
+      "meal_slot": null
+    },
+    "accepted": true
+  },
+  {
+    "name": "read_meals",
+    "arguments": {
+      "days_ago": 1.0,
+      "meal_slot": "lunch"
+    },
+    "accepted": true
+  },
+  {
+    "name": "read_meals",
+    "arguments": {
+      "days_ago": "1"
+    },
+    "accepted": false
+  },
+  {
+    "name": "read_meals",
+    "arguments": {
+      "days_ago": true
+    },
+    "accepted": false
+  },
+  {
+    "name": "read_meals",
+    "arguments": {
+      "days_ago": 91
+    },
+    "accepted": false
+  },
+  {
+    "name": "read_meals",
+    "arguments": {
+      "days_ago": -1
+    },
+    "accepted": false
+  },
+  {
+    "name": "read_meals",
+    "arguments": {
+      "days_ago": 0,
+      "meal_slot": "brunch"
+    },
+    "accepted": false
+  },
+  {
+    "name": "read_weight",
+    "arguments": {
+      "from_days_ago": 0,
+      "to_days_ago": 1
+    },
+    "accepted": false
+  },
+  {
+    "name": "read_progress_overview",
+    "arguments": {
+      "period": "month"
+    },
+    "accepted": false
+  },
+  {
+    "name": "read_progress_overview",
+    "arguments": {
+      "period": null
+    },
+    "accepted": false
+  },
+  {
+    "name": "read_progress_overview",
+    "arguments": {},
+    "accepted": false
+  },
+  {
+    "name": "adjust_current_draft_portion",
+    "arguments": {
+      "grams": 2000
+    },
+    "accepted": true
+  },
+  {
+    "name": "adjust_current_draft_portion",
+    "arguments": {
+      "grams": 2001
+    },
+    "accepted": false
+  },
+  {
+    "name": "adjust_current_draft_portion",
+    "arguments": {
+      "grams": 0
+    },
+    "accepted": false
+  },
+  {
+    "name": "adjust_current_draft_portion",
+    "arguments": {
+      "grams": 1.5
+    },
+    "accepted": false
+  },
+  {
+    "name": "replace_current_draft_food",
+    "arguments": {
+      "replacement_name": {
+        "name": "rice"
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "replace_current_draft_food",
+    "arguments": {
+      "replacement_name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    "accepted": false
+  },
+  {
+    "name": "search_saved_dishes",
+    "arguments": {
+      "query": "  "
+    },
+    "accepted": false
+  },
+  {
+    "name": "search_saved_dishes",
+    "arguments": {
+      "query": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    "accepted": true
+  },
+  {
+    "name": "search_saved_dishes",
+    "arguments": {
+      "query": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    "accepted": false
+  },
+  {
+    "name": "delete_everything",
+    "arguments": {},
+    "accepted": false
+  }
+]

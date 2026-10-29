@@ -1,0 +1,15 @@
+{
+  "synthetic": true,
+  "generator": "imagegen built-in tool",
+  "created_on": "2026-10-27",
+  "sha256": "07b462e21ba946d0ecfaa1612d5e9ef3b1608ab80d5afe16add2e40815ff4306",
+  "generation_prompt": "Use case: photorealistic-natural. Create one synthetic food photograph for a software vision test fixture, square composition. A plain white dinner plate on an unmarked light wooden table, photographed from a slightly elevated angle in soft daylight. On the plate: one grilled chicken breast with visible grill marks, a small mound of cooked white rice, steamed broccoli florets, and a few carrot slices. Realistic textures, ordinary home meal, entire plate visible. No people, hands, faces, text, logos, packaging, menus, utensils, personal possessions or identifiable locations. The image is fictional and intended solely for food recognition testing. No numeric portion labels or nutrition information.",
+  "expected_visible_foods": [
+    "chicken breast",
+    "white rice",
+    "broccoli",
+    "carrot"
+  ],
+  "ground_truth_grams": null,
+  "notes": "AI-generated fixture, not a real meal or measured portion. Expected foods are for human evaluation and are never sent to the model."
+}

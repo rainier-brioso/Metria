@@ -1,0 +1,45 @@
+Your nutrition assistant, under your control. Local AI. Private records. Cloud when you choose.
+
+This is Metria. I choose a fictional food photo and confirm cloud analysis.
+
+NVIDIA Nemotron returns a draft with foods, portions, and uncertainty.
+
+I review it, then choose to save.
+
+Now I ask: “How many calories were in my latest meal?”
+
+Metria answers from the meal saved on this phone.
+
+The model selects a tool. Metria reads the local record and checks the answer.
+
+Nutrition is calculated from food data and portions, rather than invented by the chat model.
+
+The assistant proposes. The user decides what gets saved.
+
+Gemma assists on-device. MiniLM can route supported local questions without invoking Gemma.
+
+Or choose Nemotron through Nebius, which selects tools for cloud chat.
+
+Cloud processes submitted content. Saved records and tool execution stay on your phone.
+
+For this demo, the broker runs locally in Docker.
+
+You enter your own Nebius API key at a hidden prompt.
+
+The app connects through a temporary HTTPS tunnel, using a private access pass.
+
+The broker keeps the provider key outside the app and enforces request limits.
+
+The cloud model is NVIDIA Nemotron 3.5 Super VL, served by Nebius Token Factory.
+
+It handles the photo draft and chat decisions. Record tools execute on the phone.
+
+Photo analysis is an estimate. Hidden ingredients and uncertain portions still need review.
+
+The app validates model output, and saving always requires your confirmation.
+
+Cloud mode needs internet and Nebius credits. This demo has no permanently hosted broker.
+
+To reproduce it, run Docker locally with your own key and follow the setup guide.
+
+Metria brings meal review and record-grounded answers into one workflow.

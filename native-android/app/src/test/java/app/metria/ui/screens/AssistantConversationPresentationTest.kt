@@ -248,6 +248,16 @@ class AssistantConversationPresentationTest {
     }
 
     @Test
+    fun `cloud request stays pending until the cloud turn leaves its in flight operation`() {
+        val gate = AssistantPendingSubmissionGate()
+        val token = gate.begin()!!
+
+        assertEquals(11L, gate.reconcile(token, 11L, null, "absent", "agent_turn", cloudReady = true))
+        assertFalse(gate.observeLifecycle(11L, "absent", "agent_turn", cloudReady = true))
+        assertTrue(gate.observeLifecycle(11L, "absent", "agent_reply", cloudReady = true))
+    }
+
+    @Test
     fun `cancellation clears pending submission`() {
         val gate = AssistantPendingSubmissionGate()
         val cancelled = gate.begin()!!

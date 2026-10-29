@@ -1,5 +1,22 @@
 # Metria local assistant agent
 
+Provider contract unification (approved 2026-10-28): the shared JSON contract in
+`shared/assistant-contract.json` is authoritative for common policy and tool
+schemas/limits. Native SDK declarations are generated at build time; the cloud
+broker uses the same metadata. Existing typed host action mapping, contextual
+permissions, freshness, record grounding and reviewed Save remain independent of
+model/provider output. See `shared/README.md` for generation and parity tests.
+
+Optional cloud revision (approved 2026-10-27): member now chooses Gemma/local or
+NVIDIA Super VL/cloud in onboarding or Settings. Cloud text/photo drafts retain
+host action/read checks, parser, deterministic nutrition and reviewed Save.
+Member-authored recent messages may form bounded cloud context; local
+record-derived assistant replies/evidence must not be replayed to the provider.
+The broker has no independent vault access. Cloud-mode voice is Android on-device
+recognition followed by validated text submission, not audio input to Super VL.
+This does not waive existing host guards or constitute phone/hosting acceptance.
+See `cloud-assistant-integration.md` and the Nebius checkpoint.
+
 Bare consumption statements (approved 2026-10-15) may probe saved dishes without
 requiring “my saved/usual”. A typed host-only intent binds one local query; exact
 matches can offer unsaved review and ambiguity requires choice. A validated

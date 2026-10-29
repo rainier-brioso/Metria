@@ -1,0 +1,3 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Onboarding recording build: never launch app.metria through its weight shortcut. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android" />

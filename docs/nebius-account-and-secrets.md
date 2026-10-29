@@ -1,5 +1,56 @@
 # Nebius account, secrets and member access
 
+## Hosted judge demo using operator credits - direction, 2026-10-27
+
+Member proposes using the reported 25 EUR promotional balance for minimal live
+tests, recording and subsequent judge evaluation. Prefer a downloadable prepared
+APK connecting to an operator-hosted HTTPS broker, with the operator's provider
+key held only by that broker. The judge should not need a computer, ADB or their
+own provider credentials for this primary path. Self-run judge credentials below
+remain a reproducibility option. No deployment or inference was performed by
+recording this direction, and no unbounded spend is authorized.
+
+Before execution, verify actual currency/balance, Token Factory applicability
+and expiry in the account. Current Builder Program terms advertise USD 25 and
+90-day expiry from issuance; do not assume this account has identical terms.
+Judge access must remain functional through December 15, 2026. Preserve most
+credits for evaluation; establish an enforceable small initial test budget,
+durable global/per-client quotas and controlled demo enrollment. Hosting must
+preserve quota/replay state across restart. Do not embed the provider key or a
+shared privileged broker credential in the public APK. Fictional sample data
+remains isolated from real member records. Deployment, Android integration and
+actual live cost/compatibility verification remain open.
+
+## Judge-owned credentials - approved requirement, 2026-10-27
+
+The member requires a judge to be able to supply their own Nebius Token Factory
+API key and run the fictional-data demo from the public repository. Judge access
+must not depend on the author's key, credits, machine or private configuration.
+For this self-run demo the judge operates their own local broker; the key stays
+in that broker process, outside the APK, repository, chat and logs. This is the
+demo evaluator setup, distinct from the operator-funded member service below.
+
+Required delivery, not yet implemented:
+
+- Document prerequisites and exact commands in the root/broker README, with
+  masked key entry, explicit endpoint/model selection and no committed secrets.
+- Provide a no-network configuration check followed by an explicitly enabled
+  single live sample request. Keep the existing synthetic default available.
+- Ship invented English sample data and expected outcomes. Reject invalid
+  configuration with actionable sanitized errors; document unavailable models,
+  authentication/credit failures, timeout and invalid model output.
+- Report actual execution mode and safe validation/latency/usage evidence so a
+  synthetic response cannot be mistaken for live Nemotron inference.
+- Verify from a fresh checkout using only the documented steps and the
+  evaluator's credentials. No author secret or pre-existing local state may be
+  required. Full reproducible demo acceptance includes the intended visible
+  sample experience; a successful desktop probe alone does not prove Android
+  integration or satisfy the separate working-demo delivery gate.
+
+The evaluator needs available account credits/billing and an accessible model;
+those provider prerequisites must be explicit. This requirement does not enable
+real member-data transfer or public hosting.
+
 Status: setup checkpoint reached, 2026-10-03. The provider adapter passes fake
 localhost tests; no real account, key, model, price cap or live request has been
 verified. The broker CLI still runs synthetic mode even if provider variables

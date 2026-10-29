@@ -141,11 +141,34 @@ class MealEntryResultPolicyTest {
         assertNull(MealEntryResultPolicy.transcriptForDraft(8, status(8, "coach_audio", spoken = " ")))
     }
 
+    @Test fun `cloud meal entry accepts the local transcript without claiming Gemma is loaded`() {
+        val cloudStart = status(8, "coach_audio", state = "thinking", cloudReady = true)
+        val cloudComplete = status(8, "coach_audio", state = "absent", spoken = "rice and chicken", cloudReady = true)
+        assertEquals(8L, MealEntryResultPolicy.startedAfter(status(7), cloudStart, "coach_audio"))
+        assertEquals("rice and chicken", MealEntryResultPolicy.transcriptForDraft(8, cloudComplete))
+    }
+
+    @Test fun `cloud clarification and connection failure survive entry presentation without stale feedback`() {
+        val clarification = status(8, "meal", state = "absent", cloudReady = true)
+            .copy(cloudSelected = true, coachReply = "Did you mean rice?")
+        assertEquals("Did you mean rice?", MealEntryResultPolicy.feedback(8, clarification))
+        assertNull(MealEntryResultPolicy.feedback(7, clarification))
+        assertNull(MealEntryResultPolicy.feedback(8, clarification.copy(state = "thinking")))
+        val failure = clarification.copy(coachReply = null, assistantDiagnostic = "Could not reach the cloud assistant.")
+        assertEquals(failure.assistantDiagnostic, MealEntryResultPolicy.feedback(8, failure))
+        assertTrue(MealEntryResultPolicy.canPrepare(clarification))
+        assertFalse(MealEntryResultPolicy.canPrepare(clarification.copy(state = "thinking")))
+        assertFalse(MealEntryResultPolicy.canPrepare(clarification.copy(state = "loaded", cloudReady = false)))
+        assertTrue(MealEntryResultPolicy.canPrepare(status(state = "loaded")))
+        assertFalse(MealEntryResultPolicy.canPrepare(status(state = "absent")))
+    }
+
     private fun status(
         id: Long? = null,
         operation: String? = null,
         state: String = "loaded",
         spoken: String? = null,
+        cloudReady: Boolean = false,
         draftCategory: String? = null,
         debugResponse: String? = null,
     ) = ModelStatus(
@@ -177,5 +200,6 @@ class MealEntryResultPolicyTest {
         latestImageAudit = null,
         mealFoodCorrection = MealFoodNameCorrectionStatus(),
         debugLatestMealDraftCategory = draftCategory,
+        cloudReady = cloudReady,
     )
 }

@@ -1,5 +1,157 @@
 # Metria product plan
 
+Member-confirmed cloud voice draft (2026-10-29): after restarting the broker,
+member reports a correct draft. Transcript -> Nemotron -> reviewable meal draft
+accepted; provider label also observed. Other visual/device/save gates remain
+as documented. README now leads with local AI, private records and explicit
+cloud choice, plus reproducible BYOK setup and honest prototype limits.
+
+Cloud voice meal follow-up (2026-10-29): fictional responses identify a hidden
+clarification and malformed nested JSON. Prepared strict structured meal output,
+unchanged native validation, usage on rejection and visible clarification/error.
+Added shared provider labels to Chat, meal entry and photo processing, with local
+OCR distinguished. Broker 130 and Android 770 tests pass; normal APK installed
+with explicit approval, Demo untouched. Layout/live acceptance tracked in
+docs/nebius-assistant-checkpoints.md. Restart required for rebuilt broker image.
+
+Local Docker ownership repair (2026-10-29): resolved Windows bind-mount
+directory ownership preventing non-root private-mode setup. Start automatically
+prepares only the two known directories; broker remains UID 10001. Existing
+pass/files/quotas retained. 126 broker tests plus two new boundary tests pass;
+isolated repeated starts/capture/exhausted quota verified. Current directory
+permissions repaired; member live startup and phone acceptance pending.
+
+Demo onboarding inset repair (2026-10-29): common onboarding reserves system
+safe areas and scrolls content independently of the footer, wraps provider
+choices and saves page state. Installed only Metria Demo; normal app unchanged.
+769 tests and Debug/Demo build pass. Physical portrait/three-button navigation,
+font scale 1.3 and landscape scrolling checked; page 1 left ready, original
+system settings restored. Targeted evidence: docs/design/evidence/onboarding-insets/verification.md.
+
+Separate recording app (2026-10-29): Metria Demo (app.metria.demo) built and
+installed alongside the untouched app.metria, with distinct UID, label and file
+authorities. Full Android gate passes 769 tests plus Debug/Demo APK builds.
+First onboarding page visually confirmed; left unadvanced, no copied/downloaded
+model, vault or cloud credentials. Existing bottom button/navigation overlap
+observed, separate visual follow-up pending; no full onboarding acceptance claim.
+See docs/demo/onboarding-installation.md and the current Nebius checkpoint.
+
+Local Docker demo (2026-10-28): member defers permanent broker hosting and confirms
+cloud latest-meal calorie reply works in the installed app. Added self-contained
+local Docker image and Windows one-command launcher, preserving existing private
+pass/quota/capture state. 125 broker tests pass; Docker public HTTPS/auth check
+and isolated quota persistence across container replacement pass without inference.
+Member's Docker-to-phone fictional photo/chat rerun remains pending. See
+broker/DOCKER-LOCAL.md. No new APK or paid hosting required; Nebius inference
+remains remote and consumes Token Factory credits.
+
+Cloud reply-scope APK installed (2026-10-28): explicitly authorized in-place
+update succeeded on Samsung SM-S928B; cold launch Status ok, 1446 ms. The
+769-test APK preserves storage and saved cloud connection. Member phone check
+of latest-meal calorie answer remains pending; no broker restart required.
+
+Cloud local-reply scope repair (2026-10-28): fictional capture confirms Nemotron
+now correctly selects read_latest_meal. Android cloud path omitted the frozen
+date retained by local fast reads, causing the subsequent local reply rejection.
+Cloud now reuses existing meal/weight scope resolvers. Exact-question regression
+with fictional nutrition and stale/provenance rejection passes; complete Android
+gate passes 769 tests/build. Updated APK ready; installation and phone acceptance
+pending. Broker restart is unnecessary for this Android-only repair.
+
+Shared-contract APK installed (2026-10-28): member retained private passes after
+the accountless-access investigation. Verified 767-test APK installed in place
+and launched on Samsung SM-S928B / Android 16 without clearing storage. Broker
+restart and actual cloud read/answer acceptance remain pending; no automatic
+enrollment, Firebase dependency or new account flow introduced.
+
+Provider contract unification (2026-10-28): implemented one canonical JSON for
+common assistant rules, examples and 13 tool schemas/limits. Native LiteRT
+declarations are generated; broker consumes the same source. Shared argument
+validation precedes unchanged contextual host authorization. Android gate passes
+767 tests/build; broker 123 tests, including 47 common conformance cases. Local
+container rebuilt and shares the source fingerprint embedded in the APK. New APK
+not installed; live Gemma/cloud selection and physical acceptance remain open.
+See `shared/README.md` and the current Nebius checkpoint.
+
+Cloud chat repair (2026-10-28): actual fictional captures showed model refusal
+prose instead of the required local read action. Broker prompt had omitted tool
+definitions; now enumerates names/arguments for the existing task allowlist and
+explains on-device execution. Native verification stays intact. Broker gate:
+121 tests pass. Member must restart the local broker before another phone check;
+no APK update required, live chat acceptance still pending.
+
+First live app cloud draft (2026-10-28): member confirms a visible meal draft
+looks good. Matching private fictional capture validates Super VL HTTP 200 with
+no errors/truncation: 8.9 seconds, 3754 total tokens, USD 0.0024018 estimated.
+One phone/tunnel/broker/provider draft round trip is evidenced; reviewed save,
+other flows and hosted evaluator acceptance remain open. Details are recorded
+in `nebius-assistant-checkpoints.md`.
+
+Fictional app diagnostics (2026-10-28): member approved complete provider
+response/error capture in the local tunnel's explicit fictional-data mode.
+`--capture-fictional-responses` saves private, bounded, key-redacted provider
+bodies/errors before validation for photo and chat. Default/hosted paths retain
+no content. Broker suite passes 119 tests; live phone round trip remains open.
+See `broker/LOCAL-APP-TEST.md` for restart command and capture filenames.
+
+Local cloud rehearsal (2026-10-28): before hosting, use the prepared temporary
+HTTPS tunnel and private 10-attempt pass. Public TLS health and unauthorized
+request rejection verified without provider inference. Persistent rehearsal
+quotas and metadata-only token/cost estimates are in `broker/local_tunnel.py`;
+steps and DNS caveat are in `broker/LOCAL-APP-TEST.md`. App/phone round trip is
+still pending; member must start live mode with their private key.
+
+Full optional cloud integration (2026-10-28): member requests Gemma/local versus
+Nemotron/cloud choice in onboarding and Settings for photos, chat/drafts and
+voice. Android and quota-bound broker implementation is present; no new paid
+inference, hosting or phone installation. Real content is excluded from debug
+capture; member-only context prevents replaying local record replies. Cloud voice
+is Android on-device recognition then text. Backend 106-test gate and reduced
+Docker image pass. Final Android test/debug gate passes 760 tests with zero
+failures/errors/skips; APK generated, not installed. Physical/hosting acceptance
+is tracked in `nebius-assistant-checkpoints.md` and `cloud-assistant-integration.md`.
+
+Super VL live vision result (2026-10-27): inspected the member-run synthetic meal
+capture. HTTP 200, valid reviewed draft, all four intended foods identified,
+10.828 s, 2,636 total tokens and approximately $0.0013158 at recorded uncached
+rates. Gram accuracy is unverified. Full private input/output evidence is retained;
+no agent provider call. See `nebius-assistant-checkpoints.md`. Android/cloud
+migration and broader evaluation remain open.
+
+Super VL vision preparation (2026-10-27): member authorizes a synthetic food-photo
+test with full local input/output retention. Desktop probe and generated pinned
+fixture are ready; offline preparation and 84 broker tests pass. No live Super VL
+call or Android migration yet (operator key is only in their terminal). Current
+next step is the member-run vision command, then inspect captured response and
+usage before retrying. See `nebius-assistant-checkpoints.md` and
+`../broker/VISION-PROBE.md`. This supersedes the text-only nutrition retry as the
+immediate next experiment.
+
+Nebius fictional debug capture (2026-10-27): member approves explicit local
+response retention for diagnosis. `probe.py --live --debug-response` now records
+bounded/redacted responses and validation failures in private Git-ignored files;
+default hosted/app logging remains unchanged. Gate passes 77 broker tests,
+independent review and Docker build. No additional external inference. Next:
+one member-run nutrition probe with capture and inspect evidence before retrying.
+See `nebius-assistant-checkpoints.md` and `../broker/README.md`.
+
+Nebius live smoke (2026-10-27): member reports the first validated fictional
+weight request using Nemotron Lightning: 765 ms, 397 input/76 output tokens.
+This is one provider/contract pass; remaining fictional scenarios, hosting,
+Android judge integration and final APK acceptance remain open. Evidence and
+the correction to earlier local request-count assumptions are in
+`nebius-assistant-checkpoints.md`.
+
+Nebius judge demo (2026-10-27): member approves private evaluator passes,
+server-enforced consumption limits and a fictional-data Nemotron probe before
+hosting. Backend preparation passes 54 broker tests, independent review, Docker
+build and a synthetic Linux container smoke check; no provider
+call, hosting or Android integration is accepted yet. The intended primary
+delivery is a prepared APK using operator credits; judge-owned keys remain an
+optional self-run path. See `nebius-assistant-checkpoints.md` and
+`../broker/DEPLOYMENT.md`. Nebius AI Cloud Serverless can host containers but
+is separate from Token Factory inference and its promotional credits.
+
 Demo checkpoint (2026-10-27): member explicitly schedules the remaining assistant
 physical acceptance after the hackathon demo and authorizes commit/push of pending
 changes. The actionable checklist is `m4-assistant-checkpoints.md`, section

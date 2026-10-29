@@ -14,6 +14,24 @@ revised first.
 
 ## Data boundary
 
+**Fictional local test capture - 2026-10-28:** member explicitly requests complete
+model responses and errors during fictional app tests. The local tunnel's
+explicit fictional-capture flag permits private bounded raw provider output,
+HTTP error bodies and redacted original exception traces for these tests only.
+No production/hosted logging or retention of real member content is authorized.
+Prior chat context must also be fictional; response bodies may echo that input.
+
+**Cloud provider decision - 2026-10-27:** member explicitly authorizes optional
+cloud assistant integration, selected in onboarding or Settings, alongside local
+Gemma. The selected photo/description or submitted text and bounded necessary
+conversation context may leave the device after disclosure and explicit action.
+No silent fallback, bulk export, automatic Save or server content logging. Cloud
+voice uses Android on-device speech recognition then validated text; unsupported
+devices offer typing rather than network ASR. Encrypted storage, deterministic
+nutrition, grounding and reviewed-save rules remain. Scope and acceptance:
+`cloud-assistant-integration.md`. Earlier blanket photo/assistant exclusions are
+superseded only for this explicit route.
+
 Chat drink-quantity extension (2026-10-24, approved implementation in progress):
 typed and transcribed mL/measured-serving expressions may update an unsaved draft
 only using the packaged food's existing validated conversion. Unsupported or

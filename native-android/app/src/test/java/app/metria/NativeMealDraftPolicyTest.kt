@@ -6,6 +6,25 @@ import org.junit.Test
 class NativeMealDraftPolicyTest {
     private val validProposal = """{"kind":"meal_proposal","items":[{"name":"rice","description":"cooked rice","visible_portion":"one bowl","estimated_grams_range":{"min":120,"max":180},"preparation":"cooked","confidence":"medium","role":"main_food"}],"assumptions":["portion uncertain"],"questions":[],"overall_confidence":"medium"}"""
 
+    @Test fun `cloud confirmation requires a clear matching member reply`() {
+        val source = "I had cooked rice"
+        val candidate = NativeMealDraftPolicy.candidate(41L, 7L, source)!!
+        val confirm = PrivateCoachToolCall("confirm_meal_draft")
+        val decline = PrivateCoachToolCall("decline_meal_draft")
+        assertEquals(source, NativeMealDraftPolicy.confirmationDescription(
+            confirm, null, candidate, 41L, 7L, currentMemberReply = "Yes, please",
+        ))
+        assertNull(NativeMealDraftPolicy.confirmationDescription(
+            confirm, null, candidate, 41L, 7L, currentMemberReply = "No, thanks",
+        ))
+        assertTrue(NativeMealDraftPolicy.declinesCandidate(
+            decline, null, candidate, 41L, 7L, currentMemberReply = "No, thanks",
+        ))
+        assertFalse(NativeMealDraftPolicy.declinesCandidate(
+            decline, null, candidate, 41L, 7L, currentMemberReply = "Yes",
+        ))
+    }
+
     @Test fun `native draft tool accepts no model-authored replacement or save fields`() {
         val call = MetriaNativeToolCallAdapter.adapt("draft_meal", emptyMap<String, Any>())
         assertEquals(PrivateCoachToolCall(intent = "draft_meal"), call)

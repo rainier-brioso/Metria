@@ -24,6 +24,7 @@ class GemmaAudioRecorder(private val context: Context) {
     @Volatile private var recording = false
     @Volatile private var speechEvidence: RecordingSpeechEvidence? = null
     private val mainHandler = Handler(Looper.getMainLooper())
+    private var cloudRecorder: OnDeviceVoiceRecorder? = null
     private companion object {
         const val voiceThreshold = 700
         const val silenceStopMs = 1_200L
@@ -32,6 +33,11 @@ class GemmaAudioRecorder(private val context: Context) {
 
     /** Records only until local speech ends; no sound is sent outside the current app process. */
     fun start(onAutoStop: (Clip) -> Unit): Result<Unit> = runCatching {
+        if (CloudPhotoAccess(context).selectedMode() == "cloud") {
+            val local = cloudRecorder ?: OnDeviceVoiceRecorder(context).also { cloudRecorder = it }
+            local.start(onAutoStop).getOrThrow()
+            return@runCatching
+        }
         check(!recording) { "Already recording" }
         val minimum = AudioRecord.getMinBufferSize(sampleRate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         check(minimum > 0) { "This phone cannot record the required local audio format." }
@@ -83,6 +89,10 @@ class GemmaAudioRecorder(private val context: Context) {
     }
 
     fun stop(): Clip? {
+        if (cloudRecorder?.awaitingRecognition() == true) {
+            cloudRecorder?.stop()
+            return null
+        }
         if (!recording) return null
         val localSpeechEvidence = speechEvidence
         recording = false
@@ -100,7 +110,12 @@ class GemmaAudioRecorder(private val context: Context) {
         )
     }
 
-    fun cancel() { stop()?.file?.delete() }
+    fun awaitingRecognition(): Boolean = cloudRecorder?.awaitingRecognition() == true
+
+    fun cancel() {
+        cloudRecorder?.cancel()
+        stop()?.file?.delete()
+    }
 
     private fun writeWavHeader(file: File, dataBytes: Int) {
         RandomAccessFile(file, "rw").use { out ->

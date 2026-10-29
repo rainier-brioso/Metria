@@ -2,9 +2,12 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Voice is opt-in and uses only Android's explicit on-device recognizer. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <queries>
+        <intent><action android:name="android.speech.RecognitionService" /></intent>
+    </queries>
     <application
         android:allowBackup="false"
-        android:label="Metria"
+        android:label="${appLabel}"
         android:theme="@style/Theme.Metria">
         <!-- LiteRT-LM GPU delegate dependencies; CPU remains the safe fallback. -->
         <uses-native-library android:name="libvndksupport.so" android:required="false" />
@@ -26,7 +29,7 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="metria" android:host="weight" />
+                <data android:scheme="${weightScheme}" android:host="weight" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
