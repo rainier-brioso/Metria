@@ -183,9 +183,17 @@ See [Docker setup and troubleshooting](broker/DOCKER-LOCAL.md),
   Physical development checks use a Samsung SM-S928B with Android 16.
 - There is currently no permanent public broker, published GitHub APK release or
   public demo-video URL. Recording materials are in [the demo folder](docs/demo/).
-- **Before public submission:** choose and add a project open-source license,
-  publish the installable APK and the demo video, and verify the evaluator setup.
-  Model and dataset licenses are separate from the project's license.
+- **Before public submission:** publish the installable APK and the demo video,
+  and verify the evaluator setup.
 
 Development direction: [product plan](docs/plan.md). Reproducible checks and
 installation: [testing runbook](docs/TESTING.md).
+
+## License
+
+Metria's original code and documentation are licensed under the
+[MIT License](LICENSE). Copyright (c) 2026 rainier-brioso.
+
+Third-party dependencies, model artifacts and datasets retain their own licenses
+and terms. Their license files and attribution notices remain applicable; see,
+for example, the bundled [MiniLM notices](native-android/app/src/debug/assets/decision-model/minilm/NOTICE.md).
