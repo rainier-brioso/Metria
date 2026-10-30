@@ -9,7 +9,10 @@ credits.** For fully offline use, choose Gemma in the app; no broker is needed.
 Prerequisites: Docker Desktop running with **Linux containers**, PowerShell,
 internet access, and your own Nebius Token Factory API key with Super VL access.
 No host Python, cloudflared installation, GPU, USB or router configuration needed.
-The Android APK must already be installed. APK/repository publication is separate.
+Install the [evaluation APK](https://github.com/rainier-brioso/Metria/releases/tag/v0.1.0-hackathon)
+first. For the complete download/clone/app-field walkthrough, start with
+[the judge quickstart](../README.md#try-nemotron-with-your-own-nebius-key).
+Cloud mode does not require downloading Gemma or building Android.
 
 From the repository root, first verify connectivity without using a key or making
 any inference request:
@@ -30,11 +33,10 @@ ledger, cost metadata and prior fictional captures. It does not issue fresh quot
 when state already exists. Do not delete, replace, copy back an old version of, or
 run another funded instance from a duplicate of this directory.
 
-To start the app rehearsal with complete responses/errors saved for fictional
-inputs only:
+Start the app rehearsal in normal, content-free logging mode:
 
 ```powershell
-.\broker\local-docker.ps1 -CaptureFictionalResponses
+.\broker\local-docker.ps1
 ```
 
 Enter the Nebius key at the hidden prompt. The script intentionally does not pass
@@ -45,15 +47,17 @@ does not inherit it. Do not enter the key in the app or in chat.
 1. Keep the terminal open. Wait for **HTTPS broker verified** and copy that URL.
 2. Copy your private pass from `.local-state/nebius-app-test/app-test.pass` locally
    (for example, open it in Notepad). Never show it in the recording or commit it.
-3. In Metria Settings, connect Nemotron with the URL and pass. When the tunnel URL
+3. In **Privacy → Assistant mode → Connect Nemotron**, enter the URL in
+   **Metria broker address** and the pass in **Private evaluator pass**. Accept
+   the disclosure and tap **Connect and enable Nemotron**. When the tunnel URL
    changes, reconnect using the same pass and app installation. Ordinary Gemma /
    Nemotron switching preserves the connection: do not choose Disconnect.
 4. Use a fresh conversation and fictional records/photos only. Analyze
    `broker/fixtures/synthetic-meal.png`, review the draft, and save it only in a
    test installation containing fictional records. Then ask:
    **How many calories were in my latest meal?**
-5. Inspect the capture filename printed after each request and the cost estimate.
-   Captures are in `.local-state/nebius-debug-responses`; quotas remain separate.
+5. Inspect the cost estimate in the terminal. Full provider-response captures
+   require the optional fictional-debug mode below; quotas remain separate.
 6. Stop with Ctrl+C. The public URL stops working. The PC must remain running for
    someone else to use this broker. A judge can run their own clone with their own
    API key; they do not need access to your PC or your credits.
@@ -63,11 +67,15 @@ If Windows blocks the script, use a one-command, process-only policy override:
 Replace `-Action Check` with `-CaptureFictionalResponses` for the fictional test.
 No machine-wide execution policy change is required.
 
-For normal content-free operation, omit the capture flag:
+For **fictional debugging only**, opt into bounded full provider responses/errors:
 
 ```powershell
-.\broker\local-docker.ps1
+.\broker\local-docker.ps1 -CaptureFictionalResponses
 ```
+
+Captures are private files in `.local-state/nebius-debug-responses`. Do not enable
+this mode for real personal content or real prior chat. It is not required for
+the judge walkthrough.
 
 Usage totals (another terminal; no inference or key needed):
 
