@@ -17,7 +17,7 @@ Earlier, the member authorized extending the existing local pass to 20 total
 attempts, preserving 10 used attempts, all history, expiry and binding. Global
 limits remain 20; default newly issued passes still start at 10. No reset.
 
-## APK distribution preparation - 2026-10-30
+## APK release verified - 2026-10-30
 
 Member authorizes committing product changes, pushing local commits and
 publishing the APK. Video-editing materials and generated Gradle daemon config
@@ -25,8 +25,13 @@ are excluded. The normal app's debug APK is packaged as
 metria-0.1.0-hackathon.apk with SHA256SUMS.txt; no binary is added to Git.
 Android gate passes 775 tests/build, signature verification passes, and the
 APK contains MiniLM plus license notices with no private-state file paths.
-The repository is currently private; visibility is a separate publication gate.
-Release/upload availability must be verified after publication.
+Published prerelease `v0.1.0-hackathon`, targeting source commit
+`b5306731d7ac606baf09b508aea350f39123e58a`. Both assets are uploaded;
+GitHub's APK digest matches the tested local artifact:
+`c3b92389b1758a4299c693d56767a15c3bf63b3d6589d4f381544b06696ea925`.
+Release: https://github.com/rainier-brioso/Metria/releases/tag/v0.1.0-hackathon
+The repository is private, so downloads require repository access. Public judge
+availability is pending explicit repository-visibility authorization.
 
 ## Member confirms cloud voice meal draft - 2026-10-29
 
