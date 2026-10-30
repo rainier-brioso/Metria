@@ -1,5 +1,25 @@
 # Optional Nebius assistant checkpoints
 
+## Judge quickstart verified - 2026-10-30
+
+README now starts with direct APK installation and distinguishes evaluator setup
+from Android compilation. BYOK instructions cover Docker Desktop/Linux containers,
+the matching release-tag clone or ZIP, hidden Nebius key prompt, automatically
+issued private pass, exact Android connection fields/consent, generated photo,
+reviewed Save and a latest-meal query. Gemma download is explicitly unnecessary
+for cloud. The detailed Docker guide defaults to content-free logging; raw
+fictional capture is optional. Key/pass/URL roles, limits, partial nutrition,
+restart and DNS behavior are documented without changing runtime policy.
+
+Verification: anonymously cloned `v0.1.0-hackathon` into isolated ignored state
+and ran the documented PowerShell launcher with `-Action Check`. Docker build,
+public HTTPS health and authorization rejection pass; output confirms no
+provider inference. The temporary tunnel closes after the check. Existing
+funded broker/pass/ledger were not mounted, stopped or reset. Anonymous HEAD
+requests to APK, source ZIP and synthetic photo all return HTTP 200. App-field
+names were checked against the installed APK's source. No new-key phone/live
+inference or Android rebuild is claimed for this documentation-only update.
+
 ## Local/cloud meal follow-up - 2026-10-29
 
 Member confirms analyzing and saving the same meal through both Gemma and
@@ -30,8 +50,12 @@ Published prerelease `v0.1.0-hackathon`, targeting source commit
 GitHub's APK digest matches the tested local artifact:
 `c3b92389b1758a4299c693d56767a15c3bf63b3d6589d4f381544b06696ea925`.
 Release: https://github.com/rainier-brioso/Metria/releases/tag/v0.1.0-hackathon
-The repository is private, so downloads require repository access. Public judge
-availability is pending explicit repository-visibility authorization.
+Member subsequently authorized making the repository public. Anonymous APK and
+repository requests return HTTP 200. Main is protected: PR required, conversations
+resolved, force pushes/deletion blocked, administrators included, zero required
+external approvals for a solo maintainer. GitHub rejected branch protection while
+private on the current plan, so it was applied immediately after visibility
+changed. No required CI checks are configured because no workflow exists yet.
 
 ## Member confirms cloud voice meal draft - 2026-10-29
 

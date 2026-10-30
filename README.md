@@ -13,17 +13,22 @@ and trends through Today, Progress and Goals.
 The choice of where AI runs is part of the product: **Gemma on-device**, or
 **NVIDIA Nemotron on Nebius Token Factory** after you explicitly choose cloud.
 
-## Install the demo APK
+## Install the demo APK (judges)
 
-Download [Metria 0.1.0 — hackathon APK](https://github.com/rainier-brioso/Metria/releases/tag/v0.1.0-hackathon)
-from the release assets; `SHA256SUMS.txt` provides its checksum. This installs
-the normal **Metria** app (`app.metria`), not the separate onboarding recording app.
+1. On your Android phone, [download the APK directly](https://github.com/rainier-brioso/Metria/releases/download/v0.1.0-hackathon/metria-0.1.0-hackathon.apk)
+   (about 215 MB). Open the downloaded file and allow installation from that
+   browser/file manager if Android asks. No GitHub account is needed.
+2. Open **Metria**, complete onboarding and unlock the vault. Have Android's
+   screen lock and biometric unlock configured. Use fictional data for testing.
+3. Choose **Nemotron · cloud** to follow the [broker setup below](#try-nemotron-with-your-own-nebius-key).
+   **Cloud does not require downloading Gemma or building the app.** For local
+   inference instead, choose Gemma and download/prepare it inside Metria.
 
-This is a development-signed debug APK for evaluation, with MiniLM included.
-Download/prepare Gemma in the app for local inference, or follow the BYOK Nebius
-instructions below for cloud. Physical verification uses Samsung SM-S928B /
-Android 16; performance and model support on other phones are unverified.
-For updates, preserve the existing installation and signing identity.
+[Release notes and SHA-256 checksum](https://github.com/rainier-brioso/Metria/releases/tag/v0.1.0-hackathon).
+This is the normal app (`app.metria`), a development-signed debug APK with MiniLM
+included. It is not the separate onboarding recording app. Tested on Samsung
+SM-S928B / Android 16; other phones are unverified. For updates, install over
+the existing app with the same signing identity; do not uninstall to update.
 
 ## What makes Metria different
 
@@ -97,7 +102,9 @@ This is not a claim about independent providers' data-retention policies.
 See [the architecture](docs/architecture.md), [product safety rules](docs/m1-product-safety-foundation.md)
 and [cloud integration](docs/cloud-assistant-integration.md).
 
-## Run the Android app
+## Build from source (developers only)
+
+**APK users can skip this section.** It is not needed to run the Docker broker.
 
 The active application is [`native-android/`](native-android/README.md): Kotlin,
 Jetpack Compose and LiteRT-LM. The root Expo shell is historical prototype work.
@@ -133,49 +140,93 @@ the normal app's records, downloaded model or cloud connection. See
 
 ## Try Nemotron with your own Nebius key
 
-The current demo runs the broker on your PC using Docker and a temporary HTTPS
-tunnel. **Nemotron runs remotely on Nebius Token Factory.** A judge can run their
-own broker with their own Nebius key; no shared public key or funded public
-service is embedded in the APK. A provider endpoint serves the model; the broker
-adds app authentication and durable consumption limits.
+**You run the broker on your PC; NVIDIA Nemotron runs on Nebius Token Factory.**
+Requests use **your** Nebius credits. The APK contains no shared provider key.
+Your phone connects over temporary HTTPS: no USB, PC GPU, public server or router
+port forwarding is needed. Python and cloudflared are included in Docker.
 
-Prerequisites: Docker Desktop running Linux containers, PowerShell, internet,
-and a Nebius Token Factory API key with access to the model above. No USB,
-router port forwarding or PC GPU is needed for this cloud route.
+### 1. Prepare your PC and key
 
-Check the tunnel without a key or inference:
+- Windows with PowerShell and **Docker Desktop running Linux containers**.
+- Internet on the PC and phone. They do not need to share a Wi-Fi network.
+- Your [Nebius Token Factory API key](https://docs.tokenfactory.nebius.com/quickstart)
+  with credits and access to **`nvidia/Nemotron-3.5-Super-VL`**. Use the API key;
+  no dedicated GPU endpoint or Nebius server deployment is needed.
+
+### 2. Get the broker and start it
+
+With Git installed, run in PowerShell:
 
 ```powershell
-.\broker\local-docker.ps1 -Action Check
+git clone --branch v0.1.0-hackathon --depth 1 https://github.com/rainier-brioso/Metria.git
+Set-Location Metria
+powershell -NoProfile -ExecutionPolicy Bypass -File .\broker\local-docker.ps1
 ```
 
-Then start the broker in its normal, content-free logging mode:
+Without Git, [download the matching source ZIP](https://github.com/rainier-brioso/Metria/archive/refs/tags/v0.1.0-hackathon.zip),
+extract it, open PowerShell in the extracted folder containing `broker`, and
+run the last command above. The policy override applies only to this process.
+The first run builds the image and downloads its dependencies; allow time.
+
+Enter your **Nebius API key** at the hidden prompt. Wait for
+**`HTTPS broker verified: https://…trycloudflare.com`**. Keep that terminal,
+Docker and the PC running. The pass is generated automatically; you do not
+need to request one from the Metria author.
+
+In a second PowerShell window opened in the same repository folder, view it:
 
 ```powershell
-.\broker\local-docker.ps1
+notepad .\.local-state\nebius-app-test\app-test.pass
 ```
 
-1. Stop any earlier broker first. Enter your Nebius key at the hidden prompt.
-2. Wait for **HTTPS broker verified**. Keep that terminal and the PC running.
-3. In Metria's cloud settings, enter that HTTPS URL and the private pass from
-   `.local-state/nebius-app-test/app-test.pass`. The key stays in the broker.
-4. Choose cloud and try an invented meal description or the generated photo at
-   [`broker/fixtures/synthetic-meal.png`](broker/fixtures/synthetic-meal.png).
-   Use an installation and conversation containing fictional data only.
-5. Review the draft. Try the latest-meal question after saving a fictional meal.
+### 3. Connect the phone
 
-For fictional debugging only, start with `-CaptureFictionalResponses` to retain
-the complete bounded provider output/error and available usage. The pass,
-installation binding and quota ledger survive restarts. Current rehearsal limits
-are 10 attempts per pass, 20 global attempts per day and lifetime, three per
-minute, and one active request per installation. Dispatched failures consume an
-attempt. A pass expires seven days after issuance; restarts do not extend it.
-These are attempt limits, not an exact currency cap. Cost reports are estimates.
+In Metria, open **Privacy → Assistant mode → Connect Nemotron**:
 
-The URL changes when the tunnel restarts: update it in the app and retain the
-same pass. Rebuilding the image requires restarting the running broker to apply
-changes. Stopping the broker makes cloud assistance unavailable; switching to
-Gemma is an explicit user choice.
+| App field | What to enter |
+| --- | --- |
+| **Metria broker address** | The HTTPS URL printed by **HTTPS broker verified** |
+| **Private evaluator pass** | The contents of `app-test.pass` |
+
+Accept the cloud-processing disclosure and tap **Connect and enable Nemotron**.
+Check that meal/chat screens show **Cloud · Nemotron**. The Nebius API key goes
+only into the PC's hidden prompt, never into either app field. The broker URL is
+not the Nebius API endpoint. Keep the pass private; it authorizes use of your key.
+
+### 4. Try a photo, then a saved-record question
+
+On the phone, [open this generated meal photo](https://raw.githubusercontent.com/rainier-brioso/Metria/v0.1.0-hackathon/broker/fixtures/synthetic-meal.png)
+and save it to the gallery. Start a fresh chat, choose meal-photo analysis,
+select the photo, confirm sending it and prepare a draft. Review the food
+matches and portions before saving. Unmatched foods leave nutrition **partial**;
+review/select catalog matches rather than treating that subtotal as a full meal.
+Then ask **“How many calories were in my latest meal?”**.
+
+A fresh setup allows **10 attempts per pass**, 20 global attempts per day
+and lifetime, three per minute, and one active request per installation.
+Dispatched failures also consume attempts. The pass expires after seven days.
+Restarts preserve usage and expiry; these limits are not a currency cap.
+
+### Troubleshooting and stopping
+
+| Problem | What to check |
+| --- | --- |
+| Docker connection/build error | Start Docker Desktop and select Linux containers. |
+| Script finished after `-Action Check` | That is a disposable connectivity test. Start normally and use the new verified URL. |
+| Cannot connect from the phone | Check the current URL and pass, and keep the broker running. If its console reports DNS filtering, try mobile data. |
+| Requests rejected after earlier tests | The pass may be expired or exhausted; restarting does not renew it. Do not erase the quota ledger. |
+| `metria-local` already exists | Stop your earlier broker with Ctrl+C before starting another. |
+
+Ctrl+C stops the broker/tunnel; cloud then becomes unavailable. Each new tunnel
+has a new URL: reconnect with that URL and the **same pass**. Switching local/cloud
+retains connection details; use **Disconnect** only when you intend to remove them.
+For a key-free, inference-free connectivity check, run the same launcher with
+`-Action Check`; its temporary URL cannot be reused for the app.
+
+Normal startup reports technical usage/cost estimates without storing
+request/response content. For **fictional inputs only**, `-CaptureFictionalResponses`
+enables bounded provider-response/error capture. See the detailed guide below
+before enabling it.
 
 See [Docker setup and troubleshooting](broker/DOCKER-LOCAL.md),
 [the Python alternative](broker/LOCAL-APP-TEST.md), and
