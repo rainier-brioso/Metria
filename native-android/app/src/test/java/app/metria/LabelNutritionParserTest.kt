@@ -6,6 +6,94 @@ import org.junit.Test
 
 class LabelNutritionParserTest {
     @Test
+    fun recognizesEnglishAndSpanishNamesInTextAndPositionedRows() {
+        val namesByField = listOf(
+            listOf("Calorie", "Calories", "Caloria", "Calor\u00edas", "Energy", "Energy value",
+                "Energia", "Energ\u00eda", "Energetico", "Energ\u00e9tico", "Valor energ\u00e9tico"),
+            listOf("Protein", "Proteins", "Proteina", "Proteinas", "Prote\u00edna", "Prote\u00ednas"),
+            listOf("Carb", "Carbs", "Total Carb.", "Total Carbs", "Carbohydrate", "Carbohydrates",
+                "Total Carbohydrate", "Total Carbohydrates", "Carbohidrato", "Carbohidratos",
+                "Hidratos", "Hidratos de Carbono"),
+            listOf("Fat", "Fats", "Total Fat", "Total Fats", "Lipid", "Lipids", "Total Lipids",
+                "Grasa", "Grasas", "Grasa total", "Grasas totales", "Materia grasa", "Materias grasas",
+                "Lipidos", "L\u00edpidos", "L\u00edpidos totales"),
+        )
+        fun fields(draft: LabelNutritionDraft?) = listOf(draft?.caloriesKcal, draft?.proteinGrams,
+            draft?.carbohydrateGrams, draft?.totalFatGrams)
+        namesByField.forEachIndexed { fieldIndex, names ->
+            names.forEach { name ->
+                val amount = if (fieldIndex == 0) "120 kcal" else "4,5 g"
+                val expected = if (fieldIndex == 0) 120.0 else 4.5
+                for (draft in listOf(
+                    LabelNutritionParser.extract("$name $amount"),
+                    LabelNutritionParser.extract("", listOf(
+                        OcrTextLine(name, 0, 0, 180, 20), OcrTextLine(amount, 250, 0, 320, 20)
+                    )),
+                )) {
+                    assertEquals(name, expected, requireNotNull(fields(draft)[fieldIndex]), 0.0)
+                    fields(draft).forEachIndexed { otherIndex, value ->
+                        if (otherIndex != fieldIndex) assertNull("$name must not fill another nutrient", value)
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun nutrientSubtypesDoNotFillTotalFieldsInEitherLanguage() {
+        for (text in listOf("Saturated Fat 2g", "Unsaturated Fat 2g", "Polyunsaturated Fat 2g",
+            "Monounsaturated Fat 2g", "Trans Fat 2g", "Grasas saturadas 2g", "Grasas insaturadas 2g",
+            "Grasas monoinsaturadas 2g", "Grasas poliinsaturadas 2g", "L\u00edpidos saturados 2g",
+            "Net Carbs 2g", "Carbohidratos netos 2g", "Hidratos netos 2g",
+            "Energy from fat 120 kcal", "Energy value from fat 120 kcal", "Calor\u00edas de grasas 120 kcal")) {
+            assertNull(text, LabelNutritionParser.extract(text))
+            assertNull(text, LabelNutritionParser.extract("", listOf(OcrTextLine(text, 0, 0, 300, 20))))
+        }
+    }
+
+    @Test
+    fun extractsCommonSpanishPackageNamesIncludingWrappedCarbohydrates() {
+        val draft = requireNotNull(LabelNutritionParser.extract(
+            "Valor energ\u00e9tico 125 kcal\nGrasas 3,5 g\nHidratos de\nCarbono 18 g\nProte\u00ednas 6 g"
+        ))
+
+        assertEquals(125.0, draft.caloriesKcal!!, 0.0)
+        assertEquals(3.5, draft.totalFatGrams!!, 0.0)
+        assertEquals(18.0, draft.carbohydrateGrams!!, 0.0)
+        assertEquals(6.0, draft.proteinGrams!!, 0.0)
+    }
+
+    @Test
+    fun spanishPackageNamesPreserveSpatialColumnAndEnergyUnits() {
+        // Invented values; the flattened OCR order must not select column two.
+        val energyTokens = listOf("Energ\u00e9tico", "502", "kJ", "120", "kcal", "1004", "kJ", "240", "kcal")
+        val draft = requireNotNull(LabelNutritionParser.extract("Grasas 8g\nProte\u00ednas 10g", listOf(
+            OcrTextLine(energyTokens.joinToString(" "), 0, 0, 900, 20,
+                energyTokens.mapIndexed { i, token -> OcrTextElement(token, i * 100, 0, i * 100 + 60, 20) }),
+            OcrTextLine("Grasas", 0, 40, 120, 60),
+            OcrTextLine("4g", 300, 40, 330, 60), OcrTextLine("8g", 700, 40, 730, 60),
+            OcrTextLine("Hidratos de", 0, 80, 150, 100),
+            OcrTextLine("Carbono", 0, 101, 100, 121),
+            OcrTextLine("16g", 300, 80, 330, 100), OcrTextLine("32g", 700, 80, 730, 100),
+            OcrTextLine("Prote\u00ednas", 0, 140, 130, 160),
+            OcrTextLine("5g", 300, 140, 330, 160), OcrTextLine("10g", 700, 140, 730, 160),
+        )))
+
+        assertEquals(120.0, draft.caloriesKcal!!, 0.0)
+        assertEquals(4.0, draft.totalFatGrams!!, 0.0)
+        assertEquals(16.0, draft.carbohydrateGrams!!, 0.0)
+        assertEquals(5.0, draft.proteinGrams!!, 0.0)
+    }
+
+    @Test
+    fun spanishFatSubtypesAndKilojoulesCannotBecomeTotals() {
+        for (text in listOf("Grasas saturadas 2g", "Grasa saturada 2g", "Grasas trans 2g", "Energ\u00e9tico 502 kJ")) {
+            assertNull(LabelNutritionParser.extract(text))
+            assertNull(LabelNutritionParser.extract("", listOf(OcrTextLine(text, 0, 0, 300, 20))))
+        }
+    }
+
+    @Test
     fun extractsEnglishNutritionLabelValues() {
         val draft = requireNotNull(
             LabelNutritionParser.extract(

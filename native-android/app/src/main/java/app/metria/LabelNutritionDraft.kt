@@ -24,24 +24,29 @@ data class OcrTextLine(
 
 /** Deterministic extraction from local OCR text; it never treats OCR as exact. */
 object LabelNutritionParser {
-    private val carbohydrateLabel = Regex("\\b(?:total\\s+carb(?:ohydrates?)?|carbohydrates?|carbohidratos?)\\b", RegexOption.IGNORE_CASE)
-    private val fatLabel = Regex("(?<!saturated )(?<!sat )(?<!trans )\\b(?:total\\s+fat|fat|grasas?\\s+totales?)\\b", RegexOption.IGNORE_CASE)
+    // These names identify the four reviewed totals, never their subtypes.
+    private const val carbohydrateName = "(?<!net )\\b(?:(?:total\\s+)?(?:carbohydrates?|carbs?)|carbohidratos?|hidratos(?:\\s+de(?:\\s+carbono)?)?)\\b(?!\\s+netos?\\b)"
+    private const val fatName = "(?<!saturated )(?<!sat )(?<!trans )(?<!unsaturated )(?<!polyunsaturated )(?<!monounsaturated )\\b(?:(?:total\\s+)?(?:fats?|lipids?)|grasas?(?:\\s+totales?)?|materias?\\s+grasas?|l[i\\u00ed]pidos?(?:\\s+totales?)?)\\b(?!\\s+(?:saturad[oa]s?|insaturad[oa]s?|monoinsaturad[oa]s?|poliinsaturad[oa]s?|trans)\\b)"
+    private const val energyName = "\\b(?:calories?|calor[i\\u00ed]as?|energy|energ[i\\u00ed]a|(?:valor\\s+)?energ[e\\u00e9]tico)\\b(?!(?:\\s+value)?\\s+(?:from\\s+fat|de\\s+grasas?))"
+    private const val proteinName = "\\b(?:proteins?|prote[i\\u00ed]nas?)\\b"
+    private val carbohydrateLabel = Regex(carbohydrateName, RegexOption.IGNORE_CASE)
+    private val fatLabel = Regex(fatName, RegexOption.IGNORE_CASE)
     private val carbohydrate = Regex(
-        "\\b(?:total\\s+carb(?:ohydrates?)?|carbohydrates?|carbohidratos?)\\b[^\\d]{0,20}(\\d{1,3}(?:[.,]\\d{1,2})?)\\s*g\\b",
+        "$carbohydrateName[^\\d]{0,20}(\\d{1,3}(?:[.,]\\d{1,2})?)\\s*g\\b",
         RegexOption.IGNORE_CASE,
     )
     private val totalFat = Regex(
-        "(?<!saturated )(?<!sat )(?<!trans )\\b(?:total\\s+fat|fat|grasas?\\s+totales?)\\b[^\\d]{0,20}(\\d{1,3}(?:[.,]\\d{1,2})?)\\s*g\\b",
+        "$fatName[^\\d]{0,20}(\\d{1,3}(?:[.,]\\d{1,2})?)\\s*g\\b",
         RegexOption.IGNORE_CASE,
     )
-    private val caloriesLabelSafe = Regex("\\b(?:calories?|calor[i\\u00ed]as?|energ[i\\u00ed]a)\\b(?!\\s+(?:from\\s+fat|de\\s+grasas?))", RegexOption.IGNORE_CASE)
-    private val proteinLabelSafe = Regex("\\b(?:protein(?:a|as)?|prote[i\\u00ed]nas?)\\b", RegexOption.IGNORE_CASE)
+    private val caloriesLabelSafe = Regex(energyName, RegexOption.IGNORE_CASE)
+    private val proteinLabelSafe = Regex(proteinName, RegexOption.IGNORE_CASE)
     private val caloriesSafe = Regex(
-        "\\b(?:calories?|calor[i\\u00ed]as?|energ[i\\u00ed]a)\\b(?!\\s+(?:from\\s+fat|de\\s+grasas?))[^\\d]{0,20}(\\d{1,4}(?:[.,]\\d{1,2})?)\\s*(?:kcal|cal)?",
+        "$energyName[^\\d]{0,20}(\\d{1,4}(?:[.,]\\d{1,2})?)\\s*(?:kcal|cal)?",
         RegexOption.IGNORE_CASE,
     )
     private val proteinSafe = Regex(
-        "\\b(?:protein(?:a|as)?|prote[i\\u00ed]nas?)\\b[^\\d]{0,20}(\\d{1,3}(?:[.,]\\d{1,2})?)\\s*g\\b",
+        "$proteinName[^\\d]{0,20}(\\d{1,3}(?:[.,]\\d{1,2})?)\\s*g\\b",
         RegexOption.IGNORE_CASE,
     )
 

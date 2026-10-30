@@ -1,5 +1,15 @@
 # Metria product plan
 
+Nutrition-label aliases (2026-10-29): member-authorized screen inspection found
+Spanish package names missing from deterministic extraction. Expanded English
+and Spanish names for the existing four totals, including accented forms and
+wrapped carbohydrate wording. Existing spatial column selection remains intact;
+subtype/net-carbohydrate exclusions and kJ handling have regression coverage.
+Full Android gate passes 775 tests and debug assembly. Authorized in-place
+normal-app installation succeeds; cold launch Status ok in 1,013 ms, Demo
+untouched. The original two-column label still requires phone verification.
+See M4 checkpoint.
+
 Member-confirmed cloud voice draft (2026-10-29): after restarting the broker,
 member reports a correct draft. Transcript -> Nemotron -> reviewable meal draft
 accepted; provider label also observed. Other visual/device/save gates remain

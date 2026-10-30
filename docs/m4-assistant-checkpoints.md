@@ -1,5 +1,34 @@
 # M4 local assistant checkpoints
 
+## Nutrition-label vocabulary repair - 2026-10-29
+
+- Member reported only protein populated despite readable OCR. Authorized
+  inspection of the current Samsung SM-S928B / Android 16 screen confirmed
+  Spanish nutrient names absent from the parser. No navigation, field edits,
+  inference, installation or record mutation was performed. Android CLI layout
+  returned an instrumentation error; one annotated capture was viewed and
+  deleted outside the repository. No raw label or member values retained here.
+- Added common English/Spanish names for calories/energy, protein,
+  carbohydrates and total fat, including accented/unaccented variants, English
+  plurals, Spanish package wording and lipid synonyms. No additional persisted
+  nutrient fields or model processing. Spatial row/column selection, unknown
+  fields, draft review and explicit Save remain unchanged.
+- Five new regression tests cover bilingual names in text/positioned rows,
+  wrapped carbohydrate names, synthetic two-column energy/macros, and rejection
+  of fat subtypes, net carbohydrates and kJ as calories.
+- Complete gate: `:app:testDebugUnitTest :app:assembleDebug --no-daemon` passes
+  with 775 tests, zero failures/errors/skips. APK SHA-256:
+  `c3b92389b1758a4299c693d56767a15c3bf63b3d6589d4f381544b06696ea925`.
+- Member explicitly authorized installation: `adb install -r` succeeded on
+  Samsung SM-S928B / Android 16, followed by cold launch Status ok in 1,013 ms.
+  Updated only `app.metria`, preserving app identity/storage with no clear,
+  uninstall or signing change; Metria Demo untouched. Vault/model contents were
+  not inspected. Member unlock and original-label verification remain pending.
+- Pending: rescan the original label and verify all four fields against one
+  consistent column without saving a record.
+  Vocabulary coverage does not establish physical OCR accuracy. No new UI flow
+  or layout change; earlier visual/accessibility gaps remain open.
+
 Optional cloud provider integration (2026-10-28): member explicitly requests the
 whole-assistant local/cloud choice, including onboarding and Settings switch.
 Implementation and remaining acceptance are tracked in

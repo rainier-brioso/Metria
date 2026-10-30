@@ -1,5 +1,33 @@
 # Optional Nebius assistant checkpoints
 
+## Local/cloud meal follow-up - 2026-10-29
+
+Member confirms analyzing and saving the same meal through both Gemma and
+Nemotron. Authorized screen inspection used Leave without saving; no fields
+were changed, and temporary captures were viewed/deleted outside the repo.
+Gemma needed an explicit Calculate action before catalog nutrition appeared.
+Nemotron returned more detailed food descriptions, but some names did not match
+the offline catalog. Partial cloud nutrition excludes unmatched foods. Catalog
+matching remains a follow-up issue; no repair or accuracy ranking is claimed.
+The member deferred the comparison, which is absent from README.
+
+The local trace remained available, but raw Gemma image capture had cleared.
+No raw device/model output is committed. No extra inference was used for review.
+Earlier, the member authorized extending the existing local pass to 20 total
+attempts, preserving 10 used attempts, all history, expiry and binding. Global
+limits remain 20; default newly issued passes still start at 10. No reset.
+
+## APK distribution preparation - 2026-10-30
+
+Member authorizes committing product changes, pushing local commits and
+publishing the APK. Video-editing materials and generated Gradle daemon config
+are excluded. The normal app's debug APK is packaged as
+metria-0.1.0-hackathon.apk with SHA256SUMS.txt; no binary is added to Git.
+Android gate passes 775 tests/build, signature verification passes, and the
+APK contains MiniLM plus license notices with no private-state file paths.
+The repository is currently private; visibility is a separate publication gate.
+Release/upload availability must be verified after publication.
+
 ## Member confirms cloud voice meal draft - 2026-10-29
 
 After the broker restart instruction, member reports: "funcionó, tengo draft

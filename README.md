@@ -13,6 +13,18 @@ and trends through Today, Progress and Goals.
 The choice of where AI runs is part of the product: **Gemma on-device**, or
 **NVIDIA Nemotron on Nebius Token Factory** after you explicitly choose cloud.
 
+## Install the demo APK
+
+Download [Metria 0.1.0 — hackathon APK](https://github.com/rainier-brioso/Metria/releases/tag/v0.1.0-hackathon)
+from the release assets; `SHA256SUMS.txt` provides its checksum. This installs
+the normal **Metria** app (`app.metria`), not the separate onboarding recording app.
+
+This is a development-signed debug APK for evaluation, with MiniLM included.
+Download/prepare Gemma in the app for local inference, or follow the BYOK Nebius
+instructions below for cloud. Physical verification uses Samsung SM-S928B /
+Android 16; performance and model support on other phones are unverified.
+For updates, preserve the existing installation and signing identity.
+
 ## What makes Metria different
 
 - **A usable local AI path.** After downloading and preparing Gemma on a
@@ -174,17 +186,17 @@ See [Docker setup and troubleshooting](broker/DOCKER-LOCAL.md),
 - Member-confirmed phone flows include cloud photo drafts, a latest-meal calorie
   answer, and voice transcription followed by a Nemotron meal draft. Local
   Gemma meal entry and the separate onboarding recording app have also been used.
-- The latest verified gate passes **770 Android tests** and **130 broker tests**.
+- The latest verified gate passes **775 Android tests** and **130 broker tests**.
   Build success is separate from physical acceptance; detailed gaps and evidence
   live in [the checkpoint](docs/nebius-assistant-checkpoints.md).
 - Food identity and portions can be wrong. Review estimates; Metria is a wellness
   prototype and does not diagnose or prescribe.
 - Local model speed, memory use and voice availability depend on the phone.
   Physical development checks use a Samsung SM-S928B with Android 16.
-- There is currently no permanent public broker, published GitHub APK release or
-  public demo-video URL. Recording materials are in [the demo folder](docs/demo/).
-- **Before public submission:** publish the installable APK and the demo video,
-  and verify the evaluator setup.
+- There is currently no permanent public broker or public demo-video URL.
+  Recording materials are in [the demo folder](docs/demo/).
+- **Before public submission:** publish the demo video, ensure judges can access
+  the repository/release, and verify the evaluator setup.
 
 Development direction: [product plan](docs/plan.md). Reproducible checks and
 installation: [testing runbook](docs/TESTING.md).
