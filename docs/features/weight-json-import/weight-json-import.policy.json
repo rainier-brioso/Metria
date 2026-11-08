@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0.0",
+  "task_id": "METRIA-WEIGHT-JSON-01",
+  "spec_path": "docs/features/weight-json-import/tasks/01-parse.md",
+  "test_profile": "weight_json_android_offline",
+  "intended_paths": [
+    "native-android/app/src/main/java/app/metria/WeightJsonImport.kt",
+    "native-android/app/src/test/java/app/metria/WeightJsonImportTest.kt"
+  ],
+  "excluded_paths": [
+    "native-android/app/src/main/java/app/metria/EncryptedVault.kt",
+    "native-android/app/src/main/java/app/metria/WeightEntry.kt",
+    "native-android/app/src/main/java/app/metria/PhaseRecap.kt",
+    "native-android/app/src/main/java/app/metria/MemberShell.kt",
+    "native-android/app/src/main/java/app/metria/ui/screens/PrivacySettingsScreen.kt"
+  ],
+  "limits": {
+    "max_retries": 2,
+    "task_timeout_seconds": 1800,
+    "attempt_timeout_seconds": 600,
+    "aider_max_tokens": 16384,
+    "aider_reasoning_budget_tokens": 1024
+  }
+}
