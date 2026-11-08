@@ -1,5 +1,12 @@
 # Weight JSON import plan
 
+**2026-11-09 execution update:** the member authorized resuming the real local
+trial and opening a separate feature PR. The branch is aligned to `origin/main`
+at `5c68de3`; the parser contract, policy and profile are committed at `e9306ab`.
+Task 01 is the first bounded implementation slice. Tasks 02–04 below remain
+design-gated drafts. See [trial evidence](trial-2026-11-09.md) for current results;
+the original proposal status and earlier baseline notes below are historical.
+
 **Status:** proposal only; implementation has not started. The member approved a
 JSON-array import under PrivacySettings and a blank, copyable agent prompt.
 Both date-only and exact-timestamp inputs are approved. This

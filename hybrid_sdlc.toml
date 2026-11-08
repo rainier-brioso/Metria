@@ -1,8 +1,9 @@
 selected_model = "qwen3.8-flash-next-coder-iq1_m"
 max_retries = 2
-task_timeout_seconds = 600
-attempt_timeout_seconds = 180
-aider_max_tokens = 4096
+task_timeout_seconds = 1800
+attempt_timeout_seconds = 600
+aider_repo_map_tokens = 0
+aider_max_tokens = 16384
 aider_reasoning_budget_tokens = 1024
 
 [[server_candidates]]

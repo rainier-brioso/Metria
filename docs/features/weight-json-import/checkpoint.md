@@ -1,5 +1,17 @@
 # Weight JSON import checkpoint
 
+## Active trial — 2026-11-09
+
+Current source baseline is `5c68de3`; contract/config execution baseline is
+`e9306ab3abd0d1ab3369d6606540218058210c8f` on `codex/weight-json-import`.
+The source baseline passed 775 tests with zero failures/errors/skips and debug
+assembly. The managed Strata endpoint/model matches the repository configuration.
+Task 01 is being executed through Hybrid SDLC with the committed exact-path
+policy. See [current trial evidence](trial-2026-11-09.md) for its final outcome.
+
+This trial supersedes the historical baseline/runtime statements below. It does
+not approve or complete the persistence, UI, or physical acceptance gates.
+
 ## Current alignment and verification — 2026-10-18
 
 - Branch `codex/weight-json-import` is fast-forward aligned with `main` at `e5afc1240c85b5e356f0733eaf0fc99439667e6b`. Existing proposal files and unrelated untracked files were preserved; no commit was created.

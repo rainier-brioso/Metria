@@ -18,3 +18,7 @@ __pycache__/
 .local-state/
 .codex-remote-attachments/
 !broker/.env.example
+
+# Local delegation artifacts are not application source.
+.aider*
+.hybrid_sdlc/
