@@ -6,8 +6,12 @@ Current source baseline is `5c68de3`; contract/config execution baseline is
 `e9306ab3abd0d1ab3369d6606540218058210c8f` on `codex/weight-json-import`.
 The source baseline passed 775 tests with zero failures/errors/skips and debug
 assembly. The managed Strata endpoint/model matches the repository configuration.
-Task 01 is being executed through Hybrid SDLC with the committed exact-path
-policy. See [current trial evidence](trial-2026-11-09.md) for its final outcome.
+Three bounded local runs terminated without an accepted source patch: one
+timeout/cache-scope rejection and two output-ceiling/zero-diff failures. Their
+model judgments are rejected; no parser implementation was integrated.
+Separate [draft PR #2](https://github.com/rainier-brioso/Metria/pull/2) contains
+the setup and evidence. Next: diagnose the missing Strata/Aider edit output
+before another feature run. See [current trial evidence](trial-2026-11-09.md).
 
 This trial supersedes the historical baseline/runtime statements below. It does
 not approve or complete the persistence, UI, or physical acceptance gates.
