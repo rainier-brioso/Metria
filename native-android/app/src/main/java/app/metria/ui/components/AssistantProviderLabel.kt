@@ -12,6 +12,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.semantics
@@ -19,6 +20,8 @@ import androidx.compose.ui.unit.dp
 import app.metria.ui.theme.MetriaColors
 
 /** Selected processing route, not a claim that a request or connection succeeded. */
+val LocalRemoteProviderLabel = staticCompositionLocalOf { "Cloud · Nemotron" }
+
 @Composable
 fun AssistantProviderLabel(cloud: Boolean, modifier: Modifier = Modifier, localName: String = "Gemma") {
     Surface(modifier.semantics(mergeDescendants = true) {}, color = MetriaColors.PrimarySoft,
@@ -27,7 +30,7 @@ fun AssistantProviderLabel(cloud: Boolean, modifier: Modifier = Modifier, localN
             horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(if (cloud) Icons.Rounded.Cloud else Icons.Rounded.PhoneAndroid, null,
                 modifier = Modifier.size(16.dp), tint = MetriaColors.InkMuted)
-            Text(if (cloud) "Cloud · Nemotron" else "Local · $localName",
+            Text(if (cloud) LocalRemoteProviderLabel.current else "Local · $localName",
                 style = MaterialTheme.typography.labelMedium, color = MetriaColors.InkMuted)
         }
     }

@@ -1,5 +1,44 @@
 # Metria primary UX flows
 
+Photo food naming (2026-11-11): Review preserves the model's proposed food name
+and description separately. The editable description uses “Food description”,
+not “What Metria noticed”; appearance/uncertainty notes do not confirm identity.
+Local and compatible photo instructions request a supported food identity for
+name and visual details for description, retaining low confidence for a likely
+identity and asking the member when several identities remain plausible. No
+description-based rename, automatic confirmation or saved-record rewrite.
+
+Compatible connections (2026-11-10): Settings > Computer or compatible server >
+Add connection opens focused Ollama/Custom setup. Ollama defaults to
+`http://127.0.0.1:11434/v1`, with a visible explanation that PC use needs an
+active tunnel. Load installed Ollama models using native tags/show metadata;
+confirmed photo models appear first with Photos recommendations, text-only and
+unknown capabilities have distinct labels. Selecting a Photos model enables
+the optional photo choice; members may turn it off. Known text-only choices
+cannot enable it. No model is downloaded or activated automatically. Encourage
+configuring a vision model when none is confirmed. The Strata shortcut and
+its model/quantization presets are removed; Custom compatible setup remains.
+Use a phone-reachable HTTPS
+address or exact IPv4 loopback through a local server/tunnel and optional masked
+API key, explicitly load models
+or enter a model ID, review sharing and choose Use this connection. Setup/discovery
+does not send health content or start/download a server/model. Switching cancels
+prior work; failures preserve manual entry and never select another provider.
+Server completion followed by validation failure says the response could not
+be verified; network, timeout, rejection, wrong-model and truncated-answer
+failures identify their respective recovery action rather than all claiming
+that the service could not be reached. Records remain unchanged on failure.
+Photos require opt-in vision support and confirmation of that prepared photo.
+The photo action reads “Analyse meal” consistently; provider labels and the
+confirmation disclose the destination. Explicit server metadata excluding image
+input blocks photo upload with an actionable model-capability message. Missing
+model metadata stays unknown and does not establish support. Remote failures
+show the lifecycle's safe explanation; remote loading never claims all processing
+stays on the phone.
+OCR stays local; voice recognition stays on-device and sends text only.
+Idle/loading/empty/error/cancel/recreation follow the connection state contract
+in `../self-hosted-assistant-plan.md`. Onboarding expansion is deferred.
+
 Meal entry/cloud feedback (2026-10-29): after on-device dictation, a cloud meal
 description requests an unsaved draft. A clarification returns to the editable
 description with the actual question; a failure shows the safe failure explanation.

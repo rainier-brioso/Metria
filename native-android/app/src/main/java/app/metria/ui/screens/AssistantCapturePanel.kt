@@ -143,7 +143,7 @@ fun AssistantCapturePanel(
             }
             Text(if (editingLabel) "Review nutrition label" else if (label) "Scan nutrition label" else "Analyse meal",
                 style = MaterialTheme.typography.headlineMedium)
-            AssistantProviderLabel(cloud = !label && photoAnalysisMode == "cloud", localName = if (label) "ML Kit" else "Gemma")
+            AssistantProviderLabel(cloud = !label && photoAnalysisMode != "local", localName = if (label) "ML Kit" else "Gemma")
             when {
                 editingLabel && labelReady -> labelEditorState.SaveableStateProvider("label-review") {
                     AssistantLabelReviewContent(
@@ -156,7 +156,7 @@ fun AssistantCapturePanel(
                     )
                 }
                 busy -> {
-                    AssistantCaptureLoadingState(status.imageState, onStop = reset)
+                    AssistantCaptureLoadingState(status.imageState, onStop = reset, remote = !label && photoAnalysisMode != "local")
                 }
                 status.imageState == "cooling_down" -> {
                     Text("Photo tools are cooling down. Try again in ${secondsLeft}s.")
@@ -193,7 +193,8 @@ fun AssistantCapturePanel(
                         }
                     }
                     if (attempted || status.imageState == "failed") {
-                        AssistantCaptureFailureState(label = label, onManualMeal = onManualMeal)
+                        AssistantCaptureFailureState(label = label, onManualMeal = onManualMeal,
+                            failureMessage = status.imageReason.takeIf { !label && photoAnalysisMode != "local" })
                     }
                     error?.let { Text(it, color = MetriaColors.Danger) }
                     if (status.imageState == "ready") {
@@ -206,7 +207,7 @@ fun AssistantCapturePanel(
                         }, label = { Text("Meal details (optional)") }, supportingText = { Text("${description.length}/${MealPhotoContext.MAX_LENGTH}") },
                             modifier = Modifier.fillMaxWidth(), minLines = 2)
                         Button(onClick = {
-                            if (!label && photoAnalysisMode == "cloud") confirmCloudPhoto = true
+                            if (!label && photoAnalysisMode != "local") confirmCloudPhoto = true
                             else {
                                 attempted = true
                                 if (label) readLabel() else {
@@ -214,12 +215,12 @@ fun AssistantCapturePanel(
                                     requestId = next.imageAnalysisRequestId?.takeIf { next.imageState == "analyzing" && it != status.imageAnalysisRequestId }
                                 }
                             }
-                        }, enabled = label || (if (photoAnalysisMode == "cloud") cloudPhotoConfigured else status.state == "loaded"),
+                        }, enabled = label || (if (photoAnalysisMode != "local") cloudPhotoConfigured else status.state == "loaded"),
                             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                            Text(if (label) "Read label" else if (photoAnalysisMode == "cloud") "Analyze in cloud" else "Prepare draft")
+                            Text(if (label) "Read label" else "Analyse meal")
                         }
-                        if (!label && photoAnalysisMode == "cloud") {
-                            Text(if (cloudPhotoConfigured) "Your photo and optional details go to Metria's broker and Nebius only after you confirm. Saved records stay here." else "Connect a private cloud pass in Privacy & settings to use cloud photo analysis.", color = MetriaColors.InkMuted)
+                        if (!label && photoAnalysisMode != "local") {
+                            Text(if (photoAnalysisMode == "compatible") { if (cloudPhotoConfigured) "Your photo and optional details go to the selected server only after you confirm. Its operator can see them. Saved records stay here." else "Enable photo support for a vision model in your connection settings." } else if (cloudPhotoConfigured) "Your photo and optional details go to Metria's broker and Nebius only after you confirm. Saved records stay here." else "Connect a private cloud pass in Privacy & settings to use cloud photo analysis.", color = MetriaColors.InkMuted)
                         } else if (!label && status.state != "loaded") {
                             Text(if (status.state in setOf("ready", "initializing", "verifying", "downloading"))
                                 "The assistant is getting ready. You can keep this preview open."
@@ -233,7 +234,7 @@ fun AssistantCapturePanel(
                     AssistantCaptureSourceAction(
                         text = "Choose image", primary = false, onClick = { choose(false) },
                     )
-                    Text(if (photoAnalysisMode == "cloud") "Cloud photo analysis is optional; each photo is sent only after confirmation." else "Review before saving. Photos are processed on this phone.",
+                    Text(if (photoAnalysisMode != "local") "Off-phone photo analysis is optional; each photo is sent only after confirmation." else "Review before saving. Photos are processed on this phone.",
                         style = MaterialTheme.typography.bodySmall, color = MetriaColors.InkMuted)
                 }
             }
@@ -247,8 +248,8 @@ fun AssistantCapturePanel(
     }
     if (confirmCloudPhoto && cloudPhotoConfigured) AlertDialog(
         onDismissRequest = { confirmCloudPhoto = false },
-        title = { Text("Send this photo for cloud analysis?") },
-        text = { Text("This prepared photo and its optional meal details will be sent to Metria's broker and Nebius. Saved meals and weight records are not included. The returned foods and portions are estimates; you will review them before saving.") },
+        title = { Text("Send this photo for analysis?") },
+        text = { Text(if (photoAnalysisMode == "compatible") "This prepared photo and its optional details will be sent to your selected server. Its operator can see them. Saved records are not included. Review all estimates before saving." else "This prepared photo and its optional meal details will be sent to Metria's broker and Nebius. Saved meals and weight records are not included. The returned foods and portions are estimates; you will review them before saving.") },
         confirmButton = { Button(onClick = {
             confirmCloudPhoto = false
             attempted = true
@@ -267,14 +268,15 @@ private fun CaptureDraftCard(content: @Composable ColumnScope.() -> Unit) {
 }
 
 @Composable
-internal fun AssistantCaptureLoadingState(imageState: String, onStop: () -> Unit) {
+internal fun AssistantCaptureLoadingState(imageState: String, onStop: () -> Unit, remote: Boolean = false) {
     LinearProgressIndicator(Modifier.fillMaxWidth())
     Text(when (imageState) {
         "preparing" -> "Preparing your photo…"
         "reading_label" -> "Reading the nutrition label…"
         else -> "Preparing your meal draft…"
     }, style = MaterialTheme.typography.titleMedium)
-    Text("Everything stays on this phone. Nothing has been saved.", color = MetriaColors.InkMuted)
+    Text(if (remote && imageState == "analyzing") "Your selected photo is being processed by the server. Nothing has been saved."
+        else "Everything stays on this phone. Nothing has been saved.", color = MetriaColors.InkMuted)
     OutlinedButton(onClick = onStop, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Stop") }
 }
 
@@ -296,8 +298,8 @@ internal fun AssistantMealDraftCaptureCard(
 }
 
 @Composable
-internal fun AssistantCaptureFailureState(label: Boolean, onManualMeal: () -> Unit) {
-    Text(if (label) "Could not prepare a label draft. Try a clearer photo or enter a meal manually."
+internal fun AssistantCaptureFailureState(label: Boolean, onManualMeal: () -> Unit, failureMessage: String? = null) {
+    Text(if (!failureMessage.isNullOrBlank()) failureMessage else if (label) "Could not prepare a label draft. Try a clearer photo or enter a meal manually."
         else "Could not prepare a meal draft. Try another photo or enter the foods manually.", color = MetriaColors.Danger)
     TextButton(onClick = onManualMeal, modifier = Modifier.heightIn(min = 48.dp)) { Text("Enter manually") }
 }

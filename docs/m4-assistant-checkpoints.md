@@ -1,5 +1,161 @@
 # M4 local assistant checkpoints
 
+## Photo name and description clarity - 2026-11-11
+
+- Member reports a generic food name while its description suggests a specific
+  identity. Code inspection shows parser/review prefill preserve both model
+  fields separately; catalog selection does not rewrite the displayed food name.
+  No raw model output or member image was inspected, so the exact original
+  response is not independently established.
+- Renamed expanded ingredient description to Food description (optional), with
+  concise guidance to check the food name. This remains editable and does not
+  imply that Metria made a separate visual observation.
+- Shared local/compatible photo instructions distinguish identity from texture
+  and appearance. Supported likely identities retain low confidence and explicit
+  uncertainty; genuinely ambiguous identities prompt member confirmation.
+  Existing drafts/records are not renamed; parser, matching, calculation and
+  review-before-Save authority are unchanged.
+- Full automated gate passes: 791 tests, zero failures/errors/skips, debug APK
+  assembly; `git diff --check` passes. No new behavior-mirroring prompt tests.
+- Member explicitly requests installation after the draft warning. Samsung
+  SM-S928B in-place `adb install -r` Success; cold launch Status ok, 1054 ms.
+  No data clear, phone inspection, image request or private record access.
+- Live model behavior on the reported
+  photo and keyboard/font/physical layout remain unverified; member unlock and
+  a fresh authorized analysis are needed for acceptance. Main remains unchanged.
+
+## Ollama-first model selection - 2026-11-10
+
+- Member requests removing the Strata setup side and loading Ollama models with
+  vision recommendations. Removed Strata chip/model/quantization presets; new
+  Ollama connection defaults to `http://127.0.0.1:11434/v1` with tunnel guidance.
+  Custom compatible setup and existing saved connections remain; no automatic
+  provider activation, key transfer, model installation or download.
+- Discovery uses `/api/tags` and `/api/show` for up to 24 model capabilities.
+  Photos models sort first and are recommended for meal analysis; other rows
+  distinguish text-only from unknown. Selecting a confirmed Photos model enables
+  the photo option, still subject to explicit sharing and per-photo confirmation.
+  Text-only selections cannot enable it; empty/no-vision guidance encourages
+  configuring a vision model. Further models keep unknown capability status.
+- Read-only local metadata confirms both installed `gemma3:12b` and `gemma4:12b`
+  advertise vision. No inference or private record/photo was sent. Recommendation
+  establishes declared capability only, not Metria output quality or latency.
+- Full Android gate passes: 791 tests, zero failures/errors/skips, debug assembly;
+  `git diff --check` passes. Tests cover
+  installed ID preservation, deduplication/unsafe-name exclusion and explicit
+  capability detection without inferring support from names.
+- Active authorized phone cycle: Samsung SM-S928B in-place installation Success,
+  cold launch Status ok, 1079 ms. Ollama port forwarding added and this task's
+  former Strata-only forwarding removed. No service restart, data clear, model
+  download or private screen capture. Current record preservation and setup
+  interaction still need member confirmation after unlock.
+- Next bounded phone check: choose Ollama, Load available models, select a Photos
+  model and confirm connection; exercise approved photo, cancellation and model
+  failure with review-before-Save. Physical layout/accessibility/live vision
+  acceptance remains open. Main remains unchanged; work uncommitted.
+
+## Server meal-photo capability and feedback - 2026-11-10
+
+- Member confirms today's-meal Chat lookup now works. This confirms that
+  interaction only; no broader assistant/device acceptance is inferred.
+- Member reports generic meal-photo failure and no Strata inference request.
+  Current `/v1/models` confirms the selected Qwen coder model declares only
+  text input/output. The original precise exception was not retained, so its
+  exact pre-request rejection point cannot be established retrospectively.
+- Compatible photo analysis now checks optional selected-model metadata before
+  photo upload; explicit lack of image support blocks upload. Missing listing
+  or modality metadata stays unknown and never enables photo support. Explicit
+  vision setting and individual photo-sharing confirmation remain required.
+- Show safe lifecycle photo failures instead of replacing every failure with
+  retry-another-photo. Photo support off and unsupported model have distinct
+  actionable messages. No member photo or inference request used to diagnose.
+- Restored consistent “Analyse meal” button wording. Provider label and sharing
+  confirmation retain destination disclosure; remote loading copy no longer
+  claims the image is processed entirely on the phone.
+- Complete Android test/build gate passes: 789 tests, zero failures/errors/skips,
+  debug assembly; diff check passes. Capability test covers declared text/image,
+  unknown/empty metadata, foreign model and malformed listing.
+- Authorized active phone cycle: Samsung SM-S928B `adb install -r` Success;
+  cold launch Status ok, 1069 ms. No data clear or private screen inspection.
+  New error/button layout still requires member unlock and physical verification.
+- A genuinely image-capable model is still
+  required for successful server photo analysis; none is installed/reconfigured
+  by this change. Physical layout/accessibility and live vision remain pending.
+
+## Compatible meal-lookup argument repair - 2026-11-10
+
+- Member reports Strata completes but Chat shows connection failure for
+  “What meals have I recorded today?”. Controlled request built by the app
+  with this question and no records/history returns a correct `read_meals`
+  decision in about 3.5 seconds. No member meal records were transmitted.
+- Regression reproduces rejection: inside `JSONObject.toMap`, the `buildMap`
+  receiver shadows JSON `get(key)`, replacing argument values with null. Fixed
+  explicit JSON receiver lookup; action policy/ranges remain unchanged.
+- Added regression coverage through compatible conversion and the existing host
+  parser for today's lookup, nullable and named meal slots, historical offset
+  preservation and invalid negative-offset rejection. Old no-argument tool
+  tests did not exercise this defect.
+- Replaced misleading connection-only chat/meal errors with fixed categories
+  for request preparation, network, timeout, HTTP rejection, model mismatch,
+  truncation and unverifiable responses. No raw bodies/exceptions/content logs.
+- Final gate: `:app:testDebugUnitTest :app:assembleDebug --no-daemon` passes,
+  788 tests, zero failures/errors/skips; `git diff --check` passes.
+- Active authorized phone cycle: Samsung SM-S928B in-place `adb install -r`
+  Success; reverse port restored, cold launch Status ok, 1050 ms. No data clear,
+  uninstall or private screen capture. Phone meal-lookup acceptance and existing
+  record preservation require member unlock and repeat/confirmation.
+- Next bounded task: repeat today's-meal question on the installed build;
+  validate the local rendered meal list without forwarding records to Strata.
+  Main/development/feature HEAD remain `5c68de3`; work is uncommitted.
+
+## Strata defaults and loopback tunnel - 2026-11-10
+
+- Strata selection fills empty fields with `http://127.0.0.1:8080/v1` and
+  `qwen3.8-flash-next-coder-iq1_m`, preserving existing edits. Q1 preset and
+  quantization labels accompany actual discovered models; no fabricated Q2 IDs.
+- Supplied PC endpoint responds to metadata discovery with the exact Q1 model,
+  loaded, text input/output only. No inference or private content was submitted.
+- Added HTTP only for exact IPv4 loopback in URL validation and Android network
+  security policy; all other cleartext destinations remain denied. Existing
+  destination-bound key retention, redirects, cancellation and limits remain.
+  Setup explains that PC loopback requires a local tunnel. No Anthropic adapter.
+- Automated gate passes 786 tests, zero failures/errors/skips, debug assembly.
+  New boundary test covers loopback normalization and rejects LAN/alternate/
+  deceptive HTTP hosts. No physical accessibility/keyboard flow pass claimed.
+- Authorized active phone cycle: Samsung SM-S928B, `adb reverse tcp:8080
+  tcp:8080` succeeded; `adb install -r` succeeded; cold launch Status ok, 1030 ms.
+  Data not cleared; existing records still require member confirmation. Tunnel
+  metadata probe produced no response, so phone API reachability is not claimed.
+- Next bounded task: member unlock, Settings > Computer or compatible server >
+  Strata, Load available models and explicit connection consent; verify text
+  behavior with fictional content. Tunnel depends on the ADB connection.
+  Main remains unchanged; no commit, push or production dependency.
+
+## Ollama and custom compatible provider - 2026-11-10
+
+- Member authorizes direct implementation on `codex/self-hosted-model`, without
+  the proposed preliminary feasibility experiment. Main/development refs remain
+  at `5c68de3`; no commit, push, merge or external service change.
+- New Settings connection flow supports Ollama and Custom, including Strata,
+  explicit HTTPS endpoint/model, metadata discovery, optional encrypted API key
+  and sharing consent. Separate compatible framing preserves shared tool limits,
+  host reads/action validation, local calculation and reviewed meal Save. Voice
+  transcribes on-device; prepared-photo upload requires vision opt-in and its
+  own confirmation. No runtime startup, automatic model download or fallback.
+- Complete Android test/debug gate passes: 785 tests, no failures/errors/skips;
+  `git diff --check` passes. APK identity and code-review evidence are in
+  `self-hosted-assistant-plan.md`; connection instructions in
+  `compatible-providers.md`. Existing unrelated work is preserved.
+- No installation, device inspection, screenshot, record write or live model
+  request. Android Studio rendering unavailable (no running compatible instance).
+  Reference Samsung SM-S928B / Android 16 remains untested for this build;
+  data preservation on installation is not yet verified.
+- Next bounded task: authorized in-place install and before/after physical
+  Settings/keyboard/rotation/font/accessibility/cancel checks, then a selected
+  reachable HTTPS endpoint with fictional chat/read/draft/photo acceptance.
+  Member performs biometric unlock and any final Save. Live transport races,
+  model quality and performance remain open; no physical gate is closed here.
+
 ## Nutrition-label vocabulary repair - 2026-10-29
 
 - Member reported only protein populated despite readable OCR. Authorized

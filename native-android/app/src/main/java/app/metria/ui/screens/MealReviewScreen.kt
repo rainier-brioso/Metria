@@ -2023,7 +2023,8 @@ private fun ComponentEditorCard(
                     OutlinedTextField(
                         value = item.description,
                         onValueChange = { onChange(item.copy(description = it)) },
-                        label = { Text("What Metria noticed · optional") },
+                        label = { Text("Food description · optional") },
+                        supportingText = { Text("Appearance and uncertainty notes. Check the food name above.") },
                         modifier = Modifier.fillMaxWidth(),
                     )
                     Text("Photo evidence", style = MaterialTheme.typography.labelLarge)

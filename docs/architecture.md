@@ -1,5 +1,22 @@
 # Metria architecture
 
+Compatible providers (approved implementation, 2026-11-10): add explicit
+Settings connections for Ollama and Custom (OpenAI-compatible), including an
+existing compatible endpoint. Ollama is the guided setup, with installed model
+discovery via native tags/show metadata and explicit vision recommendations.
+Strata-specific presets are removed. Android sends bounded member-authored context directly
+over HTTPS after connection disclosure/selection, or exact IPv4 loopback HTTP
+for a phone-local server or explicitly configured tunnel; prepared photos additionally
+require vision opt-in and per-photo confirmation. No PC app, sync, automatic
+fallback, service launch, model download or new dependency. API keys are optional
+at the API layer, encrypted in Keystore-backed no-backup configuration, excluded
+from vault/recovery and never copied from another application. A changed endpoint
+cannot inherit the old secret. Runtime access security remains an operator task.
+The compatible adapter uses the same shared policy and host action validation;
+the Nebius broker/identity checks stay separate. Stop/lock/switch/disconnect revoke
+delivery and attempt cancellation. No content logs, remote Save or vault export.
+Implementation/physical evidence: `self-hosted-assistant-plan.md`.
+
 Cloud meal-format repair (2026-10-29): the provider receives a constrained JSON
 schema with a proposal object in reply, avoiding a JSON-encoded string inside
 model-authored JSON. The broker serializes that object for the unchanged Android

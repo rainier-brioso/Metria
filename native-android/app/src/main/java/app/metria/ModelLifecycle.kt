@@ -67,6 +67,7 @@ internal const val MEAL_IMAGE_ANALYSIS_PROMPT =
         "kind is meal_proposal. Choose at most the two strongest clearly visible food candidates; prefer whole dishes over ingredient fragments. " +
         "For a candidate dish, group only ingredients that are plainly visible and confidently identifiable. Omit unclear extra foods and any hidden component you cannot confidently identify; never invent a food to complete a dish. If no food is clear enough, return an empty items array. " +
         "Each ingredient has exactly name, description, visible_portion, estimated_grams_range, preparation, confidence, evidence, role. Use low confidence when an included identity or portion is uncertain, and describe it no more specifically than the photo supports. " +
+        MealPhotoContext.FOOD_NAMING_INSTRUCTION +
         "Use one or two words for every string where possible. estimated_grams_range has integer min and max. Confidence is exactly low, medium, or high. " +
         "The evidence value must be exactly the enum string seen or possible_inside, with no explanation or other wording. Use possible_inside only for one likely hidden component of an otherwise recognisable dish; never describe it as visible, and use low confidence. " +
         "role is exactly one of main_food, side, drink, sauce_oil, dry_seasoning; never use synonyms. " +
@@ -774,9 +775,9 @@ class ModelLifecycle(
         val turn = CloudAssistantRequest.build(task, transcript, modelInput)
             ?: return finishCloudAssistantFailure(requestId, "This request is too long or could not be prepared safely.")
         try {
-            val raw = access.postAuthenticated("/v1/assistant", turn.body)
+            val remoteResult = access.assistant(turn)
             if (Thread.currentThread().isInterrupted) return
-            val result = CloudAssistantRequest.parse(raw, turn)
+            val result = remoteResult
                 ?: return finishCloudAssistantFailure(requestId, "The cloud reply could not be verified. Nothing was changed.")
 
             // Personal-record questions require the exact host-derived read. Model prose or a
@@ -788,7 +789,7 @@ class ModelLifecycle(
                     return finishCloudAssistantFailure(requestId, "Metria could not verify that answer against your local records. Try one specific question.")
                 }
                 if (action.intent !in READ_ONLY_ASSISTANT_TOOLS) {
-                    return finishCloudAssistantFailure(requestId, "That cloud action could not be safely matched to your local request.")
+                    return finishCloudAssistantFailure(requestId, "That service action could not be safely matched to your local request.")
                 }
                 publishCloudReadTool(requestId, action, requiredTool, companion)
                 return
@@ -800,20 +801,20 @@ class ModelLifecycle(
                     return
                 }
                 val audited = MetriaAgentFactAuditor.audit(result.reply, null).acceptedText
-                    ?: return finishCloudAssistantFailure(requestId, "That cloud reply was not safe to display. Ask in another way.")
+                    ?: return finishCloudAssistantFailure(requestId, "That service reply was not safe to display. Ask in another way.")
                 synchronized(this) {
                     if (!isCurrentCloudTurn(access, requestId)) return
                     coachReply = audited
                     coachDiagnostic = null
                     assistantProposal = null
                     assistantOperation = "agent_reply"
-                    reason = "Cloud answer ready. No record was changed."
+                    reason = "Answer ready. No record was changed."
                     assistantTraceStore?.record("reply_audited", "agent_turn", "accepted", requestId = requestId)
                 }
                 return
             }
 
-            val call = action ?: return finishCloudAssistantFailure(requestId, "The cloud service returned no usable answer.")
+            val call = action ?: return finishCloudAssistantFailure(requestId, "The selected service returned no usable answer.")
             when (call.intent) {
                 "draft_meal" -> {
                     val description = NativeMealDraftPolicy.description(call, null, input)
@@ -825,9 +826,9 @@ class ModelLifecycle(
                     val proposalTurn = CloudAssistantRequest.build(
                         CloudAssistantRequest.Task.MEAL_DRAFT, listOf(true to description), description,
                     ) ?: return finishCloudAssistantFailure(requestId, "This meal description could not be prepared safely.")
-                    val proposalRaw = access.postAuthenticated("/v1/assistant", proposalTurn.body)
+                    val remoteProposal = access.assistant(proposalTurn)
                     if (Thread.currentThread().isInterrupted) return
-                    val proposalResult = CloudAssistantRequest.parse(proposalRaw, proposalTurn)
+                    val proposalResult = remoteProposal
                     if (proposalResult?.reply == null || proposalResult.tool != null) {
                         return finishCloudAssistantFailure(requestId, "The meal draft could not be verified. Nothing was saved.")
                     }
@@ -840,7 +841,7 @@ class ModelLifecycle(
                     val proposalTurn = CloudAssistantRequest.build(CloudAssistantRequest.Task.MEAL_DRAFT,
                         listOf(true to description), description)
                         ?: return finishCloudAssistantFailure(requestId, "This meal could not be prepared safely.")
-                    val proposal = CloudAssistantRequest.parse(access.postAuthenticated("/v1/assistant", proposalTurn.body), proposalTurn)
+                    val proposal = access.assistant(proposalTurn)
                     if (proposal?.reply == null || proposal.tool != null) return finishCloudAssistantFailure(requestId, "The meal draft could not be verified. Nothing was saved.")
                     publishCloudMealProposal(requestId, proposal.reply)
                 }
@@ -932,10 +933,11 @@ class ModelLifecycle(
                             else "Current unsaved meal food edit was rejected; previous draft was retained."
                     }
                 }
-                else -> finishCloudAssistantFailure(requestId, "That cloud action was not authorized for this request.")
+                else -> finishCloudAssistantFailure(requestId, "That service action was not authorized for this request.")
             }
-        } catch (_: Exception) {
-            finishCloudAssistantFailure(requestId, "Could not reach the cloud assistant. Your local records were not changed.")
+        } catch (failure: Exception) {
+            finishCloudAssistantFailure(requestId, (failure as? app.metria.compatible.CompatibleProviderFailure)?.memberMessage
+                ?: "Could not reach the selected service. Your local records were not changed.")
         }
     }
 
@@ -1254,14 +1256,13 @@ class ModelLifecycle(
                     ) ?: return@submit finishCloudAssistantFailure(
                         nextRequestId, "This meal description could not be prepared safely.",
                     )
-                    val result = CloudAssistantRequest.parse(
-                        cloudAccess.postAuthenticated("/v1/assistant", turn.body), turn,
-                    )
+                    val result = cloudAccess.assistant(turn)
                     if (result?.reply == null || result.tool != null) {
-                        finishCloudAssistantFailure(nextRequestId, "The cloud meal draft could not be verified. Nothing was saved.")
+                        finishCloudAssistantFailure(nextRequestId, "The meal draft could not be verified. Nothing was saved.")
                     } else publishCloudMealProposal(nextRequestId, result.reply)
-                } catch (_: Exception) {
-                    finishCloudAssistantFailure(nextRequestId, "Could not reach the cloud assistant. Your local records were not changed.")
+                } catch (failure: Exception) {
+                    finishCloudAssistantFailure(nextRequestId, (failure as? app.metria.compatible.CompatibleProviderFailure)?.memberMessage
+                        ?: "Could not reach the selected service. Your local records were not changed.")
                 } finally {
                     synchronized(this) {
                         if (assistantRequestId == nextRequestId && state == "thinking") state = localState
@@ -1349,14 +1350,15 @@ class ModelLifecycle(
                 try {
                     val turn = CloudAssistantRequest.build(CloudAssistantRequest.Task.MEAL_DRAFT, emptyList(), input)
                         ?: return@submit finishCloudAssistantFailure(requestId, "This meal description could not be prepared safely.", "meal")
-                    val result = CloudAssistantRequest.parse(access.postAuthenticated("/v1/assistant", turn.body), turn)
+                    val result = access.assistant(turn)
                     if (result?.reply == null || result.tool != null) {
-                        finishCloudAssistantFailure(requestId, "The cloud meal draft could not be verified. Nothing was saved.", "meal")
+                        finishCloudAssistantFailure(requestId, "The meal draft could not be verified. Nothing was saved.", "meal")
                     } else {
                         publishCloudMealProposal(requestId, result.reply, operation = "meal")
                     }
-                } catch (_: Exception) {
-                    finishCloudAssistantFailure(requestId, "Could not reach the cloud assistant. Your local records were not changed.", "meal")
+                } catch (failure: Exception) {
+                    finishCloudAssistantFailure(requestId, (failure as? app.metria.compatible.CompatibleProviderFailure)?.memberMessage
+                        ?: "Could not reach the selected service. Your local records were not changed.", "meal")
                 } finally {
                     synchronized(this) {
                         if (assistantRequestId == requestId) state = localState
@@ -1437,7 +1439,7 @@ class ModelLifecycle(
                     val text = "Current draft food: $current. Member correction: $correction"
                     val turn = CloudAssistantRequest.build(CloudAssistantRequest.Task.FOOD_REPLACEMENT,
                         emptyList(), text) ?: throw IllegalArgumentException("correction_invalid")
-                    val result = CloudAssistantRequest.parse(access.postAuthenticated("/v1/assistant", turn.body), turn)
+                    val result = access.assistant(turn)
                     val name = result?.tool?.replacementName
                     if (name != null && correction.contains(name, ignoreCase = true)) {
                         replacement = MealFoodNameCorrectionParser.parse(
@@ -2046,7 +2048,7 @@ class ModelLifecycle(
         val access = cloudPhotoAccess?.takeIf { it.isConfigured() }
         val image = preparedImage
         if (access == null) {
-            imageReason = "Connect a private cloud pass in Settings before choosing cloud photo analysis."
+            imageReason = "Configure your selected service in Settings before photo analysis."
             return statusLocked()
         }
         if (imageState != "ready" || image == null || !image.isFile) {
@@ -2055,7 +2057,7 @@ class ModelLifecycle(
         }
         imageState = "analyzing"
         imageProgress = "reading_image"
-        imageReason = "Sending this photo for cloud meal analysis. Nothing has been saved."
+        imageReason = "Sending this photo to the selected service for meal analysis. Nothing has been saved."
         proposal = null
         proposalDiagnostic = null
         latestImageAudit = null
@@ -2102,30 +2104,31 @@ class ModelLifecycle(
                 if (proposal == null) {
                     val rejection = requireNotNull(parseResult.rejectionCategory)
                     proposalDiagnostic = rejection.diagnosticLabel
-                    imageReason = "Cloud analysis returned a draft that could not be checked. Try another photo or enter the foods manually."
+                    imageReason = "The service returned a draft that could not be checked. Try another photo or enter the foods manually."
                     recordImageAuditLocked(startedWallClock, startedAt, "draft_rejected", rejection.auditCode)
                 } else if ((proposal?.omittedItemCount ?: 0) > 0) {
                     proposalDiagnostic = null
-                    imageReason = "Cloud analysis left out some foods. Review the suggestions and add anything missing."
+                    imageReason = "The service left out some foods. Review the suggestions and add anything missing."
                     recordImageAuditLocked(startedWallClock, startedAt, "draft_partial", requireNotNull(proposal?.partialCategory).auditCode)
                 } else {
                     proposalDiagnostic = null
-                    imageReason = "Cloud meal draft ready for review. Nothing has been saved."
+                    imageReason = "Meal draft ready for review. Nothing has been saved."
                     recordImageAuditLocked(startedWallClock, startedAt, "draft_ready")
                 }
                 val total = SystemClock.elapsedRealtime() - startedAt
                 // Cloud content is never sent to the developer capture store or retained in diagnostics.
-                diagnostics = """Meal photo analysis: cloud
+                diagnostics = """Meal photo analysis: selected remote service
                     Model request: ${result.latencyMs} ms
                     Response validation: ${activeImageMetrics?.validationMillis ?: 0} ms
                     Total: ${total} ms
-                    Reported tokens: ${result.promptTokens} input, ${result.completionTokens} output""".trimIndent()
+                    Reported tokens: ${if (result.usageKnown) "${result.promptTokens} input, ${result.completionTokens} output" else "unavailable"}""".trimIndent()
             }
         } catch (error: Exception) {
             synchronized(this) {
                 if (cloudPhotoAccess === access && cloudPhotoMode && generation == analysisGeneration) {
                     proposal = null
-                    proposalDiagnostic = "Cloud photo analysis failed. Check your connection or switch to local analysis."
+                    proposalDiagnostic = (error as? app.metria.compatible.CompatibleProviderFailure)?.memberMessage
+                        ?: "Photo analysis failed. Check your connection or switch to on-device analysis."
                     imageReason = proposalDiagnostic!!
                     recordImageAuditLocked(startedWallClock, startedAt, "runtime_failure", "cloud_request_failed")
                 }
@@ -4568,7 +4571,7 @@ class ModelLifecycle(
             startedAt = startedAt,
             completedAt = completedAt,
             durationMillis = (SystemClock.elapsedRealtime() - startedElapsedRealtime).coerceIn(0, 600_000),
-            modelId = if (activeImageCloud) CLOUD_PHOTO_MODEL_ID else modelAuditId,
+            modelId = if (activeImageCloud) cloudPhotoAccess?.selectedModelId() ?: CLOUD_PHOTO_MODEL_ID else modelAuditId,
             operation = "image_meal",
             outcome = outcome,
             failureCategory = failureCategory,

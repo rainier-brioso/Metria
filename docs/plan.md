@@ -1,5 +1,67 @@
 # Metria product plan
 
+Food naming clarity (2026-11-11): clarified that photo draft name/description
+both originate in the model. Renamed the editable description field, and shared
+local/compatible photo guidance now separates food identity from appearance
+while preserving uncertainty and member confirmation. No automatic rename or
+record rewrite. Build/phone evidence and live-quality gaps in M4 checkpoint.
+
+Ollama-first setup (2026-11-10): removed Strata shortcut, loopback-8080 and Qwen
+quantization presets. New Ollama setup defaults to loopback port 11434 with
+tunnel guidance. Native installed-model discovery highlights confirmed Photos
+models first, labels text/unknown support and encourages configuring vision.
+Custom compatible connections remain; no saved endpoint is silently switched.
+Current PC metadata confirms installed gemma3:12b and gemma4:12b advertise vision.
+Full Android gate passes; phone/live vision acceptance in M4 checkpoint.
+
+Server photo feedback (2026-11-10): member confirms repaired Chat lookup works.
+Selected Strata model still reports text only. Added explicit metadata-based
+photo rejection, visible safe failure reason and consistent “Analyse meal”
+label; destination disclosure remains. Successful server photos require a vision
+model. Gate/install and remaining physical acceptance are in M4 checkpoint.
+
+Compatible Chat repair (2026-11-10): reproduced today's-meal lookup rejection
+using a controlled server response. Corrected JSON map receiver shadowing that
+discarded tool argument values; added end-to-end parser/range regressions and
+specific safe provider failure messages. Final gate/phone follow-up in M4
+checkpoint; no private records transmitted during desktop reproduction.
+
+Strata setup defaults (2026-11-10): preset supplied OpenAI URL/model, Q1 shortcut
+and discovered quantization choices. Exact loopback HTTP is allowed for local
+servers/tunnels; other destinations require HTTPS. PC model metadata confirms
+the supplied text-only Q1 model. Active authorized phone cycle: reverse port
+configured, in-place update and launch succeed. Full gate passes 786 tests and
+debug assembly. Member unlock, connection UI/live inference and data-preservation
+confirmation remain pending; see M4 checkpoint. Main remains unchanged.
+
+Compatible-provider implementation (2026-11-10): member requests direct
+implementation, superseding the preliminary desktop feasibility spike. Settings
+now supports Ollama and Custom/Strata, encrypted optional keys, model discovery
+and explicit selection/sharing, plus chat/draft/voice-text and opt-in photo
+routing through the unchanged host validation/save gates. Full Android gate
+passes 785 tests and debug assembly; diff check passes. No live inference,
+installation or physical/render acceptance. Main remains unchanged; no commit
+or push. Setup: [compatible-providers.md](compatible-providers.md); acceptance
+and final APK identity: [self-hosted-assistant-plan.md](self-hosted-assistant-plan.md).
+
+Compatible-provider scope revision (2026-11-10): member confirms there is no
+Metria PC app/sync and selects Ollama plus Custom (OpenAI-compatible), including
+Strata configuration following the local Wealthfolio fork. Read-only reference
+inspection supports explicit endpoint, optional API key and model selection.
+Updated [self-hosted-assistant-plan.md](self-hosted-assistant-plan.md) removes
+the mandatory Metria gateway and defines separate compatible transport, secure
+settings and acceptance. No runtime changes, inference or installation. PC sync
+and pull-to-sync are excluded; `main` remains unchanged.
+
+Self-hosted assistant planning (2026-11-09): created `development` and
+`codex/self-hosted-model` from the current main commit without moving `main`.
+Proposed opt-in computer/server processing, runtime/hardware/network caveats,
+existing provider seams and phased acceptance are in
+[self-hosted-assistant-plan.md](self-hosted-assistant-plan.md). Planning only;
+no runtime implementation, model setup, inference, installation or physical
+acceptance. Next: fictional desktop text compatibility spike. Future feature
+integration targets `development`; `main` remains protected by member instruction.
+
 Nutrition-label aliases (2026-10-29): member-authorized screen inspection found
 Spanish package names missing from deterministic extraction. Expanded English
 and Spanish names for the existing four totals, including accented forms and

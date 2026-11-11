@@ -20,8 +20,10 @@ import javax.crypto.spec.GCMParameterSpec
 
 /** Member-authorized cloud route through Metria's HTTPS broker. */
 class CloudPhotoAccess(context: Context, private val random: SecureRandom = SecureRandom()) {
+    val compatible = app.metria.compatible.CompatibleProviderAccess(context)
     data class Configuration(val endpoint: String, val credential: String, val installationId: String)
-    data class Result(val proposal: String, val promptTokens: Int, val completionTokens: Int, val latencyMs: Long)
+    data class Result(val proposal: String, val promptTokens: Int, val completionTokens: Int, val latencyMs: Long,
+        val usageKnown: Boolean = true)
 
     private val file = File(context.noBackupFilesDir, "cloud-photo-access.bin")
     private val preferences = context.getSharedPreferences("metria-cloud-photo-mode", Context.MODE_PRIVATE)
@@ -29,12 +31,20 @@ class CloudPhotoAccess(context: Context, private val random: SecureRandom = Secu
     @Volatile private var activeConnection: HttpURLConnection? = null
     private val cancellationGeneration = AtomicLong(0)
 
-    fun isConfigured(): Boolean = synchronized(lock) { runCatching { read() }.getOrNull() != null }
+    fun isConfigured(): Boolean = if (selectedMode() == "compatible") compatible.settings() != null else isCloudConfigured()
+
+    fun isCloudConfigured(): Boolean = synchronized(lock) { runCatching { read() }.getOrNull() != null }
+
+    fun assistant(turn: app.metria.cloud.CloudAssistantRequest.Turn): app.metria.cloud.CloudAssistantRequest.Result? =
+        if (selectedMode() == "compatible") compatible.assistant(turn)
+        else app.metria.cloud.CloudAssistantRequest.parse(postAuthenticated("/v1/assistant", turn.body), turn)
+
+    fun selectedModelId(): String = if (selectedMode() == "compatible") compatible.settings()?.model ?: "compatible" else "nvidia/Nemotron-3.5-Super-VL"
 
     fun selectedMode(): String = synchronized(lock) { runCatching { readMode() }.getOrDefault("local") }
 
     fun setSelectedMode(mode: String) {
-        require(mode == "local" || mode == "cloud")
+        require(mode in setOf("local", "cloud", "compatible"))
         synchronized(lock) { modePreferences().edit().putString(MODE_KEY, mode).apply() }
     }
 
@@ -85,6 +95,7 @@ class CloudPhotoAccess(context: Context, private val random: SecureRandom = Secu
         require(image.isNotEmpty() && image.size <= MAX_PHOTO_BYTES) { "photo_limit" }
         require(description.length <= MealPhotoContext.MAX_LENGTH && description.none { it.isISOControl() && it !in "\n\r\t" }) { "description_invalid" }
         UUID.fromString(requestId)
+        if (selectedMode() == "compatible") return compatible.analyze(image, description, requestId, startedAt)
         val requestGeneration = cancellationGeneration.get()
         val config = synchronized(lock) { read() } ?: throw IllegalStateException("cloud_not_configured")
         val body = JSONObject().put("request_id", requestId)
@@ -105,6 +116,7 @@ class CloudPhotoAccess(context: Context, private val random: SecureRandom = Secu
     }
 
     fun cancel() {
+        compatible.cancel()
         cancellationGeneration.incrementAndGet()
         activeConnection?.disconnect()
         activeConnection = null
@@ -152,7 +164,7 @@ class CloudPhotoAccess(context: Context, private val random: SecureRandom = Secu
         }
     }
 
-    private fun readMode(): String = preferences.getString(MODE_KEY, "local")?.takeIf { it in setOf("local", "cloud") } ?: "local"
+    private fun readMode(): String = preferences.getString(MODE_KEY, "local")?.takeIf { it in setOf("local", "cloud", "compatible") } ?: "local"
 
     private fun installationId(): String = synchronized(lock) {
         read()?.installationId?.let { return@synchronized it }

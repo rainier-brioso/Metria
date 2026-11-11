@@ -14,6 +14,25 @@ revised first.
 
 ## Data boundary
 
+**Compatible provider decision - 2026-11-10:** member requests immediate
+implementation of Ollama and custom compatible connections, including Strata.
+This is an explicit off-phone route; compatible APIs do not establish locality,
+retention or trust. The selected server receives submitted member messages and
+bounded member-authored context, never local record-derived assistant replies
+or tool results. Photo sharing requires explicit vision configuration and a
+per-photo disclosure/action. On-device voice recognition supplies text only.
+Preserve manual entry, no silent provider fallback, existing session/action
+validation, deterministic nutrition and reviewed meal Save. Connection settings
+and optional secrets stay in encrypted app-private no-backup storage, outside
+the vault/recovery archive. No existing processor is selected automatically.
+See `self-hosted-assistant-plan.md` for implementation and acceptance gaps.
+
+Strata preset revision (2026-11-10): allow HTTP only to exact `127.0.0.1` for
+a local server or explicitly connected tunnel. Android network policy denies
+cleartext to all other destinations; HTTPS trust and redirect prohibitions
+remain. A desktop loopback preset requires a tunnel and must explain that
+dependency. Filling defaults does not activate a provider or grant sharing.
+
 **Fictional local test capture - 2026-10-28:** member explicitly requests complete
 model responses and errors during fictional app tests. The local tunnel's
 explicit fictional-capture flag permits private bounded raw provider output,

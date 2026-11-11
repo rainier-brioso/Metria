@@ -71,11 +71,18 @@ private val MetriaShapes = Shapes(
 )
 
 @Composable
-fun MetriaTheme(content: @Composable () -> Unit) {
+fun MetriaTheme(content: @Composable () -> Unit) = MetriaTheme("Cloud · Nemotron", content)
+
+@Composable
+fun MetriaTheme(remoteProviderLabel: String, content: @Composable () -> Unit) {
+    androidx.compose.runtime.CompositionLocalProvider(
+        app.metria.ui.components.LocalRemoteProviderLabel provides remoteProviderLabel,
+    ) {
     MaterialTheme(
         colorScheme = MetriaColorScheme,
         typography = MetriaTypography,
         shapes = MetriaShapes,
         content = content,
     )
+    }
 }

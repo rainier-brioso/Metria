@@ -271,7 +271,7 @@ fun MealEntryScreen(
             Text("Add $slotLabel", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
         }
         AssistantProviderLabel(cloud = modelStatus.cloudSelected)
-        if (modelStatus.cloudSelected) Text("Voice recognition stays on this phone. Your description is sent to cloud to prepare a draft.",
+        if (modelStatus.cloudSelected) Text("Voice recognition stays on this phone. Your description is sent to the selected service to prepare a draft.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
         when {

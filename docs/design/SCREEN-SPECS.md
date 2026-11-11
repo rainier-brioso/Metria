@@ -1,5 +1,32 @@
 # Metria screen contracts
 
+Compatible setup (2026-11-10): Settings shows a scannable connection summary and
+opens one focused, scrollable editor with reachable footer actions. Ollama and
+Custom share address, optional masked key and explicit model selection.
+Ollama fills new connections with `http://127.0.0.1:11434/v1`, explaining that
+a PC server needs an active tunnel. Explicit Load fetches installed names and
+capabilities, sorting confirmed Photos models first. Labels distinguish Photos
+(recommended for meals), Text only and unknown photo support. Choosing a known
+Photos model enables the photo choice, still editable and subject to sharing
+consent. Text-only choices cannot enable photos. Empty/no-vision states encourage
+configuring a vision model without starting a download. Strata-specific presets
+are removed; existing saved custom connections require an explicit member switch.
+The
+server address needs reachable HTTPS or exact IPv4 loopback with a local server
+or an explicitly connected port-forwarding tunnel.
+Keys are not saved in UI
+restoration state. Sharing consent is explicit and invalidated when connection
+details change. Unknown capabilities do not imply vision support. Photo support
+is a separate choice; each photo still requires confirmation. Selected route
+and confirmation carry the destination; the photo button reads “Analyse meal”.
+When a selected server explicitly reports no image input, block upload and explain
+that an image-capable model is needed. Show safe photo failure reasons instead of
+a generic retry-another-photo message; remote processing has accurate privacy copy.
+Selected route
+labels use Server plus the selected model, distinct from Local/Gemma and
+Cloud/Nemotron; selection does not claim connectivity. Settings first; onboarding
+remains unchanged. Apply all keyboard/font/accessibility and physical gates.
+
 Provider visibility (approved 2026-10-29): meal text/voice entry, Chat and photo
 capture/preview show a quiet icon plus Local · Gemma or Cloud · Nemotron label.
 It identifies the selected route, not connectivity or the provenance of older
@@ -318,6 +345,15 @@ Manual tracking and cancellation remain available if the local model is absent.
 **Secondary actions:** edit dish, add dish, review estimate details, Leave without saving.
 
 **Rule:** never render every ingredient’s name, description, grams, preparation, role, match, and delete action in one continuous form.
+
+Food naming clarification (2026-11-11): the expanded ingredient editor labels
+the editable description “Food description · optional”, with a short note to
+check the food name above. Both name and description initially come from the
+model for photo drafts; neither field claims an immutable model observation
+after editing or a separate Metria visual judgment. Food identity, descriptive
+appearance and selected catalog nutrition remain separate reviewed values.
+Supported likely identities use low confidence and explicit uncertainty; a
+genuinely ambiguous photo requires member identification, not a guessed rename.
 
 **Available nutrient display — 2026-10-06:** expandable details show all available
 nutrient values for selected offline matches and validated portions, with USDA

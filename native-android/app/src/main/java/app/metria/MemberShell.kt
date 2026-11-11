@@ -333,7 +333,7 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
             debugImageCaptureStatus = activity.debugImageCaptureStatus()
         }
     }
-    MetriaTheme {
+    MetriaTheme(remoteProviderLabel = activity.remoteProviderLabel()) {
         when (val vaultStatus = status) {
             EncryptedVault.Status.Missing -> if (!hasCompletedOnboarding) FirstRunOnboarding(
                 selectedMode = photoAnalysisMode,
@@ -341,7 +341,7 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                 onComplete = { activity.completeOnboarding(photoAnalysisMode); hasCompletedOnboarding = true },
             ) else AssistantSetupGate(
                 modelStatus = setupModelStatus,
-                cloudPhotoMode = photoAnalysisMode == "cloud",
+                cloudPhotoMode = photoAnalysisMode != "local",
                 download = { setupModelStatus = activity.downloadLocalAssistant() },
                 cancelDownload = { setupModelStatus = activity.cancelLocalAssistantDownload() },
                 continueToApp = { activity.authenticateVault(true) },
@@ -352,7 +352,7 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
             is EncryptedVault.Status.RecoveryRequired -> VaultGate("Vault unavailable", vaultStatus.message) {}
             is EncryptedVault.Status.Failed -> VaultGate("Try again", vaultStatus.message) { status = vault.status() }
             is EncryptedVault.Status.Unlocked -> {
-                if (photoAnalysisMode != "cloud" && setupModelStatus.state in setOf("absent", "removed", "failed", "downloading", "verifying")) {
+                if (photoAnalysisMode == "local" && setupModelStatus.state in setOf("absent", "removed", "failed", "downloading", "verifying")) {
                     AssistantSetupGate(
                         modelStatus = setupModelStatus,
                         cloudPhotoMode = false,
@@ -460,7 +460,7 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                                 },
                                 modelStatus = modelStatus,
                                 photoAnalysisMode = photoAnalysisMode,
-                                cloudPhotoConfigured = activity.cloudPhotoConfigured(),
+                                cloudPhotoConfigured = if (photoAnalysisMode == "compatible") activity.compatibleProviderSettings()?.vision == true else activity.cloudPhotoConfigured(),
                                 showLoadingPreview = false,
                                 initialImagePurpose = assistantImagePurpose,
                                 onInitialImagePurposeHandled = { assistantImagePurpose = null },
@@ -554,8 +554,19 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                                 photoAnalysisMode = photoAnalysisMode,
                                 cloudPhotoConfigured = activity.cloudPhotoConfigured(),
                                 cloudPhotoEndpoint = activity.cloudPhotoEndpoint(),
+                                compatibleSettings = activity.compatibleProviderSettings(),
+                                onConfigureCompatible = activity::configureCompatibleProvider,
+                                onDiscoverCompatibleModels = activity::discoverCompatibleModels,
+                                onCancelCompatible = activity::cancelCompatibleConnection,
+                                onDisconnectCompatible = {
+                                    providerScope.launch {
+                                        withContext(Dispatchers.Default) { activity.disconnectCompatibleProvider() }
+                                        photoAnalysisMode = activity.photoAnalysisMode()
+                                        modelStatus = activity.modelStatus()
+                                    }
+                                },
                                 onSelectPhotoAnalysisMode = { mode ->
-                                    if (!providerChangeInFlight && (mode == "local" || activity.cloudPhotoConfigured())) {
+                                    if (!providerChangeInFlight && activity.assistantModeConfigured(mode)) {
                                         providerChangeInFlight = true
                                         providerScope.launch {
                                             try {
@@ -674,7 +685,7 @@ fun MetriaMemberShell(vault: EncryptedVault, activity: MainActivity) {
                     app.metria.ui.screens.AssistantCapturePanel(
                         initialPurpose = purpose,
                         photoAnalysisMode = photoAnalysisMode,
-                        cloudPhotoConfigured = activity.cloudPhotoConfigured(),
+                        cloudPhotoConfigured = if (photoAnalysisMode == "compatible") activity.compatibleProviderSettings()?.vision == true else activity.cloudPhotoConfigured(),
                         initialRecordedDate = pendingMealDate?.let { runCatching { LocalDate.parse(it) }.getOrNull() },
                         initialMealSlot = pendingMealSlot,
                         status = modelStatus,
@@ -1519,7 +1530,7 @@ private fun AssistantScreen(
     }
     LaunchedEffect(initialImagePurpose, modelStatus.state) {
         val purpose = initialImagePurpose ?: return@LaunchedEffect
-        if (modelStatus.state == "loaded" || photoAnalysisMode == "cloud") {
+        if (modelStatus.state == "loaded" || photoAnalysisMode != "local") {
             if (beginImageFlow().imageState != "cooling_down") sourceChoice = purpose
             onInitialImagePurposeHandled()
         }
@@ -1572,14 +1583,14 @@ private fun AssistantScreen(
                     else -> null
                 },
                 cloud = when (modelStatus.imageState) {
-                    "analyzing" -> photoAnalysisMode == "cloud"
+                    "analyzing" -> photoAnalysisMode != "local"
                     "reading_label" -> false
                     else -> null
                 },
                 localName = if (modelStatus.imageState == "reading_label") "ML Kit" else "Gemma",
             )
         } else if (modelStatus.imageState == "analyzing") {
-            app.metria.ui.screens.MealPhotoAnalysisProgress(loading.first, loading.second, stopPhotoAnalysis, cloud = photoAnalysisMode == "cloud")
+            app.metria.ui.screens.MealPhotoAnalysisProgress(loading.first, loading.second, stopPhotoAnalysis, cloud = photoAnalysisMode != "local")
         } else AppleByteLoading(loading.first, loading.second)
         return
     }
@@ -1592,7 +1603,7 @@ private fun AssistantScreen(
         return
     }
     if (photoReviewHandoff.ready(modelStatus)) {
-        app.metria.ui.screens.MealPhotoAnalysisProgress("Preparing your meal…", "", stopPhotoAnalysis, cloud = photoAnalysisMode == "cloud")
+        app.metria.ui.screens.MealPhotoAnalysisProgress("Preparing your meal…", "", stopPhotoAnalysis, cloud = photoAnalysisMode != "local")
         return
     }
     if (contextualMealSlot != null) app.metria.ui.screens.TodayMealPhotoEntryScreen(
@@ -2316,7 +2327,7 @@ private fun PrivateAssistantChat(
     onReviewSavedDish: (PersonalDish) -> Boolean,
 ) {
     val context = LocalContext.current
-    fun assistantReady(status: ModelStatus): Boolean = if (photoAnalysisMode == "cloud") status.cloudReady
+    fun assistantReady(status: ModelStatus): Boolean = if (photoAnalysisMode != "local") status.cloudReady
         else status.state == "loaded"
     var input by conversationSession.input
     var submittedQuestion by conversationSession.submittedQuestion
@@ -4372,7 +4383,7 @@ private fun PrivateAssistantChat(
         preparingVoice = startVoiceImmediately && !recordingVoice,
         voiceMessage = voiceMessage,
         modelReady = assistantReady(modelStatus),
-        cloudConnectionRequired = photoAnalysisMode == "cloud" && !modelStatus.cloudReady,
+        cloudConnectionRequired = photoAnalysisMode != "local" && !modelStatus.cloudReady,
         onOpenCloudSettings = { onPanelAction(AssistantPanelAction.PRIVACY) },
         selectedMealContextTitle = selectedMealContextTitle,
         onClearSelectedMealContext = clearSelectedMealContext,

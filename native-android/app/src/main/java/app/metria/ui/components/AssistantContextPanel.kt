@@ -131,7 +131,7 @@ fun AssistantPanelHeader(
             verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("Metria", style = MaterialTheme.typography.titleLarge)
-                Text("AI · Private on this phone", color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall)
+                Text("Your assistant", color = MetriaColors.InkMuted, style = MaterialTheme.typography.bodySmall)
             }
             IconButton(onClick = onToggleExpanded, enabled = canResize, modifier = Modifier.size(48.dp)) {
                 Icon(if (fullHeight) Icons.Rounded.ExpandMore else Icons.Rounded.ExpandLess,

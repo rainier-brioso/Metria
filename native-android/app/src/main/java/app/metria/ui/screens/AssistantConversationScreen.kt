@@ -724,7 +724,7 @@ private fun MealDraftCard(
 private fun CloudConnectionRequiredCard(onOpenSettings: () -> Unit) {
     Surface(color = MetriaColors.AccentSoft, shape = MaterialTheme.shapes.medium) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Nemotron is selected. Connect your private pass to use the cloud assistant.", style = MaterialTheme.typography.bodyMedium)
+            Text("Your selected service needs a connection. Open Settings to configure it.", style = MaterialTheme.typography.bodyMedium)
             Button(onClick = onOpenSettings, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                 Text("Open cloud setup")
             }

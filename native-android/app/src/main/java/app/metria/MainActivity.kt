@@ -70,7 +70,7 @@ class MainActivity : FragmentActivity() {
         debugImageCaptureStore = DebugImageCaptureStore(noBackupFilesDir, BuildConfig.DEBUG)
         cloudPhotoAccess = CloudPhotoAccess(applicationContext)
         modelLifecycle = ModelLifecycle(applicationContext, filesDir, cacheDir, assistantTraceStore, debugImageCaptureStore)
-        modelLifecycle.configureCloudPhoto(cloudPhotoAccess, cloudPhotoAccess.selectedMode() == "cloud")
+        modelLifecycle.configureCloudPhoto(cloudPhotoAccess, cloudPhotoAccess.selectedMode() != "local")
         vault = EncryptedVault(applicationContext, assistantTraceStore::recordMealWrite)
         modelLifecycle.setAnalysisAuditSink { audit ->
             runOnUiThread {
@@ -117,6 +117,8 @@ class MainActivity : FragmentActivity() {
 
     override fun onStop() {
         firstGoalOffer.clear()
+        // Settings discovery can run even while the on-device route is selected.
+        cloudPhotoAccess.compatible.cancel()
         if (!externalImageFlowInProgress && !externalArchiveFlowInProgress) {
             modelLifecycle.cancelImageAnalysis()
             if (modelLifecycle.status().imageState in setOf("ready", "preparing", "reading_label")) {
@@ -182,28 +184,59 @@ class MainActivity : FragmentActivity() {
 
     fun photoAnalysisMode(): String = cloudPhotoAccess.selectedMode()
 
-    fun cloudPhotoConfigured(): Boolean = cloudPhotoAccess.isConfigured()
+    fun cloudPhotoConfigured(): Boolean = cloudPhotoAccess.isCloudConfigured()
+
+    fun compatibleProviderSettings() = cloudPhotoAccess.compatible.settings()
+
+    fun assistantModeConfigured(mode: String): Boolean = when (mode) {
+        "local" -> true
+        "cloud" -> cloudPhotoAccess.isCloudConfigured()
+        "compatible" -> compatibleProviderSettings() != null
+        else -> false
+    }
+
+    fun remoteProviderLabel(): String = if (photoAnalysisMode() == "compatible")
+        "Server · ${compatibleProviderSettings()?.model ?: "Not connected"}" else "Cloud · Nemotron"
+
+    fun configureCompatibleProvider(settings: app.metria.compatible.CompatibleProviderSettings, key: CharArray): String? {
+        modelLifecycle.cancelImageAnalysis()
+        modelLifecycle.cancelAssistantRequest()
+        return cloudPhotoAccess.compatible.configure(settings, key)
+    }
+
+    fun discoverCompatibleModels(endpoint: String, kind: String, key: CharArray): List<app.metria.compatible.CompatibleModel> = cloudPhotoAccess.compatible.discover(endpoint, kind, key)
+
+    fun cancelCompatibleConnection() = cloudPhotoAccess.compatible.cancel()
+
+    fun disconnectCompatibleProvider() {
+        modelLifecycle.cancelImageAnalysis()
+        modelLifecycle.cancelAssistantRequest()
+        cloudPhotoAccess.compatible.clear()
+        if (photoAnalysisMode() == "compatible") selectPhotoAnalysisMode("local")
+    }
 
     fun cloudPhotoEndpoint(): String? = cloudPhotoAccess.endpoint()
 
     fun configureCloudPhoto(endpoint: String, pass: CharArray): String? = cloudPhotoAccess.configure(endpoint, pass)
 
     fun selectPhotoAnalysisMode(mode: String) {
-        require(mode == "local" || mode == "cloud")
+        require(mode in setOf("local", "cloud", "compatible") && assistantModeConfigured(mode))
         if (mode != cloudPhotoAccess.selectedMode()) {
             modelLifecycle.cancelImageAnalysis()
             modelLifecycle.cancelAssistantRequest()
         }
         cloudPhotoAccess.setSelectedMode(mode)
-        modelLifecycle.configureCloudPhoto(cloudPhotoAccess, mode == "cloud")
+        modelLifecycle.configureCloudPhoto(cloudPhotoAccess, mode != "local")
     }
 
     fun disconnectCloudPhoto() {
         modelLifecycle.cancelImageAnalysis()
         modelLifecycle.cancelAssistantRequest()
         cloudPhotoAccess.clear()
-        cloudPhotoAccess.setSelectedMode("local")
-        modelLifecycle.configureCloudPhoto(cloudPhotoAccess, false)
+        if (photoAnalysisMode() == "cloud") {
+            cloudPhotoAccess.setSelectedMode("local")
+            modelLifecycle.configureCloudPhoto(cloudPhotoAccess, false)
+        }
     }
 
     fun modelStatus(): ModelStatus = modelLifecycle.status()

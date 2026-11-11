@@ -80,7 +80,7 @@ fun MealPhotoPreviewSheet(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text(if (label) "Preview label" else "Preview meal", style = MaterialTheme.typography.headlineMedium)
-            AssistantProviderLabel(cloud = !label && photoAnalysisMode == "cloud", localName = if (label) "ML Kit" else "Gemma")
+            AssistantProviderLabel(cloud = !label && photoAnalysisMode != "local", localName = if (label) "ML Kit" else "Gemma")
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(selected = !label, onClick = { onPurposeChange("meal") }, label = { Text("Meal photo") }, modifier = Modifier.heightIn(min = 48.dp))
                 FilterChip(selected = label, onClick = { onPurposeChange("label") }, label = { Text("Nutrition label") }, modifier = Modifier.heightIn(min = 48.dp))
@@ -113,20 +113,22 @@ fun MealPhotoPreviewSheet(
             Text(
                 when {
                     label -> "Label text is read on this phone. Review it before saving."
+                    photoAnalysisMode == "compatible" -> "This prepared photo and its details go to your selected server only after you confirm. Its operator can see them. Review the estimate before saving."
                     photoAnalysisMode == "cloud" -> "This photo and its optional details will be sent to Metria's broker and Nebius only if you choose Analyze in cloud. Saved records stay on this phone. Review the draft before saving."
                     else -> "Processed on this phone. Review the draft before saving."
                 },
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Button(onClick = {
-                if (!label && photoAnalysisMode == "cloud") confirmCloudAnalysis = true else onAnalyze()
+                if (!label && photoAnalysisMode != "local") confirmCloudAnalysis = true else onAnalyze()
             },
-                enabled = ready && (label || photoAnalysisMode != "cloud" || cloudPhotoConfigured),
+                enabled = ready && (label || photoAnalysisMode == "local" || cloudPhotoConfigured),
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                Text(if (label) "Read label" else if (photoAnalysisMode == "cloud") "Analyze in cloud" else "Create meal draft")
+                Text(if (label) "Read label" else "Analyse meal")
             }
-            if (!label && photoAnalysisMode == "cloud" && !cloudPhotoConfigured) Text(
-                "Connect a private evaluator pass in Settings to use cloud photo analysis.",
+            if (!label && photoAnalysisMode != "local" && !cloudPhotoConfigured) Text(
+                if (photoAnalysisMode == "compatible") "Enable photo support for a vision model in your connection settings."
+                else "Connect a private evaluator pass in Settings to use cloud photo analysis.",
                 color = MaterialTheme.colorScheme.error,
             )
             OutlinedButton(onClick = onReplace, enabled = imageState != "preparing", modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Use another photo") }
@@ -165,8 +167,9 @@ fun MealPhotoPreviewSheet(
     }
     if (confirmCloudAnalysis && cloudPhotoConfigured) AlertDialog(
         onDismissRequest = { confirmCloudAnalysis = false },
-        title = { Text("Send this photo for cloud analysis?") },
-        text = { Text("The prepared photo shown here and its optional meal details will be sent to Metria's broker and Nebius. Saved records are not included. Metria will return an estimate for you to review before saving.") },
+        title = { Text("Send this photo for analysis?") },
+        text = { Text(if (photoAnalysisMode == "compatible") "The prepared photo and optional details will be sent to your selected server. Its operator can see them. Saved records are not included. Review the estimate before saving."
+            else "The prepared photo shown here and its optional meal details will be sent to Metria's broker and Nebius. Saved records are not included. Metria will return an estimate for you to review before saving.") },
         confirmButton = { Button(onClick = { confirmCloudAnalysis = false; onAnalyze() }) { Text("Analyze this photo") } },
         dismissButton = { TextButton(onClick = { confirmCloudAnalysis = false }) { Text("Keep this phone") } },
     )

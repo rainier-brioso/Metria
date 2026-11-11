@@ -68,6 +68,7 @@ import app.metria.AssistantTraceStore
 import app.metria.NutritionTargets
 import app.metria.PersonalDish
 import app.metria.DebugImageCaptureStore
+import app.metria.compatible.CompatibleProviderSettings
 import app.metria.ui.theme.MetriaColors
 import java.time.ZoneId
 import androidx.compose.foundation.text.KeyboardOptions
@@ -115,6 +116,11 @@ fun MetriaPrivacySettingsScreen(
     onClearAssistantTrace: () -> Unit,
     onSetDebugImageCaptureEnabled: (Boolean) -> Boolean,
     onClearDebugImageCapture: () -> Unit,
+    compatibleSettings: CompatibleProviderSettings? = null,
+    onConfigureCompatible: (CompatibleProviderSettings, CharArray) -> String? = { _, _ -> "Connection setup is unavailable." },
+    onDiscoverCompatibleModels: (String, String, CharArray) -> List<app.metria.compatible.CompatibleModel> = { _, _, _ -> emptyList() },
+    onDisconnectCompatible: () -> Unit = {},
+    onCancelCompatible: () -> Unit = {},
 ) {
     var exportSheetOpen by rememberSaveable { mutableStateOf(false) }
     var savedDishesOpen by rememberSaveable { mutableStateOf(false) }
@@ -167,13 +173,23 @@ fun MetriaPrivacySettingsScreen(
             onDisconnect = onDisconnectCloudPhoto,
         )
         SettingsDivider()
+        CompatibleProviderSettingsCard(
+            mode = photoAnalysisMode,
+            settings = compatibleSettings,
+            onSelectMode = onSelectPhotoAnalysisMode,
+            onConfigure = onConfigureCompatible,
+            onDiscoverModels = onDiscoverCompatibleModels,
+            onDisconnect = onDisconnectCompatible,
+            onCancel = onCancelCompatible,
+        )
+        SettingsDivider()
         SettingsRow(
             icon = Icons.Rounded.SmartToy,
-            title = if (photoAnalysisMode == "cloud") "Cloud assistant" else "Local assistant",
+            title = when (photoAnalysisMode) { "cloud" -> "Cloud assistant"; "compatible" -> "Connected assistant"; else -> "Local assistant" },
             supporting = if (photoAnalysisMode == "cloud") {
                 if (modelStatus.cloudReady) "Connected · requests run when you use the assistant" else "Connect a private pass to use cloud assistance"
-            } else assistantStatusSummary(modelStatus.state),
-            accessibilityLabel = "${if (photoAnalysisMode == "cloud") "Cloud" else "Local"} assistant. Show details",
+            } else if (photoAnalysisMode == "compatible") compatibleSettings?.let { it.model + " · requests run when you use the assistant" } ?: "Add a computer or compatible server connection" else assistantStatusSummary(modelStatus.state),
+            accessibilityLabel = "${when (photoAnalysisMode) { "cloud" -> "Cloud"; "compatible" -> "Connected"; else -> "Local" }} assistant. Show details",
             onClick = { assistantDetailsOpen = true },
         )
         SettingsDivider()
@@ -280,8 +296,8 @@ fun MetriaPrivacySettingsScreen(
         }) { Text("Clear corrections") } },
         dismissButton = { TextButton(onClick = { clearMealLearningOpen = false }) { Text("Keep corrections") } },
     )
-    if (privacyDetailsOpen) PrivacyDetailsDialog(photoAnalysisMode, onDismiss = { privacyDetailsOpen = false })
-    if (assistantDetailsOpen) AssistantDetailsDialog(modelStatus, photoAnalysisMode, onDismiss = { assistantDetailsOpen = false })
+    if (privacyDetailsOpen) PrivacyDetailsDialog(photoAnalysisMode, compatibleSettings, onDismiss = { privacyDetailsOpen = false })
+    if (assistantDetailsOpen) AssistantDetailsDialog(modelStatus, photoAnalysisMode, compatibleSettings, onDismiss = { assistantDetailsOpen = false })
     if (assistantStyleOpen) AssistantStyleDialog(
         selected = assistantStyle,
         error = assistantStyleError,
@@ -327,11 +343,12 @@ private fun CloudPhotoSettings(
         icon = Icons.Rounded.Security,
         title = "Assistant mode",
         supporting = when {
+            mode == "compatible" -> "Computer/server assistant selected; change the choice below"
             mode == "cloud" && configured -> "Cloud assistant enabled · photos still need confirmation"
             mode == "cloud" -> "Connect a private pass to use the cloud assistant"
             else -> "On this phone · switch any time"
         },
-        accessibilityLabel = "Assistant mode. ${if (mode == "cloud") "Cloud assistant" else "On this phone"}.",
+        accessibilityLabel = "Assistant mode. ${when (mode) { "cloud" -> "Cloud assistant"; "compatible" -> "Computer or server assistant"; else -> "On this phone" }}.",
         onClick = { expanded = !expanded },
     )
     if (expanded) {
@@ -561,7 +578,7 @@ private fun SettingsSection(title: String, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun SettingsRow(
+internal fun SettingsRow(
     icon: ImageVector,
     title: String,
     supporting: String,
@@ -639,7 +656,11 @@ private fun ArchivePassphraseDialog(onDismiss: () -> Unit, onConfirm: (CharArray
 }
 
 @Composable
-private fun PrivacyDetailsDialog(mode: String, onDismiss: () -> Unit) {
+private fun PrivacyDetailsDialog(
+    mode: String,
+    compatibleSettings: CompatibleProviderSettings?,
+    onDismiss: () -> Unit,
+) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Your privacy in Metria") },
@@ -648,6 +669,12 @@ private fun PrivacyDetailsDialog(mode: String, onDismiss: () -> Unit) {
                 PrivacyDetail("Encrypted records", "Weights, meals, goals, cycle context, and saved dishes stay in your protected vault.")
                 if (mode == "cloud") {
                     PrivacyDetail("Cloud assistance", "When cloud mode is connected and you use a cloud feature, that request is sent through Metria's broker to Nebius for processing. Saved wellness records remain in the encrypted vault on this phone. Meal photos and their optional details require a separate confirmation before sending.")
+                } else if (mode == "compatible") {
+                    val endpoint = compatibleSettings?.baseUrl ?: "your configured computer or server"
+                    PrivacyDetail(
+                        "Computer/server assistance",
+                        "When this connection is selected and you use the assistant, selected messages are sent to $endpoint. The server operator can read them. A photo is sent only after you choose the photo feature and confirm its analysis. Saved wellness records stay encrypted on this phone. The connection key is stored encrypted on this phone and excluded from backups.",
+                    )
                 } else {
                     PrivacyDetail("Local assistance", "The assistant model processes meal photos and prompts on this phone. Temporary originals are deleted after processing.")
                 }
@@ -669,21 +696,36 @@ private fun PrivacyDetail(title: String, body: String) {
 }
 
 @Composable
-private fun AssistantDetailsDialog(status: ModelStatus, mode: String, onDismiss: () -> Unit) {
+private fun AssistantDetailsDialog(
+    status: ModelStatus,
+    mode: String,
+    compatibleSettings: CompatibleProviderSettings?,
+    onDismiss: () -> Unit,
+) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (mode == "cloud") "Cloud assistant" else "Local assistant") },
+        title = { Text(when (mode) { "cloud" -> "Cloud assistant"; "compatible" -> "Computer/server assistant"; else -> "Local assistant" }) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(if (mode == "cloud") {
-                    if (status.cloudReady) "Connected and ready when you use a cloud feature" else "Connect your private pass to enable the cloud assistant"
-                } else assistantStatusSummary(status.state), style = MaterialTheme.typography.titleSmall)
-                Text(if (mode == "cloud") {
-                    "Requests you submit in cloud mode go through Metria's broker to Nebius. Meal photos need a separate review and confirmation. Saved records stay in your encrypted vault on this phone."
-                } else "The assistant model runs on this phone. Metria does not send your prompts, photos, or records to its servers.", color = MetriaColors.InkMuted)
+                Text(when (mode) {
+                    "cloud" -> if (status.cloudReady) "Connected and ready when you use a cloud feature" else "Connect your private pass to enable the cloud assistant"
+                    "compatible" -> if (compatibleSettings == null) "Add a computer or compatible server connection in Privacy settings."
+                        else "${compatibleSettings.model} settings are saved. Server availability is checked when you use the assistant."
+                    else -> assistantStatusSummary(status.state)
+                }, style = MaterialTheme.typography.titleSmall)
+                Text(when (mode) {
+                    "cloud" -> "Requests you submit in cloud mode go through Metria's broker to Nebius. Meal photos need a separate review and confirmation. Saved records stay in your encrypted vault on this phone."
+                    "compatible" -> {
+                        val endpoint = compatibleSettings?.baseUrl ?: "the configured computer or server"
+                        "When selected, Metria sends your submitted messages and bounded context to $endpoint. The server operator can read them. A photo is sent only after you choose photo analysis and confirm. Saved records stay encrypted on this phone. Connection keys are encrypted on this phone and excluded from backups."
+                    }
+                    else -> "The assistant model runs on this phone. Metria does not send your prompts, photos, or records to its servers."
+                }, color = MetriaColors.InkMuted)
                 Text("Spelling help may check up to three possible misspelled words individually with your phone's selected spell checker, following that service's privacy settings. Your full question and saved records are not provided to it.", color = MetriaColors.InkMuted)
-                Text("Model storage: ${formatStorage(status.expectedBytes)}", color = MetriaColors.InkMuted)
-                Text("Removing the app removes both the model and your local vault unless you first create a recovery archive.", color = MetriaColors.InkMuted)
+                if (mode != "compatible") {
+                    Text("Model storage: ${formatStorage(status.expectedBytes)}", color = MetriaColors.InkMuted)
+                    Text("Removing the app removes both the model and your local vault unless you first create a recovery archive.", color = MetriaColors.InkMuted)
+                }
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
